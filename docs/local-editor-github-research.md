@@ -48,3 +48,30 @@ Research date: 2026-10-12. This document records design patterns from public rep
 Keep the design/Editor PR in **Draft** until seven mandatory GitHub checks, relevant real Chrome/Postgres E2E, security and source-contract tests complete successfully on an unchanged SHA. Never treat queued/pending as green. The known LaMa ONNX reproducibility drift remains a separate unresolved blocker; do not waive it or edit golden checks.
 
 No Core auth cookie, CSRF, origin configuration, paid execution authority or Railway production deployment changes are included.
+
+
+## Phase 2 — precision local editing (2026-10-12)
+
+The next three core capabilities are now implemented as original deterministic CPU operations in \`src/lib/local-editor/localAdvanced.js\` (no third-party runtime dependency):
+
+1. **Tone curves:** five integer sRGB-byte control points at inputs 0, 64, 128, 192, 255. A 256-entry piecewise-linear LUT gives exact anchors, no overshoot or hidden AI correction. The interface shows the actual curve and five labeled sliders; Reset and global Undo/Redo apply to the same adjustment history.
+2. **Selective eight-band HSL:** individual hue ±60°, saturation ±100%, lightness ±100% for Reds, Oranges, Yellows, Greens, Aquas, Blues, Purples and Magentas. Circular hue distance, soft feathering and neutral-gray protection avoid crude rectangular thresholds. This operates in display-referred 8-bit HSL **not** ICC/Lab, and is described accordingly.
+3. **Manual clone stamp:** explicit **Pick source → Paint** steps, normalized pointer coordinates, radius 1–10% of the shorter side, feather hardness and opacity 1–100%. Rasterization finds each pixel's shortest distance to the actual brush segment, using a per-stroke maximum-coverage envelope and an immutable sampled raster snapshot; separate strokes can build up. The user sees the brush outline and can Undo/Redo individual strokes in the same history. At most 32 strokes × 512 path points, with a fail-closed 25-million-pixel work budget for both rasterization and application. Source and destination alpha never change.
+
+**Additional fourth capability:** a local, browser-only **linear/radial gradient mask** for tonal/color/effect adjustments. Users can choose left→right, right→left, top→bottom, bottom→top, or center-out radial and set the feather interval (0–100%). The CPU engine blends from the **original source pixels** to the processed pixels by deterministic per-pixel coverage. It affects local light, color, effects and curves/HSL; manual clone strokes remain independent. This is **not** presented as editing or persisting a canonical Core MASK artifact.
+
+### Additional external references checked
+
+- [Photopea — Adjustments & Filters](https://www.photopea.com/learn/adjustments-filters) distinguishes color-only adjustments from neighborhood-dependent filters and explains the non-destructive model of adjustment and smart filters.
+- [Photopea — Basic Tools](https://www.photopea.com/learn/bt-basic) documents the explicit source-point → destination-stroke clone workflow and brush hardness/opacity.
+- [canvas-plus (GitHub)](https://github.com/jhuckaby/canvas-plus) demonstrates tone-curve LUTs and different per-channel curves. Our initial five-point curve deliberately uses **linear interpolation** for easier auditing and deterministic bounded behavior; per-RGB-channel curves are a separate feature.
+- [Photolab (GitHub)](https://github.com/thedhruvhegde/photolab) uses immutable original images, parametric adjustment recipes and a shared transform pipeline for preview/export. BERS maintains its own Core-owned project authority; this PR uses an **in-memory local history only**.
+- [Photopea changes/tutorial repository](https://github.com/uviclibraries/image-editing-photopea/blob/main/changing-colors.md) explains using color-range selection with Hue/Saturation. We expose explicit eight fixed hue bands rather than pretend to use a semantic segmentation mask.
+
+### Correctness and release boundary
+
+\`tests/local-advanced-adjustments.test.mjs\` verifies exact curve stops, isolated color hues, neutral-gray protection, alpha byte preservation, cloned source pixels, opacity, connected brush path, 25-million-pixel execution limit, gradients over original versus processed pixels, and invalid-parameter rejection.
+
+\`tests/local-advanced-editor-wiring.test.mjs\` verifies the actual sliders, working Select/Reset callbacks, a **shared Undo/Redo** for the base and precision settings, normalized user pointer events and exact preview/export calls. The existing R3e Chrome/Postgres acceptance was extended to check a rendered curve change, selective HSL correction, real source-selected clone stamp and downloaded PNG pixels, directional gradient original-to-adjusted pixels, and unchanged Core Project / provider-call counts.
+
+**Not delivered:** Photoshop adjustment layers, PSD, color-managed 16/32-bit ICC, healing/inpainting, persisted revision of an authenticated Core MASK. Avoid making those claims, altering production or bypassing the seven required checks. No screenshots or device-level performance evidence should be claimed until the browser jobs complete on the exact head SHA.
