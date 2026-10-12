@@ -13,6 +13,8 @@ on:
       - 'src/lib/local-editor/localAnnotations.js'
       - 'tests/local-annotations.test.mjs'
       - 'tests/local-annotations-editor-wiring.test.mjs'
+      - 'tests/local-annotation-editing.test.mjs'
+      - 'tests/local-annotation-editing-wiring.test.mjs'
       - 'src/lib/local-editor/localAdjustments.js'
       - 'tests/local-adjustments.test.mjs'
       - 'src/application/selection/contracts.ts'
