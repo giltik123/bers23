@@ -438,6 +438,32 @@ try {
   assert.deepEqual(await readProjectState(projectId), initial, 'local annotations must never mutate canonical Core Project');
   assert.equal(providerCalls, 0, 'annotation drawing must never invoke an AI provider');
 
+  // Solid local privacy cover: unlike blur/pixelation, the FULL-RES PNG must
+  // physically contain opaque [0,0,0,255] inside the user-selected area.
+  // Later colored vector annotations are deliberately drawn below covers.
+  await localLab.getByRole('button', { name: 'Solid cover', exact: true }).click();
+  await localLab.getByRole('button', { name: 'Add centered solid cover' }).click();
+  const redactionProperties = localLab.getByRole('region', { name: 'Selected annotation properties' });
+  assert.equal(await redactionProperties.getByRole('slider', { name: 'Selected annotation opacity' }).count(), 0, 'privacy cover opacity must not be adjustable');
+  await localLab.getByRole('button', { name: 'Rectangle', exact: true }).click();
+  await localLab.getByRole('button', { name: 'Add centered rectangle' }).click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('canvas[data-local-annotation-surface="true"]');
+    const rgba = canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data;
+    return rgba && rgba[0] === 0 && rgba[1] === 0 && rgba[2] === 0 && rgba[3] === 255;
+  }, null, { timeout: 10_000 });
+  const coverDownloadPending = page.waitForEvent('download', { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Download edited PNG' }).click();
+  const coverDownload = await coverDownloadPending;
+  const coveredRgba = await sharp(await fs.readFile(await coverDownload.path())).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual([...coveredRgba.data.subarray((4 * 12 + 6) * 4, (4 * 12 + 6) * 4 + 4)], [0, 0, 0, 255], 'export must overwrite ALL RGB and alpha bytes beneath private-area cover');
+  assert.deepEqual([...coveredRgba.data.subarray(0, 4)], [255, 0, 0, 255], 'pixels outside private-area cover must remain unchanged');
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click(); // later rectangle
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click(); // cover
+  await localLab.getByRole('button', { name: 'Redo', exact: true }).click(); // cover
+  assert.deepEqual(await readProjectState(projectId), initial, 'solid black covers must not alter the original Core Project');
+  assert.equal(providerCalls, 0, 'privacy covers must never call an AI provider');
+
   // Manual color-matched repair samples a clean source and target surroundings,
   // then repairs an isolated dark blemish without any network or AI execution.
   const repairRgba = Buffer.alloc(11 * 7 * 4);
