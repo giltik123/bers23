@@ -2,6 +2,7 @@ import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { Download, ImagePlus, Loader2, RotateCcw, ShieldCheck, Undo2, Redo2 } from 'lucide-react';
 import AdvancedLocalControls from '@/components/editor/local/AdvancedLocalControls';
 import { commitGroupedLocalHistory } from '@/lib/local-editor/localHistory';
+import { readBoundedLocalImageResponse } from '@/lib/local-editor/localImageTransport';
 import LocalAnnotationControls from '@/components/editor/local/LocalAnnotationControls';
 import LocalRecipeControls from '@/components/editor/local/LocalRecipeControls';
 import {
@@ -257,8 +258,8 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
       if (!SUPPORTED_TYPES.has(mime)) throw new Error('Core returned an unsupported image format.');
       if (Number(response.headers.get('content-length') || 0) > MAX_INPUT_BYTES) throw new Error('Core image exceeds 32 MB.');
-      const blob = await response.blob();
-      if (!controller.signal.aborted) await activateLocalImage(new Blob([blob], { type: mime }), projectName || 'project', generation);
+      const blob = await readBoundedLocalImageResponse(response, mime, MAX_INPUT_BYTES);
+      if (!controller.signal.aborted) await activateLocalImage(blob, projectName || 'project', generation);
     } catch (cause) {
       if (!controller.signal.aborted) setError(cause?.message || 'Could not load project photo.');
     } finally {
