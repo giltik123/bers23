@@ -124,3 +124,40 @@ test('luminance histogram counts only visible source pixels', () => {
   assert.equal(hist[0], 1); assert.equal(hist[255], 1);
   assert.equal(hist.reduce((sum, v) => sum + v, 0), 2);
 });
+
+
+test('advanced RGB channel controls are independent, bounded, deterministic and alpha-safe', () => {
+  const source = rgba(80, 90, 100, 120, 10, 30, 50, 0);
+  const red = run(source, 2, 1, { red: 40 });
+  const green = run(source, 2, 1, { green: -20 });
+  const blue = run(source, 2, 1, { blue: 25 });
+  assert.deepEqual([...red.slice(0, 4)], [130, 90, 100, 120]);
+  assert.deepEqual([...green.slice(0, 4)], [80, 65, 100, 120]);
+  assert.deepEqual([...blue.slice(0, 4)], [80, 90, 131, 120]);
+  assert.deepEqual([...source], [80, 90, 100, 120, 10, 30, 50, 0], 'never mutate input');
+  for (const processed of [red, green, blue]) assert.deepEqual([...processed.slice(4)], [...source.slice(4)], 'transparent source bytes must be unchanged');
+  for (const setting of [{ red: 101 }, { green: -101 }, { blue: NaN }, { red: Infinity }]) {
+    assert.throws(() => run(source, 2, 1, setting), /Invalid local adjustment/);
+  }
+});
+
+test('black and white tonal controls adjust different regions with limited spill into opposite end', () => {
+  const source = rgba(30, 30, 30, 255, 128, 128, 128, 255, 225, 225, 225, 255);
+  const shadows = run(source, 3, 1, { blacks: 60 });
+  const lights = run(source, 3, 1, { whites: -60 });
+  assert.ok(shadows[0] > 30 && shadows[0] - 30 > shadows[8] - 225, 'blacks primarily lift dark pixels');
+  assert.ok(lights[8] < 225 && 225 - lights[8] > 30 - lights[0], 'whites primarily lower highlights');
+  assert.equal(shadows[3], 255); assert.equal(lights[11], 255);
+  assert.deepEqual([...run(source, 3, 1, { blacks: 0, whites: 0 })], [...source]);
+});
+
+test('matte and cinematic presets are real channel- and range-bound transformations', () => {
+  const source = rgba(72, 105, 140, 255);
+  for (const id of ['matte', 'cinematic']) {
+    const parameters = presetLocalSettings(id);
+    assert.notDeepEqual([...run(source, 1, 1, parameters)], [...source], id);
+    assert.equal(run(source, 1, 1, parameters)[3], 255, 'preserve alpha');
+  }
+  assert.ok(LOCAL_CONTROLS.some(c => c.key === 'red' && c.category === 'Color'));
+  assert.ok(LOCAL_CONTROLS.some(c => c.key === 'whites' && c.category === 'Light'));
+});
