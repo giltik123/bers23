@@ -184,7 +184,7 @@ try {
     .waitFor({ state: 'visible', timeout: 20_000 });
   // Legacy prompt is an explicit tab now; verify it without assuming it is the default.
   await page.getByRole('button', { name: 'Legacy prompt', exact: true }).click();
-  await page.getByText('Prompt', { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByPlaceholder('e.g. "make the whole image warmer"').waitFor({ state: 'visible', timeout: 10_000 });
   await page.getByRole('button', { name: 'Smart Select' }).waitFor({ state: 'visible', timeout: 10_000 });
 
   const imageEvidence = await loadedImageEvidence(page, 'Project', 12, 8);
