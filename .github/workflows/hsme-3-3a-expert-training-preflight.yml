@@ -1,0 +1,103 @@
+name: HSME-3.3a expert training preflight freeze
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdapterMoeExperimentPlanV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertPackSetV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertTrainingPreflightV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertTrainingPreflightV1.test.mjs'
+      - '.github/workflows/hsme-3-3a-expert-training-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  training-preflight:
+    name: exact expert training spec no-execution preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run expert training-preflight regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-3-3a
+          npx esbuild server/core/training/HsmeAdapterMoeExpertTrainingPreflightV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-3-3a/training-preflight.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-3-3a/training-preflight.test.mjs
+
+      - name: Prove exact frozen plan and reviewed spec origins
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertTrainingPreflightV1.ts
+          grep -F 'hsmeAdapterMoeExperimentPlanV1Digest(' "$SRC"
+          grep -F 'verifyExperimentPlan(plan,experimentPlanSha256)' "$SRC"
+          grep -F 'hsmeAdapterMoeExpertTrainingSpecV1Digest(' "$SRC"
+          grep -F 'verifyTrainingSpec(spec,trainingSpecSha256)' "$SRC"
+          grep -F 'ADAPTER_MOE_EXPERT_TRAINING_PLAN_ORIGIN_UNVERIFIED' "$SRC"
+          grep -F 'ADAPTER_MOE_EXPERT_TRAINING_SPEC_ORIGIN_UNVERIFIED' "$SRC"
+
+      - name: Prove sealed-input no-command preflight law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertTrainingPreflightV1.ts
+          grep -F "'SEALED_INPUTS_ONLY'" "$SRC"
+          grep -F "'READ_ONLY_CONTENT_ADDRESSED_SEALED_INPUTS'" "$SRC"
+          grep -F 'maxTrainingExamples' "$SRC"
+          grep -F 'maxGpuSeconds' "$SRC"
+          grep -F 'maxTrainingCostMicrousd' "$SRC"
+          grep -F 'maxStagedArtifactBytes' "$SRC"
+          grep -F 'maxTrainableParameters' "$SRC"
+          grep -F 'ADAPTER_MOE_EXPERT_TRAINING_ARTIFACT_BYTES_ESCALATION' "$SRC"
+          ! grep -nE 'providerId|accountId|billingAuthorizationRef|argv:|command:|outputPath:|backend:' "$SRC"
+
+      - name: Prove no execution or promotion authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertTrainingPreflightV1.ts
+          grep -F 'ADAPTER_MOE_EXPERT_TRAINING_PREFLIGHT_READY_NOT_EXECUTED' "$SRC"
+          grep -F 'trainingExecutionAllowed:false' "$SRC"
+          grep -F 'workspaceMaterializationAllowed:false' "$SRC"
+          grep -F 'prototypeAssemblyAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|rename\(|copyFile|unlink\(|rm\(|mkdir\(|createWriteStream|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Prove binding budget and unknown-field regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeAdapterMoeExpertTrainingPreflightV1.test.mjs
+          grep -F 'non-frozen experiment plan remains BLOCKED' "$TEST"
+          grep -F 'plan and training-spec trusted origins are both mandatory' "$TEST"
+          grep -F 'training spec cannot rebind the frozen plan or dense baseline' "$TEST"
+          grep -F 'specialist family must come from the frozen topology roster' "$TEST"
+          grep -F 'staged artifact byte ceiling cannot exceed the frozen HSME-3.1 budget' "$TEST"
+          grep -F 'unknown adapter kind resource underflow and authority widening fail exact schema' "$TEST"
+          grep -F 'unknown command or path fields are rejected' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD

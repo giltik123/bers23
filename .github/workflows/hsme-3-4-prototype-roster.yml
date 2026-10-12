@@ -1,0 +1,98 @@
+name: HSME-3.4 immutable Adapter-MoE prototype roster
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdapterMoeExperimentPlanV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertPackSetV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertRealRunEvidenceV1.ts'
+      - 'server/core/training/HsmeAdapterMoePrototypeRosterV1.ts'
+      - 'server/core/training/HsmeAdapterMoePrototypeRosterV1.test.mjs'
+      - '.github/workflows/hsme-3-4-prototype-roster.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prototype-roster:
+    name: immutable real-evidence Adapter-MoE prototype roster
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run prototype-roster regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-3-4
+          npx esbuild server/core/training/HsmeAdapterMoePrototypeRosterV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-3-4/prototype-roster.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-3-4/prototype-roster.test.mjs
+
+      - name: Prove exact plan pack-set and real-evidence origins
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoePrototypeRosterV1.ts
+          grep -F 'hsmeAdapterMoeExperimentPlanV1Digest(' "$SRC"
+          grep -F 'verifyExperimentPlan(plan,experimentPlanSha256)' "$SRC"
+          grep -F 'hsmeAdapterMoeExpertPackSetV1Digest(' "$SRC"
+          grep -F 'verifyExpertPackSet(packSet,expertPackSetSha256)' "$SRC"
+          grep -F 'hsmeAdapterMoeExpertRealRunEvidenceV1Digest(' "$SRC"
+          grep -F 'verifyRealExpertEvidence(evidence,evidenceSha256)' "$SRC"
+
+      - name: Prove fair Top-1 Top-2 assembly and explicit router bytes
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoePrototypeRosterV1.ts
+          grep -F "'SHARED_TOP1_ADAPTER'" "$SRC"
+          grep -F "'SHARED_TOP2_ADAPTER'" "$SRC"
+          grep -F 'attestation.maxActiveExperts!==requiredTopK' "$SRC"
+          grep -F 'JSON.stringify(expertIds)!==JSON.stringify(attestation.expertIds)' "$SRC"
+          grep -F 'routerBytes:attestation.routerBytes' "$SRC"
+          grep -F 'totalExpertArtifactBytes:packSet.totalExpertArtifactBytes' "$SRC"
+          grep -F 'packageBytes' "$SRC"
+          grep -F 'deterministicReplayRequired:true' "$SRC"
+
+      - name: Prove no inference or promotion authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoePrototypeRosterV1.ts
+          grep -F 'ADAPTER_MOE_PROTOTYPE_ROSTER_READY_NOT_EXECUTED' "$SRC"
+          grep -F 'inferenceExecutionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|rename\(|copyFile|unlink\(|rm\(|mkdir\(|createWriteStream|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Prove real coverage and routing drift regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeAdapterMoePrototypeRosterV1.test.mjs
+          grep -F 'every pack-set expert requires exact real protected evidence' "$TEST"
+          grep -F 'mandatory Top-1 and Top-2 variants cannot be omitted or duplicated' "$TEST"
+          grep -F 'router Top-K must match the frozen prototype variant' "$TEST"
+          grep -F 'Top-1 and Top-2 must use the exact same canonical expert set' "$TEST"
+          grep -F 'assembly attestation origin and digest are mandatory' "$TEST"
+          grep -F 'pack-set cannot be rebound to another plan or dense baseline' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
