@@ -34,8 +34,8 @@ export function clampInspectorPan(pan, zoom) {
   // At 2x the maximum center translation is 50% of the viewport in either axis.
   const maximum = (zoom - 1) * 50;
   return Object.freeze({
-    x: Math.max(-maximum, Math.min(maximum, pan.x)),
-    y: Math.max(-maximum, Math.min(maximum, pan.y)),
+    x: Math.max(-maximum, Math.min(maximum, pan.x)) || 0,
+    y: Math.max(-maximum, Math.min(maximum, pan.y)) || 0,
   });
 }
 
