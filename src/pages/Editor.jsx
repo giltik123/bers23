@@ -21,6 +21,7 @@ import { SUPER_RESOLUTION_PRODUCTION_AVAILABLE } from '@/platform/creative/super
 import GenerationProgress from '@/components/editor/GenerationProgress';
 import ResultCompare from '@/components/editor/ResultCompare';
 const RecipePanel = lazy(() => import('@/components/editor/recipes/RecipePanel'));
+const LocalAdjustmentsPanel = lazy(() => import('@/components/editor/local/LocalAdjustmentsPanel'));
 const AgentPanel = lazy(() => import('@/components/editor/agent/AgentPanel'));
 import useBoundedAgentEditor from '@/components/editor/agent/useBoundedAgentEditor';
 import { recipeEngine } from '@/lib/recipes/recipeEngine';
@@ -70,6 +71,7 @@ import { finalizeAcceptedResult } from '@/application/editor/finalizeAcceptedRes
 import { isFinalSourceConflict, recoverFinalSourceConflict } from '@/application/editor/recoverFinalSourceConflict';
 
 const EDITOR_TABS = [
+  { id: 'local', label: 'Local tools', description: 'No AI, no credits: tune light, color and detail in your browser, compare before/after and download a PNG.' },
   { id: 'prompt', label: 'Prompt', description: 'Describe what you want to change, preview the result, then decide whether to save it.' },
   { id: 'creative', label: 'Creative Studio', description: 'Explore visual ideas and mood boards. This section plans ideas; it does not edit your photo.' },
   { id: 'recipes', label: 'Recipes', description: 'Choose a ready-made editing recipe and adapt it to your image.' },
@@ -1190,7 +1192,9 @@ export default function Editor() {
           )}
           <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={(next) => { if (!tryOnActive && !agentActive) setEditTab(next); }} />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">Loading panel…</div>}>
-          {editTab === 'creative' ? (
+          {editTab === 'local' ? (
+            <LocalAdjustmentsPanel key={project.current_image_artifact_id || project.id} imageUrl={project.current_image_url} projectName={project.name} />
+          ) : editTab === 'creative' ? (
             <CreativeStudioPanel project={project} objects={objects} disabled={editorBusy} />
           ) : editTab === 'outfits' ? (
             <div className="space-y-3">
