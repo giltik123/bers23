@@ -9,7 +9,7 @@
  * without browser APIs. Cross-device transfer uses the portable JSON recipe.
  */
 import {
-  createLocalRecipe, parseLocalRecipe, MAX_LOCAL_RECIPE_BYTES,
+  parseLocalRecipe, MAX_LOCAL_RECIPE_BYTES,
 } from './localRecipe.js';
 
 export const LOCAL_DEVICE_DRAFT_KEY = 'bers.local-photo-edit.explicit-draft.v1';
@@ -30,8 +30,9 @@ export function hasLocalDeviceDraft(storage) {
 export function saveLocalDeviceDraft(storage, recipe) {
   checkStorage(storage);
   if (!recipe || typeof recipe !== 'object') throw new Error('Invalid local edit recipe');
-  const normalized = createLocalRecipe(recipe.source, recipe.edits?.settings,
-    recipe.edits?.advanced, recipe.edits?.annotations);
+  // Round-trip through the full versioned parser: a forged format, an
+  // unexpected key, or a partial recipe must fail before any storage write.
+  const normalized = parseLocalRecipe(JSON.stringify(recipe), recipe.source);
   const json = JSON.stringify(normalized);
   if (new TextEncoder().encode(json).byteLength > MAX_LOCAL_RECIPE_BYTES) {
     throw new Error('Local editing recipe is too large to save on this device');
