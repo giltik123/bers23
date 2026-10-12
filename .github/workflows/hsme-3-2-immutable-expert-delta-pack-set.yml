@@ -1,0 +1,103 @@
+name: HSME-3.2 immutable compact expert-delta pack set
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdapterMoeExperimentPlanV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertPackSetV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertPackSetV1.test.mjs'
+      - '.github/workflows/hsme-3-2-immutable-expert-delta-pack-set.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  expert-pack-set:
+    name: immutable compact expert-delta pack-set contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run immutable expert-pack regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-3-2
+          npx esbuild server/core/training/HsmeAdapterMoeExpertPackSetV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-3-2/expert-pack-set.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-3-2/expert-pack-set.test.mjs
+
+      - name: Prove exact plan and expert origin gates
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertPackSetV1.ts
+          grep -F 'hsmeAdapterMoeExperimentPlanV1Digest(' "$SRC"
+          grep -F 'verifyExperimentPlan(plan,experimentPlanSha256)' "$SRC"
+          grep -F 'hsmeAdapterMoeExpertDeltaManifestV1Digest(' "$SRC"
+          grep -F 'verifyExpertManifest(manifest,manifestSha256)' "$SRC"
+          grep -F 'ADAPTER_MOE_EXPERT_PACK_SET_PLAN_ORIGIN_UNVERIFIED' "$SRC"
+          grep -F 'ADAPTER_MOE_EXPERT_PACK_SET_MANIFEST_ORIGIN_UNVERIFIED' "$SRC"
+
+      - name: Prove compact shared-core delta law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertPackSetV1.ts
+          grep -F "'LORA_LOW_RANK'" "$SRC"
+          grep -F "'DECOMPOSED_FFN_DELTA'" "$SRC"
+          grep -F "'RESIDUAL_ADAPTER'" "$SRC"
+          grep -F "'ATTENTION_DELTA'" "$SRC"
+          grep -F "'EMBEDDING_NORM_DELTA'" "$SRC"
+          grep -F 'requiresSharedBaseline must be true' "$SRC"
+          grep -F 'containsFullBackboneWeights must be false' "$SRC"
+          grep -F 'standaloneExecutionAllowed must be false' "$SRC"
+          grep -F 'ADAPTER_MOE_EXPERT_PACK_SET_EXPERT_BYTES_EXCEEDED' "$SRC"
+          grep -F 'ADAPTER_MOE_EXPERT_PACK_SET_TOTAL_BYTES_EXCEEDED' "$SRC"
+          grep -F 'ADAPTER_MOE_EXPERT_PACK_SET_EXPERT_COUNT_EXCEEDED' "$SRC"
+
+      - name: Prove deterministic no-assembly authority boundary
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertPackSetV1.ts
+          grep -F 'ADAPTER_MOE_EXPERT_PACK_SET_READY_NOT_ASSEMBLED' "$SRC"
+          grep -F 'entries.sort(' "$SRC"
+          grep -F 'trainingExecutionAllowed:false' "$SRC"
+          grep -F 'prototypeAssemblyAllowed:false' "$SRC"
+          grep -F 'standaloneExecutionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|rename\(|copyFile|unlink\(|rm\(|mkdir\(|createWriteStream|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Prove budget duplicate and drift regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeAdapterMoeExpertPackSetV1.test.mjs
+          grep -F 'independent of caller order' "$TEST"
+          grep -F 'per-expert and total byte ceilings come only from the frozen plan' "$TEST"
+          grep -F 'expert count ceiling is enforced before set acceptance' "$TEST"
+          grep -F 'full-backbone or standalone expert claims are invalid manifests' "$TEST"
+          grep -F 'plan baseline rebinding and expert family drift fail closed' "$TEST"
+          grep -F 'duplicate expert id or content identity cannot inflate the set' "$TEST"
+          grep -F 'unknown adapter kind is rejected by the exact manifest schema' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
