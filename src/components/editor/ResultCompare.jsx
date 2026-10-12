@@ -20,6 +20,8 @@ export default function ResultCompare({ beforeUrl, result, onAccept, onDiscard, 
   const [afterSize, setAfterSize] = useState(null);
   const [imageErrors, setImageErrors] = useState({ before: false, after: false });
   const pointer = useRef(null);
+  const beforeImageRef = useRef(null);
+  const afterImageRef = useRef(null);
   const sameGeometry = isComparableGeometry(beforeSize, afterSize);
 
   useEffect(() => {
@@ -31,6 +33,16 @@ export default function ResultCompare({ beforeUrl, result, onAccept, onDiscard, 
     setAfterSize(null);
     setImageErrors({ before: false, after: false });
     pointer.current = null;
+    // Data URLs and cached images may finish before the effect resets sizes.
+    // Re-read intrinsic dimensions so Split does not remain disabled after load.
+    const before = beforeImageRef.current;
+    const after = afterImageRef.current;
+    if (before?.complete && before.naturalWidth > 0) {
+      setBeforeSize({ width: before.naturalWidth, height: before.naturalHeight });
+    }
+    if (after?.complete && after.naturalWidth > 0) {
+      setAfterSize({ width: after.naturalWidth, height: after.naturalHeight });
+    }
   }, [beforeUrl, afterUrl]);
 
   useEffect(() => {
@@ -138,13 +150,13 @@ export default function ResultCompare({ beforeUrl, result, onAccept, onDiscard, 
         onPointerUp={pointerUp} onPointerCancel={pointerCancel}
         onKeyDown={handleKeys}
       >
-        {beforeUrl && <img src={beforeUrl} alt="before" draggable={false}
+        {beforeUrl && <img ref={beforeImageRef} src={beforeUrl} alt="before" draggable={false}
           onLoad={(event) => setBeforeSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
           onError={() => { setBeforeSize(null); setImageErrors((s) => ({ ...s, before: true })); }}
           className="absolute inset-0 w-full h-full object-contain pointer-events-none"
           style={transform} />}
         {afterUrl && <div className="absolute inset-0 pointer-events-none" style={{ clipPath: `inset(0 0 0 ${afterClipLeft}%)` }}>
-          <img src={afterUrl} alt="after" draggable={false}
+          <img ref={afterImageRef} src={afterUrl} alt="after" draggable={false}
             onLoad={(event) => setAfterSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
             onError={() => { setAfterSize(null); setImageErrors((s) => ({ ...s, after: true })); }}
             className="absolute inset-0 w-full h-full object-contain" style={transform} />
