@@ -229,7 +229,19 @@ try {
   }, { timeout: 20_000 });
   await rotate.click();
 
-  const resultResponse = await resultResponsePromise;
+  const resultResponse = await resultResponsePromise.catch(async (error) => {
+    // Preserve the fail-closed Core result gate; attach browser diagnostics to
+    // distinguish missing local execution from a changed endpoint or UI error.
+    const alerts = await page.locator('[role="alert"]').allTextContents().catch(() => []);
+    throw new Error('R3b Core-verified rotate result never arrived: ' + JSON.stringify({
+      alerts,
+      localExecutionRequests: diagnostics.localExecutionRequests.slice(-12),
+      requestFailures: diagnostics.requestFailures.slice(-8),
+      unexpectedResponses: diagnostics.unexpectedResponses.slice(-8),
+      consoleErrors: diagnostics.consoleErrors.slice(-8),
+      pageErrors: diagnostics.pageErrors.slice(-8),
+    }), { cause: error });
+  });
   assert.equal(resultResponse.status(), 200, 'Core must accept and verify the deterministic orthogonal-transform result');
   const coreResult = await resultResponse.json();
   assert.equal(coreResult.status, 'SUCCESS', 'Core result must be terminal SUCCESS before Preview is admitted');
