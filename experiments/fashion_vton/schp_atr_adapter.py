@@ -46,7 +46,10 @@ def _rgb(image: Image.Image) -> Image.Image:
 def _verified_model(path: str | Path, expected_sha256: str) -> Path:
     if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
         raise ValueError("A lowercase, pinned model SHA-256 is required")
-    model_path = Path(path).resolve(strict=True)
+    candidate = Path(path)
+    if candidate.is_symlink():
+        raise ValueError("ONNX checkpoint must not be a symlink")
+    model_path = candidate.resolve(strict=True)
     if not model_path.is_file():
         raise ValueError("ONNX checkpoint must be a regular local file")
     sha = hashlib.sha256()
