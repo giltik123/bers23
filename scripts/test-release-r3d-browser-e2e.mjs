@@ -144,7 +144,7 @@ try {
   const cropDiscardBefore = await readProjectState(projectId);
   const cropDiscardRequests = diagnostics.localExecutionRequests.length;
   await runCrop(page, { x: 2, y: 1, width: 8, height: 6 });
-  await waitImage(page, 'after', 8, 6);
+  await waitImage(page, 'Unaccepted edited image', 8, 6);
   assert.equal(diagnostics.localExecutionRequests.length, cropDiscardRequests + 4, 'Crop must use exactly prepare/input/upload/result local-execution requests');
   assert.deepEqual(await readProjectState(projectId), cropDiscardBefore, 'Crop Preview must not mutate Project before explicit Accept');
   await page.getByRole('button', { name: 'Discard', exact: true }).click();
@@ -156,7 +156,7 @@ try {
   const cropSourceStorageId = cropDiscardBefore.project.current_image_storage_id;
   const cropAcceptRequests = diagnostics.localExecutionRequests.length;
   await runCrop(page, { x: 2, y: 1, width: 8, height: 6 });
-  await waitImage(page, 'after', 8, 6);
+  await waitImage(page, 'Unaccepted edited image', 8, 6);
   assert.equal(diagnostics.localExecutionRequests.length, cropAcceptRequests + 4);
   await page.getByRole('button', { name: 'Accept', exact: true }).click();
   await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
@@ -191,7 +191,7 @@ try {
   const resizeDiscardBefore = await readProjectState(projectId);
   const resizeDiscardRequests = diagnostics.localExecutionRequests.length;
   await runResize(page, { width: 4, height: 3 });
-  await waitImage(page, 'after', 4, 3);
+  await waitImage(page, 'Unaccepted edited image', 4, 3);
   assert.equal(diagnostics.localExecutionRequests.length, resizeDiscardRequests + 4, 'Resize must use exactly prepare/input/upload/result local-execution requests');
   assert.deepEqual(await readProjectState(projectId), resizeDiscardBefore, 'Resize Preview must not mutate Project before explicit Accept');
   await page.getByRole('button', { name: 'Discard', exact: true }).click();
@@ -203,7 +203,7 @@ try {
   const resizeSourceStorageId = resizeDiscardBefore.project.current_image_storage_id;
   const resizeAcceptRequests = diagnostics.localExecutionRequests.length;
   await runResize(page, { width: 4, height: 3 });
-  await waitImage(page, 'after', 4, 3);
+  await waitImage(page, 'Unaccepted edited image', 4, 3);
   assert.equal(diagnostics.localExecutionRequests.length, resizeAcceptRequests + 4);
   await page.getByRole('button', { name: 'Accept', exact: true }).click();
   await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
