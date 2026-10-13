@@ -538,8 +538,8 @@ try {
     assert.equal(object.metadata?.maskState, 'CORE_PERSISTED_UNREVIEWED');
     assert.ok(['BACKGROUND','OTHER_OBJECT'].includes(object.group));
     assert.equal(object.category, object.group);
-    assert.match(object.mask_artifact_id, /^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/);
-    assert.match(object.metadata.sourceArtifactId, /^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/);
+    assert.match(object.mask_artifact_id, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    assert.match(object.metadata.sourceArtifactId, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
     const sourceToken = JSON.parse(Buffer.from(object.metadata.sourceArtifactId.split('.')[0], 'base64url').toString('utf8'));
     assert.equal(sourceToken.storageId, cFinal.storage_id, 'automatic MASK must reference precisely the accepted FINAL source');
   }
