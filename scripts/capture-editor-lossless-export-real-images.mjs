@@ -33,7 +33,8 @@ async function download(urlString) {
       // Honor any manageable Retry-After. Longer backoffs remain fail-closed
       // instead of silently exhausting the quality workflow timeout.
       if(Number.isFinite(seconds)&&seconds>60)throw new Error(`Real-photo source rate-limited for ${seconds}s; retry later`);
-      const delayMs=Number.isFinite(seconds)&&seconds>=0?seconds*1000:backoffMs[attempt];
+      // Treat Retry-After as a minimum, not permission to hammer the source every second.
+      const delayMs=Math.max(backoffMs[attempt],Number.isFinite(seconds)&&seconds>=0?seconds*1000:0);
       console.warn(`Real-photo source HTTP ${response.status}; attempt ${attempt+1}/${maxAttempts}; retry in ${delayMs}ms`);
       await new Promise(resolve=>setTimeout(resolve,delayMs));
       continue;

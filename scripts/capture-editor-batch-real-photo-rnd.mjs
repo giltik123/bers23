@@ -47,7 +47,8 @@ async function fetchFixtureImage(sourceUrl) {
       await response.body?.cancel();
       if (Number.isFinite(seconds) && seconds > 60)
         throw new Error('Batch real-photo source retry-after exceeds 60 seconds');
-      const delay = Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : backoffMs[attempt];
+      // Treat Retry-After as a minimum, not permission to hammer the source every second.
+      const delay = Math.max(backoffMs[attempt], Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : 0);
       console.warn(`Batch real-photo source HTTP ${response.status}; bounded retry ${attempt + 1}/5 in ${delay}ms`);
       await new Promise(resolve => setTimeout(resolve, delay));
       continue;
