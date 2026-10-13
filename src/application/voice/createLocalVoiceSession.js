@@ -128,7 +128,10 @@ export async function createLocalVoiceSession({
     recognizer.start();
     timeoutId=schedule(()=>{
       if(!active)return;
-      recognizer.stop();
+      // stop() may wait indefinitely for a final browser result / onend.
+      // A hard privacy deadline must abort the microphone even if OS ASR stalls.
+      abort();
+      onError('LOCAL_ASR_TIMEOUT');
     },maxDurationMs);
   }catch{
     abort();

@@ -119,6 +119,48 @@ test('abort immediately disables transcript callbacks, cancels mic and clears ma
   scheduled();
   assert.deepEqual(f.activity,['start','abort']);
 });
+test('hard local voice deadline aborts a stalled browser recognizer and drops late transcripts',async()=>{
+  const f=fakeRecognizer();
+  let deadline,cleared=0,finalCount=0,endCount=0;
+  const failures=[];
+  const session=await createLocalVoiceSession({
+    SpeechRecognitionCtor:f.Recognizer,
+    onFinal:()=>finalCount++,onEnd:()=>endCount++,onError:code=>failures.push(code),
+    schedule:fn=>{deadline=fn;return 91;},
+    unschedule:()=>cleared++,
+    maxDurationMs:1000,
+  });
+  assert.deepEqual(f.activity,['start']);
+  deadline();
+  assert.deepEqual(f.activity,['start','abort']);
+  assert.deepEqual(failures,['LOCAL_ASR_TIMEOUT']);
+  assert.equal(cleared,1);
+  assert.equal(f.instance().onresult,null);
+  assert.equal(endCount,0);
+  session.stop();
+  deadline();
+  assert.deepEqual(f.activity,['start','abort']);
+  assert.equal(finalCount,0);
+  assert.deepEqual(failures,['LOCAL_ASR_TIMEOUT']);
+});
+
+test('user stop still has a hard abort fallback when browser onend never fires',async()=>{
+  const f=fakeRecognizer();
+  // Simulate an ASR vendor that never dispatches onend after stop().
+  f.Recognizer.prototype.stop=function(){f.activity.push('stop');};
+  let deadline;
+  const failures=[];
+  const session=await createLocalVoiceSession({
+    SpeechRecognitionCtor:f.Recognizer,onError:code=>failures.push(code),
+    schedule:fn=>{deadline=fn;return 92;},unschedule:()=>{},
+  });
+  session.stop();
+  assert.deepEqual(f.activity,['start','stop']);
+  deadline();
+  assert.deepEqual(f.activity,['start','stop','abort']);
+  assert.deepEqual(failures,['LOCAL_ASR_TIMEOUT']);
+});
+
 test('voice UI is Editor-wide with typed callback; confirmation never triggers generation',async()=>{
   const [bar,ui,editor]=await Promise.all([
     readFile('src/components/editor/InstructionBar.jsx','utf8'),
