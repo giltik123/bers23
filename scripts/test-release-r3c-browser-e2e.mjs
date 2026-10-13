@@ -186,7 +186,7 @@ try {
   await discard.click();
   await page.getByRole('button', { name: 'Принять в историю', exact: true }).waitFor({ state: 'detached', timeout: 10_000 });
   await page.getByRole('button', { name: 'Отклонить', exact: true }).waitFor({ state: 'detached', timeout: 10_000 });
-  assert.equal(await page.getByRole('img', { name: 'after', exact: true }).count(), 0, 'Discard must remove the pending preview from the Editor');
+  assert.equal(await page.getByRole('img', { name: 'Результат обработки до принятия', exact: true }).count(), 0, 'Discard must remove the pending preview from the Editor');
   const discardImage = await loadedImageEvidence(page, 'Project', 8, 12, 20_000);
   assertSignedCoreImage(discardImage, [8, 12], 'Project image after Discard');
   const discardAfter = await readProjectState(projectId);
@@ -334,7 +334,7 @@ try {
   await page.getByRole('button', { name: 'Принять в историю', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
   assert.equal(await page.getByRole('button', { name: 'Изменить / повторить', exact: true }).count(), 0, 'stale recovery must disarm Retry');
   assert.equal(await page.getByRole('button', { name: 'Отклонить', exact: true }).count(), 0, 'stale recovery must clear the pending result');
-  assert.equal(await page.getByRole('img', { name: 'after', exact: true }).count(), 0, 'stale preview must be removed after conflict recovery');
+  assert.equal(await page.getByRole('img', { name: 'Результат обработки до принятия', exact: true }).count(), 0, 'stale preview must be removed after conflict recovery');
   const recoveredImage = await loadedImageEvidence(page, 'Project', 12, 8, 20_000);
   assertSignedCoreImage(recoveredImage, [12, 8], 'tab A canonical Project after stale FINAL recovery');
   const recoveredState = await readProjectState(projectId);
