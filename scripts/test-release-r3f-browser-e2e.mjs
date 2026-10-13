@@ -180,7 +180,8 @@ try {
   assert.equal(inputResponse.ok(), true, 'canonical Crop input delivery must succeed before the browser-local capability failure');
 
   await page.getByText(localCapabilityError, { exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
-  await page.getByRole('button', { name: 'Изменить / повторить', exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+  assert.equal(await page.getByRole('button', { name: 'Изменить / повторить', exact: true }).count(), 0,
+    'LOCAL_ONLY Crop failure cannot offer candidate Retry without a produced preview');
   await waitForEnabled(apply, 'Apply crop after local failure');
 
   assert.equal(await page.getByRole('button', { name: 'Принять в историю', exact: true }).count(), 0, 'local failure must not manufacture an Acceptable Preview');
