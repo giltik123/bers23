@@ -37,6 +37,118 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def onnx_structure_fingerprint(path: Path) -> dict[str, Any]:
+    """Fingerprint graph/tensors without persisting weights or rewriting the ONNX."""
+    import onnx
+
+    model = onnx.load_model(str(path), load_external_data=False)
+    graph = model.graph
+
+    def digest_messages(messages: Any) -> str:
+        digest = hashlib.sha256()
+        for message in messages:
+            payload = message.SerializeToString(deterministic=True)
+            digest.update(len(payload).to_bytes(8, "big"))
+            digest.update(payload)
+        return digest.hexdigest()
+
+    tensor_hashes: dict[str, str] = {}
+    for tensor in graph.initializer:
+        if tensor.name in tensor_hashes:
+            raise RuntimeError("LaMa ONNX has duplicate initializer names")
+        if tensor.data_location == onnx.TensorProto.EXTERNAL:
+            raise RuntimeError("LaMa release ONNX must not reference external tensor files")
+        tensor_hashes[tensor.name] = hashlib.sha256(
+            tensor.SerializeToString(deterministic=True)
+        ).hexdigest()
+    tensor_summary = json.dumps(tensor_hashes, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    header = {
+        "irVersion": model.ir_version,
+        "producerName": model.producer_name,
+        "producerVersion": model.producer_version,
+        "domain": model.domain,
+        "modelVersion": model.model_version,
+        "opsets": [(item.domain, item.version) for item in model.opset_import],
+        "graphName": graph.name,
+        "metadata": [(item.key, item.value) for item in model.metadata_props],
+    }
+    op_counts: dict[str, int] = {}
+    for node in graph.node:
+        operation = f"{node.domain}::{node.op_type}"
+        op_counts[operation] = op_counts.get(operation, 0) + 1
+    return {
+        "header": header,
+        "nodeCount": len(graph.node),
+        "nodeSerializedSha256": digest_messages(graph.node),
+        "opCounts": dict(sorted(op_counts.items())),
+        "initializerCount": len(graph.initializer),
+        "initializerManifestSha256": hashlib.sha256(tensor_summary).hexdigest(),
+        "initializersByName": tensor_hashes,
+        "ioAndValueInfoSha256": digest_messages(
+            list(graph.input) + list(graph.output) + list(graph.value_info)
+        ),
+        "sparseInitializerSha256": digest_messages(graph.sparse_initializer),
+        "functionSha256": digest_messages(model.functions),
+    }
+
+
+def write_blocked_diagnostics(
+    *, first: dict[str, Any], second: dict[str, Any],
+    report: Path, reason: str,
+) -> None:
+    """Leave an auditable, non-authoritative failure report before exit != 0."""
+    one = onnx_structure_fingerprint(first["model"])
+    two = onnx_structure_fingerprint(second["model"])
+    first_tensors = one.pop("initializersByName")
+    second_tensors = two.pop("initializersByName")
+    different_tensors = [
+        name for name in sorted(set(first_tensors) | set(second_tensors))
+        if first_tensors.get(name) != second_tensors.get(name)
+    ]
+    evidence = {
+        "schemaVersion": 1,
+        "status": "BLOCKED",
+        "reason": reason,
+        "runtimeAuthorityGranted": False,
+        "productionDeviceApproval": False,
+        "productionPromotionAllowed": False,
+        "releasePublicationAllowed": False,
+        "pinned": {"size": EXPECTED_RELEASE_SIZE, "sha256": EXPECTED_RELEASE_SHA256},
+        "independentPythonProcesses": 2,
+        "pythonHashSeed": EXPORT_PYTHON_HASH_SEED,
+        "first": {"size": first["size"], "sha256": first["sha256"], "structure": one},
+        "second": {"size": second["size"], "sha256": second["sha256"], "structure": two},
+        "crossProcessModelBytesEqual": (
+            first["size"] == second["size"] and first["sha256"] == second["sha256"]
+        ),
+        "crossProcessStructureEqual": one == two,
+        "differentInitializerCount": len(different_tensors),
+        "differentInitializerNamesFirst32": different_tensors[:32],
+        "historicalPinnedOnnxBytesAvailableForStructuralComparison": False,
+        "note": (
+            "The two current exports can be compared structurally. The historical "
+            "pinned artifact bytes were not supplied; no claim about historical "
+            "graph or initializer parity is made."
+        ),
+    }
+    report.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(
+        "LAMA C8 BLOCKED FORENSICS: "
+        + json.dumps({
+            "reason": reason,
+            "crossProcessModelBytesEqual": evidence["crossProcessModelBytesEqual"],
+            "crossProcessStructureEqual": evidence["crossProcessStructureEqual"],
+            "differentInitializerCount": evidence["differentInitializerCount"],
+            "firstHeader": one["header"],
+            "firstNodeCount": one["nodeCount"],
+            "firstNodeSha256": one["nodeSerializedSha256"],
+            "firstInitializerCount": one["initializerCount"],
+            "firstInitializerManifestSha256": one["initializerManifestSha256"],
+        }, sort_keys=True),
+        flush=True,
+    )
+
+
 def run_child(
     *,
     script: Path,
@@ -142,11 +254,19 @@ def main() -> None:
             label="second",
         )
         if first["size"] != second["size"] or first["sha256"] != second["sha256"]:
+            write_blocked_diagnostics(
+                first=first, second=second, report=args.report,
+                reason="CROSS_PROCESS_BYTES_MISMATCH",
+            )
             raise RuntimeError(
                 "LaMa ONNX is not byte-reproducible across independent fixed-hash-seed processes: "
                 f"first={first['size']}/{first['sha256']} second={second['size']}/{second['sha256']}"
             )
         if first["size"] != EXPECTED_RELEASE_SIZE or first["sha256"] != EXPECTED_RELEASE_SHA256:
+            write_blocked_diagnostics(
+                first=first, second=second, report=args.report,
+                reason="PINNED_IDENTITY_MISMATCH",
+            )
             raise RuntimeError(
                 "LaMa reproducible bytes differ from pinned C8 release identity; a new model version is required: "
                 f"actual={first['size']}/{first['sha256']} expected={EXPECTED_RELEASE_SIZE}/{EXPECTED_RELEASE_SHA256}"
