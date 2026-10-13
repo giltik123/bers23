@@ -11,6 +11,9 @@ on:
       - 'tests/test_fashion_vton_parser_policy.py'
       - 'tests/test_fashion_vton_weight_preflight.py'
       - 'tests/test_fashion_vton_gpu_smoke.py'
+      - 'experiments/fashion_vton/schp_atr_adapter.py'
+      - 'experiments/fashion_vton/test_schp_atr_adapter.py'
+      - 'docs/fashion-f5-schp-parser-replacement-spike.md'
       - 'docs/fashion-vton-v15-parserless-research-decision.md'
       - '.github/workflows/fashion-vton-parserless-research.yml'
   workflow_dispatch:
@@ -25,6 +28,11 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Prove exact source SHA for PR research
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -34,6 +42,10 @@ jobs:
           python -m unittest discover -s tests -p 'test_fashion_vton_parser_policy.py' -v
           python -m unittest discover -s tests -p 'test_fashion_vton_weight_preflight.py' -v
           python -m unittest discover -s tests -p 'test_fashion_vton_gpu_smoke.py' -v
+      - name: Install pinned stub-test image dependencies (no ONNX weights)
+        run: python -m pip install --only-binary=:all: 'numpy==1.26.4' 'Pillow==10.4.0'
+      - name: Test offline SCHP-ATR alternative without model downloads
+        run: python -m unittest discover -s experiments/fashion_vton -p 'test_schp_atr_adapter.py' -v
       - name: Fetch exact FASHN research upstream (build time only)
         shell: bash
         run: |
