@@ -147,7 +147,7 @@ try {
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/', { timeout: 15_000 });
   authenticated = true;
-  await page.getByRole('heading', { name: 'Projects' }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
 
   // Browser UX acceptance: every top-level destination is named, and mobile navigation is discoverable.
   const desktopNavigation = page.getByRole('navigation', { name: 'Main navigation' });
