@@ -173,7 +173,8 @@
       "torchVersion": "2.13.0+cpu",
       "onnxVersion": "1.22.0",
       "onnxScriptVersion": "0.7.1",
-      "onnxRuntimeVersion": "1.27.0"
+      "onnxRuntimeVersion": "1.27.0",
+      "protobufVersion": "7.36.0"
     }
   },
   "artifactState": "EXPORT_PINNED_RELEASE_REQUIRED",

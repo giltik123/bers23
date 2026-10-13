@@ -147,15 +147,18 @@ jobs:
             safetensors==0.8.0 \
             onnx==1.22.0 \
             onnxscript==0.7.1 \
-            onnxruntime==1.27.0
+            onnxruntime==1.27.0 \
+            protobuf==7.36.0
           python - <<'PY'
           import inspect, numpy, onnx, onnxruntime, onnxscript, safetensors, torch
+          from google.protobuf import __version__ as protobuf_version
           assert torch.__version__.startswith('2.13.0')
           assert numpy.__version__ == '2.4.6'
           assert safetensors.__version__ == '0.8.0'
           assert onnx.__version__ == '1.22.0'
           assert onnxscript.__version__ == '0.7.1'
           assert onnxruntime.__version__ == '1.27.0'
+          assert protobuf_version == '7.36.0', protobuf_version
           assert 'fallback' not in inspect.signature(torch.onnx.export).parameters
           assert 'dynamic_shapes' in inspect.signature(torch.onnx.export).parameters
           PY
