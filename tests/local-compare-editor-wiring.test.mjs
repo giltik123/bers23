@@ -27,6 +27,14 @@ test('accessible live divider controls REAL RGBA result and preview-only split l
   assert.match(editor, /onChange=\{event => setSplitPosition\(Number\(event\.target\.value\)\)\}/);
   assert.match(editor, /composeLocalSplitPreview\(source\.preview, after, source\.previewWidth, source\.previewHeight, splitPosition\)/);
   assert.match(editor, /data-local-split-divider="true"/);
+  assert.match(editor, /aria-label="Drag comparison divider"/);
+  assert.match(editor, /aria-valuenow=\{splitPosition\}/);
+  assert.match(editor, /aria-orientation="horizontal"/);
+  assert.match(editor, /onPointerMove=\{event => \{/);
+  assert.match(editor, /event\.currentTarget\.hasPointerCapture\(event\.pointerId\)/);
+  assert.match(editor, /event\.currentTarget\.parentElement\.getBoundingClientRect\(\)/);
+  assert.match(editor, /onKeyDown=\{event => \{/);
+  assert.match(editor, /event\.key === 'Home' \|\| event\.key === 'End'/);
   assert.match(editor, /left: splitPosition \+ '%'/);
   assert.match(editor, /Original on the left, edits on the right/);
   assert.match(editor, /the original may be visible in this preview/);
