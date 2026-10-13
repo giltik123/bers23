@@ -59,7 +59,7 @@ export class PostgresMaskArtifactStore {
     lineage: MaskLineage,
   ): Promise<StoredMask> {
     if (!lineage.sourceImageStorageId) throw new Error('Canonical source image lineage is required');
-    if ((['MANUAL_SELECTION', 'LOCAL_SEGMENTATION', 'CLOUD_SEGMENTATION'] as const).includes(lineage.producerOperation as any) && lineage.parentMaskStorageId) throw new Error(`${lineage.producerOperation} cannot claim a parent MASK`);
+    if (lineage.producerOperation !== 'MASK_REFINEMENT' && lineage.parentMaskStorageId) throw new Error(`${lineage.producerOperation} cannot claim a parent MASK`);
     if (lineage.producerOperation === 'MASK_REFINEMENT' && !lineage.parentMaskStorageId) throw new Error('MASK_REFINEMENT requires a parent MASK');
     const png = await encodeMask(width, height, alpha);
     const storageId = this.nextId();
