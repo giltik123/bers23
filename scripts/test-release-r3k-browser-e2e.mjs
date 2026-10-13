@@ -105,6 +105,7 @@ let browser;
 const diagnostics = {
   pageErrors: [],
   consoleErrors: [],
+  httpErrors: [],
   requestFailures: [],
   agentRequests: [],
   localExecutionRequests: [],
@@ -389,12 +390,19 @@ try {
 }
 
 function resetJourneyDiagnostics() {
-  for (const key of ['pageErrors', 'consoleErrors', 'requestFailures', 'agentRequests', 'localExecutionRequests', 'executionRunRequests', 'terminalDeliveryRequests', 'creativeRequests', 'financialRequests', 'projectMutations', 'externalBrowserRequests']) diagnostics[key].length = 0;
+  for (const key of ['pageErrors', 'consoleErrors', 'httpErrors', 'requestFailures', 'agentRequests', 'localExecutionRequests', 'executionRunRequests', 'terminalDeliveryRequests', 'creativeRequests', 'financialRequests', 'projectMutations', 'externalBrowserRequests']) diagnostics[key].length = 0;
 }
 
 function attachDiagnostics(page) {
   page.on('pageerror', error => diagnostics.pageErrors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') diagnostics.consoleErrors.push(message.text()); });
+  page.on('response', response => {
+    if (response.status() < 400) return;
+    const url = new URL(response.url());
+    diagnostics.httpErrors.push({ status: response.status(), method: response.request().method(),
+      origin: url.origin === coreOrigin ? 'Core' : url.origin === frontendOrigin ? 'Editor' : 'External',
+      path: url.pathname });
+  });
   page.on('requestfailed', request => diagnostics.requestFailures.push({ url: request.url(), failure: request.failure()?.errorText }));
   page.on('request', request => {
     let url;

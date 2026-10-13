@@ -519,7 +519,30 @@ try {
   const reloadedImage = await waitImage(page, 'Project', 120, 160, 20_000);
   assert.equal(new URL(await reloadedImage.evaluate(element => element.src)).origin, coreOrigin);
   const reloadedProject = await readProjectState(projectId);
-  assert.deepEqual(reloadedProject, acceptedProject, 'accepted Try-On FINAL must survive full Editor reload');
+  // Scene Masks research automatically discovers local color regions when an
+  // Editor is reopened. Those separate Core MASK Objects are not a second
+  // Try-On Accept or a change to the accepted image/history.
+  const { objects: reloadedSceneObjects, ...reloadedImageState } = reloadedProject.project;
+  const { objects: acceptedSceneObjects, ...acceptedImageState } = acceptedProject.project;
+  assert.deepEqual(acceptedSceneObjects, [], 'Try-On Accept must not itself synthesize Scene MASK Objects');
+  assert.deepEqual(reloadedImageState, acceptedImageState, 'Scene analysis must preserve accepted FINAL and image geometry');
+  assert.deepEqual(reloadedProject.cursor, acceptedProject.cursor, 'Scene analysis cannot move the accepted history cursor');
+  assert.deepEqual(reloadedProject.history, acceptedProject.history, 'Scene analysis cannot rewrite accepted Try-On history');
+  // If local segmentation completed on reload, all resulting Objects must
+  // be explicit, unreviewed classical regions bound to the accepted FINAL.
+  assert.ok(Array.isArray(reloadedSceneObjects));
+  for (const object of reloadedSceneObjects) {
+    assert.equal(object.metadata?.segmentation, 'AUTO');
+    assert.equal(object.metadata?.modelId, 'bers-classical-cv');
+    assert.equal(object.metadata?.modelVersion, 'color-connected-components-v1');
+    assert.equal(object.metadata?.maskState, 'CORE_PERSISTED_UNREVIEWED');
+    assert.ok(['BACKGROUND','OTHER_OBJECT'].includes(object.group));
+    assert.equal(object.category, object.group);
+    assert.match(object.mask_artifact_id, /^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/);
+    assert.match(object.metadata.sourceArtifactId, /^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/);
+    const sourceToken = JSON.parse(Buffer.from(object.metadata.sourceArtifactId.split('.')[0], 'base64url').toString('utf8'));
+    assert.equal(sourceToken.storageId, cFinal.storage_id, 'automatic MASK must reference precisely the accepted FINAL source');
+  }
 
   assert.equal(providerCalls, 0, 'canonical deterministic Try-On must never reach provider boundary');
   assert.deepEqual(diagnostics.creativeRequests, []);
