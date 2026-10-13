@@ -291,7 +291,7 @@ async function main(){
       newHighlightProtectedClippedPixels:toneNew.channelClip,
       v1NewChannelClipped:oldClipped,professionalNewChannelClipped:newClipped,
       comparisonAgainstSharp,
-      v1ResizeElapsedMs,professionalResizeElapsedMs:v2ElapsedMs,
+      v1ResizeElapsedMs:v1ElapsedMs,professionalResizeElapsedMs:v2ElapsedMs,
       highlightProtectedToneElapsedMs:toneElapsedMs,linearLayerElapsedMs:layerElapsedMs,
       sourcePngSha256:hash(sourcePng),professionalResizePngSha256:hash(newResizePng),
       protectedTonePngSha256:hash(newTonePng),linearLightPngSha256:hash(layerPng),
