@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { isIP } from 'node:net';
 import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -61,8 +62,8 @@ export async function verifyFashionRealImageQualityEvidence(input) {
         reviewSample.observedFailureModes.some(value => typeof value !== 'string' || !value.trim())) {
       throw new Error(`Fashion quality sample ${fixtureSample.id} observedFailureModes is invalid`);
     }
-    const latencyMs = Number(reviewSample.latencyMs);
-    if (!Number.isFinite(latencyMs) || latencyMs < 0) {
+    const latencyMs = reviewSample.latencyMs;
+    if (typeof latencyMs !== 'number' || !Number.isFinite(latencyMs) || latencyMs < 0) {
       throw new Error(`Fashion quality sample ${fixtureSample.id} latencyMs is invalid`);
     }
     if (!Number.isSafeInteger(reviewSample.peakMemoryBytes) || reviewSample.peakMemoryBytes <= 0) {
@@ -177,9 +178,28 @@ async function fetchBytes(fetcher, url, maxBytes, label) {
   if (response.url) requireHttpsPublicUrl(response.url, `Fashion quality ${label} response URL`);
   const declared = Number(response.headers?.get?.('content-length'));
   if (Number.isFinite(declared) && declared > maxBytes) throw new Error(`Fashion quality ${label} exceeds size limit`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.length < 1 || bytes.length > maxBytes) throw new Error(`Fashion quality ${label} size is invalid`);
-  return bytes;
+  // The declared Content-Length is untrusted; cap the stream as it arrives.
+  const body = response.body;
+  if (!body || typeof body.getReader !== 'function') throw new Error('Fashion quality fetch requires a bounded response stream');
+  const reader = body.getReader();
+  const chunks = [];
+  let size = 0;
+  let finished = false;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) { finished = true; break; }
+      if (!(value instanceof Uint8Array)) throw new Error('Fashion quality response contains a non-binary chunk');
+      size += value.byteLength;
+      if (size > maxBytes) throw new Error(`Fashion quality ${label} exceeds size limit`);
+      chunks.push(value);
+    }
+  } finally {
+    if (!finished) await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  if (size < 1) throw new Error(`Fashion quality ${label} size is invalid`);
+  return Buffer.concat(chunks, size);
 }
 
 function parseJsonObject(bytes, label) {
@@ -201,12 +221,14 @@ function requireHttpsPublicUrl(value, label) {
   try { url = new URL(String(value ?? '').trim()); }
   catch { throw new Error(`${label} must be an absolute HTTPS URL`); }
   if (url.protocol !== 'https:' || url.username || url.password) throw new Error(`${label} must be an absolute HTTPS URL without credentials`);
-  const host = url.hostname.toLowerCase();
-  if (
-    host === 'localhost' || host === '::1' || host.endsWith('.local') ||
-    /^127\./u.test(host) || /^10\./u.test(host) || /^192\.168\./u.test(host) ||
-    /^169\.254\./u.test(host) || /^172\.(?:1[6-9]|2\d|3[01])\./u.test(host)
-  ) throw new Error(`${label} must not target a local/private host`);
+  const host = url.hostname.toLowerCase().replace(/\.$/u, '');
+  // URL.hostname contains brackets for IPv6. Reject all IP literals, including
+  // loopback, mapped IPv4, IPv6 ULA and link-local forms.
+  const literal = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+  if (isIP(literal) !== 0 || host === 'localhost' || host.endsWith('.localhost') ||
+      host.endsWith('.local') || host.endsWith('.localdomain') || host.endsWith('.internal')) {
+    throw new Error(`${label} must not target a local/private host or an IP literal`);
+  }
   return url;
 }
 

@@ -193,6 +193,50 @@ test('Fashion real-image verifier rejects failed garment/logo review', async () 
   );
 });
 
+test('Fashion evidence blocks IPv6 private addresses, mapped IPs and localhost aliases before fetch', async () => {
+  const f = await fixture();
+  let calls = 0;
+  for (const fixtureManifestUrl of [
+    'https://[::1]/fixture.json', 'https://[fc00::1]/fixture.json',
+    'https://[::ffff:127.0.0.1]/fixture.json', 'https://localhost./fixture.json',
+    'https://127.0.0.1./fixture.json', 'https://93.184.216.34/fixture.json',
+    'https://metadata.internal/fixture.json',
+  ]) {
+    await assert.rejects(verifyFashionRealImageQualityEvidence({
+      expectedSha: SHA, fixtureManifestUrl, reviewArtifactUrl: f.urls.review,
+      fetcher: () => { calls++; throw new Error('private URLs must never be fetched'); },
+    }), /local\/private host or an IP literal/u);
+  }
+  assert.equal(calls, 0);
+});
+
+test('Fashion evidence refuses missing or coerced latency measurements', async () => {
+  for (const invalid of [null, undefined, '', '25.5', false, [], {}, -1, NaN]) {
+    const f = await fixture();
+    f.review.samples[0].latencyMs = invalid;
+    f.bodies.set(f.urls.review, Buffer.from(JSON.stringify(f.review)));
+    await assert.rejects(verifyFashionRealImageQualityEvidence({
+      expectedSha: SHA, fixtureManifestUrl: f.urls.fixture,
+      reviewArtifactUrl: f.urls.review, fetcher: f.fetcher,
+    }), /latencyMs is invalid/u);
+  }
+});
+
+test('Fashion evidence cancels an oversized fixture stream with no Content-Length', async () => {
+  const f = await fixture();
+  let cancelled = false;
+  const fetcher = async url => url !== f.urls.fixture ? f.fetcher(url) :
+    new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new Uint8Array(1_048_577)); },
+      cancel() { cancelled = true; },
+    }), { status: 200 });
+  await assert.rejects(verifyFashionRealImageQualityEvidence({
+    expectedSha: SHA, fixtureManifestUrl: f.urls.fixture,
+    reviewArtifactUrl: f.urls.review, fetcher,
+  }), /fixture manifest exceeds size limit/u);
+  assert.equal(cancelled, true);
+});
+
 test('Fashion real-image verifier rejects private/local evidence URLs', async () => {
   const f = await fixture();
   await assert.rejects(
