@@ -67,6 +67,19 @@ test('cross-source or wrong-dimension MASK is rejected by Core after model admis
     await assert.rejects(()=>assertCanonicalSceneObjectPublication(f.input),/exact canonical photo/);
   }
 });
+test('cloud SAM3 MASKs have distinct durable provenance and cannot masquerade as local output',async()=>{
+  const cloud={...object,metadata:{...object.metadata,modelId:'fal-ai/sam-3/image'}};
+  const accepted=fixture({producerOperation:'CLOUD_SEGMENTATION'});
+  accepted.input.objects=[cloud];
+  await assert.doesNotReject(()=>assertCanonicalSceneObjectPublication(accepted.input));
+  const mislabelled=fixture({producerOperation:'LOCAL_SEGMENTATION'});
+  mislabelled.input.objects=[cloud];
+  await assert.rejects(()=>assertCanonicalSceneObjectPublication(mislabelled.input),/exact canonical photo/);
+  const wrongLocal=fixture({producerOperation:'CLOUD_SEGMENTATION'});
+  wrongLocal.input.objects=[object];
+  await assert.rejects(()=>assertCanonicalSceneObjectPublication(wrongLocal.input),/exact canonical photo/);
+});
+
 test('manual MASK cannot be falsely relabeled as an automatically analyzed face',async()=>{
   const f=fixture({producerOperation:'MANUAL_SELECTION'});
   await assert.rejects(

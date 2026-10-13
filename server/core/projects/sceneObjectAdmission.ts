@@ -62,8 +62,12 @@ export async function assertCanonicalSceneObjectPublication(input: Readonly<{
     try {maskClaim=input.artifacts.external.resolveStoredMask(obj.mask_artifact_id,input.scope);}
     catch {throw denied('Scene Object MASK signature or scope is invalid');}
     const stored=await input.artifacts.masks.load(maskClaim.storageId,input.scope);
+    // Signed Core MASK provenance must match the actual scene execution. A
+    // remote SAM3 result must never be laundered as a local segmentation MASK.
+    const expectedProducer=obj.metadata?.modelId==='fal-ai/sam-3/image'
+      ?'CLOUD_SEGMENTATION':'LOCAL_SEGMENTATION';
     if(!stored || stored.sourceImageStorageId!==input.sourceStorageId ||
-       stored.producerOperation!=='LOCAL_SEGMENTATION' ||
+       stored.producerOperation!==expectedProducer ||
        stored.width!==source.width || stored.height!==source.height)
       throw denied('Scene Object MASK is not bound to the exact canonical photo');
     seenMasks.add(obj.mask_artifact_id);

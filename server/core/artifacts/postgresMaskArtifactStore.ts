@@ -6,7 +6,7 @@ import type { AuthenticatedScope } from '../application/creativeExecutionService
 export const MASK_ROLE = 'MASK' as const;
 export const MASK_ENCODING = 'ALPHA_8_LOSSLESS' as const;
 export const MASK_COORDINATE_SPACE = 'ORIGINAL' as const;
-export type MaskProducerOperation = 'MANUAL_SELECTION' | 'LOCAL_SEGMENTATION' | 'MASK_REFINEMENT';
+export type MaskProducerOperation = 'MANUAL_SELECTION' | 'LOCAL_SEGMENTATION' | 'CLOUD_SEGMENTATION' | 'MASK_REFINEMENT';
 export type MaskLineage = Readonly<{ sourceImageStorageId: string; parentMaskStorageId?: string; producerOperation: MaskProducerOperation }>;
 
 export type StoredMask = Readonly<{
@@ -59,7 +59,7 @@ export class PostgresMaskArtifactStore {
     lineage: MaskLineage,
   ): Promise<StoredMask> {
     if (!lineage.sourceImageStorageId) throw new Error('Canonical source image lineage is required');
-    if ((lineage.producerOperation === 'MANUAL_SELECTION' || lineage.producerOperation === 'LOCAL_SEGMENTATION') && lineage.parentMaskStorageId) throw new Error(`${lineage.producerOperation} cannot claim a parent MASK`);
+    if ((['MANUAL_SELECTION', 'LOCAL_SEGMENTATION', 'CLOUD_SEGMENTATION'] as const).includes(lineage.producerOperation as any) && lineage.parentMaskStorageId) throw new Error(`${lineage.producerOperation} cannot claim a parent MASK`);
     if (lineage.producerOperation === 'MASK_REFINEMENT' && !lineage.parentMaskStorageId) throw new Error('MASK_REFINEMENT requires a parent MASK');
     const png = await encodeMask(width, height, alpha);
     const storageId = this.nextId();

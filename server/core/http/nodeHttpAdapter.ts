@@ -282,7 +282,7 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         for(const instance of instances){
           const stored=await input.artifacts.masks.persistManual(
             scope,source.width,source.height,instance.alpha,
-            {sourceImageStorageId:storageId,producerOperation:'LOCAL_SEGMENTATION'},
+            {sourceImageStorageId:storageId,producerOperation:sceneMode==='SAM3'?'CLOUD_SEGMENTATION':'LOCAL_SEGMENTATION'},
           );
           let x0=source.width,y0=source.height,x1=-1,y1=-1;
           for(let k=0;k<instance.alpha.length;k++){
