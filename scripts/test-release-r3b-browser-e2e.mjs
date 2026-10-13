@@ -226,10 +226,13 @@ try {
     return response.request().method() === 'POST'
       && url?.origin === coreOrigin
       && /^\/api\/core\/local-execution\/orthogonal-transform\/[^/]+\/result$/.test(url.pathname);
-  }, { timeout: 20_000 });
+  }, { timeout: 20_000 }).then(response => ({ response }), error => ({ error }));
+  // Attach a rejection handler immediately: Playwright's wait can time out
+  // during click(), before control reaches the later await expression.
   await rotate.click();
 
-  const resultResponse = await resultResponsePromise.catch(async (error) => {
+  const resultOutcome = await resultResponsePromise;
+  if (resultOutcome.error) {
     // Preserve the fail-closed Core result gate; attach browser diagnostics to
     // distinguish missing local execution from a changed endpoint or UI error.
     const alerts = await page.locator('[role="alert"]').allTextContents().catch(() => []);
@@ -240,8 +243,9 @@ try {
       unexpectedResponses: diagnostics.unexpectedResponses.slice(-8),
       consoleErrors: diagnostics.consoleErrors.slice(-8),
       pageErrors: diagnostics.pageErrors.slice(-8),
-    }), { cause: error });
-  });
+    }), { cause: resultOutcome.error });
+  }
+  const resultResponse = resultOutcome.response;
   assert.equal(resultResponse.status(), 200, 'Core must accept and verify the deterministic orthogonal-transform result');
   const coreResult = await resultResponse.json();
   assert.equal(coreResult.status, 'SUCCESS', 'Core result must be terminal SUCCESS before Preview is admitted');
