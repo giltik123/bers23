@@ -28,6 +28,9 @@ on:
       - 'tests/local-annotation-editing.test.mjs'
       - 'tests/local-annotation-editing-wiring.test.mjs'
       - 'src/lib/local-editor/localAdjustments.js'
+      - 'src/lib/local-editor/localCompare.js'
+      - 'tests/local-compare.test.mjs'
+      - 'tests/local-compare-editor-wiring.test.mjs'
       - 'src/lib/local-editor/localHistory.js'
       - 'tests/local-history.test.mjs'
       - 'tests/local-history-editor-wiring.test.mjs'
@@ -91,6 +94,8 @@ jobs:
             tests/bers-ux-system-redesign.test.mjs \
             tests/mask-photoshop-controls.test.mjs \
             tests/local-adjustments.test.mjs \
+            tests/local-compare.test.mjs \
+            tests/local-compare-editor-wiring.test.mjs \
             tests/local-history.test.mjs \
             tests/local-history-editor-wiring.test.mjs \
             tests/local-adjustments-editor-wiring.test.mjs \
@@ -113,7 +118,7 @@ jobs:
             tests/editor-orthogonal-transform-ui.test.mjs \
             tests/realesrgan-editor-boundary.test.mjs
       - name: Deterministic local photo and export authority regression
-        run: node --test tests/local-adjustments.test.mjs tests/local-history.test.mjs tests/local-history-editor-wiring.test.mjs tests/local-adjustments-editor-wiring.test.mjs
+        run: node --test tests/local-compare.test.mjs tests/local-compare-editor-wiring.test.mjs tests/local-adjustments.test.mjs tests/local-history.test.mjs tests/local-history-editor-wiring.test.mjs tests/local-adjustments-editor-wiring.test.mjs
       - name: Real canonical alpha brush opacity regression
         run: |
           mkdir -p .test-cache/editor-mask
