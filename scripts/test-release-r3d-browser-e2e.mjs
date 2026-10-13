@@ -121,7 +121,7 @@ try {
   await page.locator('#password').fill(password);
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/', { timeout: 15_000 });
-  await page.getByRole('heading', { name: 'Projects' }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
 
   await page.locator('input[type="file"]').setInputFiles({ name: 'release-r3d-source.png', mimeType: 'image/png', buffer: sourcePng });
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/editor' && Boolean(url.searchParams.get('id')), { timeout: 20_000 });
