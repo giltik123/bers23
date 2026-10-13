@@ -191,6 +191,24 @@ try {
       && ctx.getImageData(11, 4, 1, 1).data[0] === 94;
   }, null, { timeout: 10_000 });
   assert.equal(await localLab.locator('[data-local-split-divider="true"]').count(), 1);
+  const comparisonHandle = localLab.getByRole('slider', { name: 'Drag comparison divider' });
+  await comparisonHandle.focus();
+  await comparisonHandle.press('ArrowRight');
+  assert.equal(await comparePosition.inputValue(), '51', 'keyboard right arrow must shift the real divider by one percentage point');
+  await comparisonHandle.press('Home');
+  assert.equal(await comparePosition.inputValue(), '0');
+  await comparisonHandle.press('End');
+  assert.equal(await comparePosition.inputValue(), '100');
+  await comparePosition.fill('50');
+  const dividerBox = await comparisonHandle.boundingBox();
+  const compareCanvasBox = await localLab.getByRole('img', { name: 'Locally edited photo preview' }).boundingBox();
+  assert(dividerBox && compareCanvasBox, 'comparison divider and photo must have pointer geometry');
+  await page.mouse.move(dividerBox.x + dividerBox.width / 2, dividerBox.y + dividerBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(compareCanvasBox.x + compareCanvasBox.width * .25, compareCanvasBox.y + compareCanvasBox.height / 2, { steps: 4 });
+  await page.mouse.up();
+  const draggedPosition = Number(await comparePosition.inputValue());
+  assert(draggedPosition >= 20 && draggedPosition <= 30, 'dragging the real image divider must update comparison percentage');
   await comparePosition.fill('100');
   await page.waitForFunction(() => {
     const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
