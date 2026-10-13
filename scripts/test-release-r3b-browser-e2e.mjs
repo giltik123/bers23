@@ -398,9 +398,19 @@ try {
     return response.request().method() === 'POST'
       && url?.origin === coreOrigin
       && url.pathname === `/api/core/projects/${projectId}/accept-final`;
-  }, { timeout: 20_000 });
+  }, { timeout: 20_000 }).then(response => ({ response }), error => ({ error }));
   await r3qAccept.click();
-  const r3qAcceptResponse = await r3qAcceptResponsePromise;
+  const r3qAcceptOutcome = await r3qAcceptResponsePromise;
+  if (r3qAcceptOutcome.error) {
+    throw new Error('R3q canonical Project Accept response never arrived: ' + JSON.stringify({
+      projectMutations: diagnostics.projectMutations.slice(-8),
+      requestFailures: diagnostics.requestFailures.slice(-8),
+      unexpectedResponses: diagnostics.unexpectedResponses.slice(-8),
+      consoleErrors: diagnostics.consoleErrors.slice(-8),
+      pageErrors: diagnostics.pageErrors.slice(-8),
+    }), { cause: r3qAcceptOutcome.error });
+  }
+  const r3qAcceptResponse = r3qAcceptOutcome.response;
   assert.equal(r3qAcceptResponse.status(), 200, 'canonical Project Accept must succeed before the optional side-effect failure');
   await r3qAccept.waitFor({ state: 'detached', timeout: 20_000 });
   const r3qAcceptedImage = await loadedImageEvidence(page, 'Project', 12, 8, 20_000);
