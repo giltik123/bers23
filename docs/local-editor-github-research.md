@@ -233,3 +233,19 @@ Pure transport tests simulate missing and malicious headers, mixed chunks, prema
 ### Release condition
 
 These changes stay in **Draft PR #1003**. Pure source/unit tests can establish geometry and pixel arithmetic, but a reliable release also requires passing GitHub workflows for production compilation, security and the **real Chrome + PostgreSQL** R3 browser scenarios at the same final SHA. Queued/pending runs are not passing results. Railway production and Core authentication/CSRF/credit gates were not changed.
+
+
+## Phase 7 — true split-image Before/After comparison (2026-10-13)
+
+**Rationale:** More correction sliders were no longer the limiting factor. Users need to evaluate whether an edit actually improves a photo, without making a download, constantly switching between whole-image Before/After modes, or losing the current retouch context. Adobe Lightroom Classic documents explicit **Before/After split** as a distinct comparison workflow:
+- [Adobe: Work with the Lightroom Classic Develop module — Before and After](https://helpx.adobe.com/lightroom-classic/desktop/process-and-develop-photos/develop-module-tools.html)
+- [MDN Canvas putImageData](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/putImageData) and source-backed alpha precision cautions
+
+**Implemented:**
+- The Local Photo Lab now offers **Before**, **After**, and **Split view**. The split is not decorative: \`src/lib/local-editor/localCompare.js\` composes exact source RGBA bytes **left** of a user-selected column and actual adjusted RGBA bytes **right** of it, for every preview pixel. A range slider controls 0–100%, while the on-photo divider handle supports pointer/touch drag and keyboard Arrow/Home/End actions.
+- A **processed preview cache** keeps the expensive 23-slider, tone-curve, HSL, gradient and retouch pipeline output stable while someone moves the split divider. The cache invalidates when the photo, settings or precision edits change; no photo bytes go into browser storage.
+- Vector notes and opaque covers are clipped to the **edited/right** half during split comparison; the original/left side remains truly original. The split tool turns off active brush/annotation modes, and choosing those tools turns split comparison off.
+- **Split is view-only:** not serialized in portable JSON, not saved as a Core MASK or FINAL, not added to Undo, and never used in exported PNG processing. The exported image always contains the full adjusted photo plus chosen vector annotations and last-write opaque covers. A note warns that split/Before preview can reveal original sensitive regions that may be covered in the exported image.
+- \`tests/local-compare.test.mjs\` checks byte-exact RGBA boundaries, transparent pixel preservation, split endpoints, odd image sizes, invalid percentages/geometry and immutability. \`tests/local-compare-editor-wiring.test.mjs\` checks real UI, preview cache, pointer/keyboard divider events, Core independence and export path. The R3e **real Chrome/PostgreSQL** acceptance now checks source vs edited RGBA at different split positions, the on-photo keyboard and mouse handle and that downloaded PNG contains **only the full edit**.
+
+**Limitations:** This comparison is a rendered 8-bit sRGB-style preview, not an ICC soft-proof. The on-canvas split does not zoom/pan the full original beyond the existing responsive fit view. Exact Chrome browser and CI acceptance still must finish on the unchanged PR head before any rollout. No production/Core/auth/billing changes.
