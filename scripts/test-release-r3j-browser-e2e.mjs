@@ -453,7 +453,7 @@ try {
   assert.equal(previewBody.artifactId, resultBBody.artifactId);
   assert.deepEqual(executionTryOnRequests(), executionBeforeRecover, 'read-only Recover must not repeat prepare/continue/pixel execution/result');
 
-  const recoveredAfter = await waitImage(page, 'after', 120, 160, 20_000);
+  const recoveredAfter = await waitImage(page, 'Unaccepted edited image', 120, 160, 20_000);
   const recoveredSrc = new URL(await recoveredAfter.evaluate(element => element.src));
   assert.equal(recoveredSrc.origin, coreOrigin, 'recovered Try-On preview must render from Core in split-origin release composition');
   assert.match(recoveredSrc.pathname, /^\/api\/core\/artifacts\/results\/[^/]+$/);
@@ -474,7 +474,7 @@ try {
   const resultCBody = await resultC.json();
   assert.equal(resultCBody.status, 'FINAL_READY');
 
-  const cAfter = await waitImage(page, 'after', 120, 160, 20_000);
+  const cAfter = await waitImage(page, 'Unaccepted edited image', 120, 160, 20_000);
   const cAfterSrc = await cAfter.evaluate(element => element.src);
   assert.match(cAfterSrc, /^blob:/, 'fresh local deterministic Retry preview must remain Editor-owned blob data');
   const cWarp = await readPhaseTicket(clientRequestC, 'garment-warp');
