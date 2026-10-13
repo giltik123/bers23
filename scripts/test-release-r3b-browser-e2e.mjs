@@ -338,14 +338,31 @@ try {
   const r3qLocalStart = diagnostics.localExecutionRequests.length;
   const r3qMutationStart = diagnostics.projectMutations.length;
   const r3qConsoleStart = diagnostics.consoleErrors.length;
+  // Undo/Redo may remount or collapse the disclosure in the redesigned Editor.
+  // Re-open the real Rotate controls before demanding the second Core result.
+  if (!(await rotate.isVisible())) await rotateToggle.click();
+  await rotate.waitFor({ state: 'visible', timeout: 10_000 });
+  assert.equal(await rotate.isEnabled(), true, 'R3q second rotation must be available after Redo');
   const r3qResultResponsePromise = page.waitForResponse(response => {
     const url = safeUrl(response.url());
     return response.request().method() === 'POST'
       && url?.origin === coreOrigin
       && /^\/api\/core\/local-execution\/orthogonal-transform\/[^/]+\/result$/.test(url.pathname);
-  }, { timeout: 20_000 });
+  }, { timeout: 20_000 }).then(response => ({ response }), error => ({ error }));
   await rotate.click();
-  const r3qResultResponse = await r3qResultResponsePromise;
+  const r3qOutcome = await r3qResultResponsePromise;
+  if (r3qOutcome.error) {
+    const alerts = await page.locator('[role="alert"]').allTextContents().catch(() => []);
+    throw new Error('R3q second Core-verified rotate result never arrived: ' + JSON.stringify({
+      alerts,
+      localExecutionRequests: diagnostics.localExecutionRequests.slice(-12),
+      requestFailures: diagnostics.requestFailures.slice(-8),
+      unexpectedResponses: diagnostics.unexpectedResponses.slice(-8),
+      consoleErrors: diagnostics.consoleErrors.slice(-8),
+      pageErrors: diagnostics.pageErrors.slice(-8),
+    }), { cause: r3qOutcome.error });
+  }
+  const r3qResultResponse = r3qOutcome.response;
   assert.equal(r3qResultResponse.status(), 200, 'R3q local result must be Core-verified before fault injection');
   const r3qCoreResult = await r3qResultResponse.json();
   assert.equal(r3qCoreResult.status, 'SUCCESS');
