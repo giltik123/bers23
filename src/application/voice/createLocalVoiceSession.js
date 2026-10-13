@@ -112,7 +112,12 @@ export async function createLocalVoiceSession({
     if(final.trim())onFinal(final.trim().slice(0,1024));
   };
   recognizer.onerror=event=>{
-    if(close())onError(event?.error||'LOCAL_ASR_FAILED');
+    if(!active)return;
+    const reason=event?.error||'LOCAL_ASR_FAILED';
+    // A browser error is not proof that its microphone has stopped.
+    // Explicitly tear down recognition and all transcript callbacks.
+    abort();
+    onError(reason);
   };
   recognizer.onend=()=>{if(close())onEnd();};
   const abort=()=>{
@@ -122,7 +127,13 @@ export async function createLocalVoiceSession({
   };
   const stop=()=>{
     if(!active)return;
-    recognizer.stop();
+    try{recognizer.stop();}
+    catch{
+      if(active){
+        abort();
+        onError('LOCAL_ASR_STOP_FAILED');
+      }
+    }
   };
   try{
     recognizer.start();

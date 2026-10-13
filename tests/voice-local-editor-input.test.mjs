@@ -161,6 +161,39 @@ test('user stop still has a hard abort fallback when browser onend never fires',
   assert.deepEqual(failures,['LOCAL_ASR_TIMEOUT']);
 });
 
+test('OS speech error aborts the mic, drops late callbacks and only reports the failure once',async()=>{
+  const f=fakeRecognizer();
+  const failures=[];
+  let transcriptCount=0,cleared=0;
+  const session=await createLocalVoiceSession({
+    SpeechRecognitionCtor:f.Recognizer,onError:code=>failures.push(code),
+    onFinal:()=>transcriptCount++,
+    schedule:()=>42,unschedule:()=>cleared++,
+  });
+  f.instance().onerror({error:'network'});
+  assert.deepEqual(f.activity,['start','abort']);
+  assert.equal(f.instance().onresult,null);
+  assert.deepEqual(failures,['network']);
+  assert.equal(cleared,1);
+  session.stop();session.abort();
+  assert.deepEqual(f.activity,['start','abort']);
+  assert.equal(transcriptCount,0);
+});
+
+test('OS speech stop throwing fails closed instead of keeping a recording alive',async()=>{
+  const f=fakeRecognizer();
+  f.Recognizer.prototype.stop=function(){throw new Error('browser speech stop failed');};
+  const errors=[];
+  const session=await createLocalVoiceSession({
+    SpeechRecognitionCtor:f.Recognizer,onError:code=>errors.push(code),
+    schedule:()=>43,unschedule:()=>{},
+  });
+  assert.doesNotThrow(()=>session.stop());
+  assert.deepEqual(f.activity,['start','abort']);
+  assert.deepEqual(errors,['LOCAL_ASR_STOP_FAILED']);
+  assert.equal(f.instance().onresult,null);
+});
+
 test('voice UI is Editor-wide with typed callback; confirmation never triggers generation',async()=>{
   const [bar,ui,editor]=await Promise.all([
     readFile('src/components/editor/InstructionBar.jsx','utf8'),
