@@ -11,6 +11,8 @@ const LAMA_ONNX_SHA256 = '8bf7891efa16ea07de31fc98c5f0c017b399956cba0182813ddf23
 test('C8 requires the protobuf 7.36.0 serializer used by the historically green pinned export', () => {
   assert.match(workflow, /protobuf==7\.36\.0/);
   assert.match(workflow, /protobuf_version == '7\.36\.0'/);
+  assert.ok(workflow.includes("python-version: '3.11.16'"));
+  assert.ok(workflow.includes('sys.version_info[:3] == (3, 11, 16)'));
   assert.doesNotMatch(workflow, /pip install.*--upgrade.*protobuf/);
 });
 
