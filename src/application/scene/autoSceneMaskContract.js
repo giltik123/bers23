@@ -39,6 +39,14 @@ export function sceneSourceKey(project) {
     : null;
 }
 
+// Mirror the Core classical partitioner's 8×8 minimum and 8M source-pixel cap.
+// This suppresses unsupported *automatic* requests; Core still validates.
+export function supportsClassicalSceneGeometry(project) {
+  const width=project?.width,height=project?.height;
+  return Number.isSafeInteger(width) && Number.isSafeInteger(height)
+    && width>=8 && height>=8 && width*height<=8_000_000;
+}
+
 function boundsFromMask(alpha,width,height) {
   let x0=width,y0=height,x1=-1,y1=-1,coverage=0;
   for(let i=0;i<alpha.length;i++) {

@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import {
   sceneSourceKey, validateSceneCandidates, sceneObjectFromCanonical,
+  supportsClassicalSceneGeometry,
   SCENE_GROUPS,
 } from '../src/application/scene/autoSceneMaskContract.js';
 import { createAutoSceneMaskCoordinator } from '../src/application/scene/createAutoSceneMaskCoordinator.js';
@@ -62,6 +63,15 @@ function fixture(options={}) {
   });
   return {runner, saved, published, stats:()=>({providerCalls}),setLive:v=>live=v};
 }
+
+test('classical geometry preflight keeps tiny or oversized images out of scene Core',()=>{
+  for(const [width,height] of [[6,5],[7,100],[100,7],[0,20],[8,1],[4000,3000]]) {
+    assert.equal(supportsClassicalSceneGeometry({width,height}),false);
+  }
+  for(const [width,height] of [[8,8],[120,160],[2000,4000]]) {
+    assert.equal(supportsClassicalSceneGeometry({width,height}),true);
+  }
+});
 
 test('five requested scene groups use separate original-space raster candidates',()=>{
   const normalized=validateSceneCandidates(evidence(),source);
@@ -154,6 +164,7 @@ test('Editor mounts a source-bound status panel, not a legacy detection/syntheti
   assert.match(editor,/<AutoSceneMasksPanel/);
   assert.match(panel,/runner\.start\(project,\{/);
   assert.match(panel,/SCENE_GROUPS\.map/);
+  assert.match(panel,/!classicalGeometrySupported/);
   assert.doesNotMatch(panel,/sam3Segment|segmentationService\.start|detectObjects/);
   assert.match(transport,/expectedSourceArtifactId/);
   assert.match(transport,/expectedRevision/);

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, ScanSearch, RefreshCcw, AlertCircle } from 'lucide-react';
-import { SCENE_GROUPS, SCENE_LABELS, sceneSourceKey } from '@/application/scene/autoSceneMaskContract';
+import { SCENE_GROUPS, SCENE_LABELS, sceneSourceKey, supportsClassicalSceneGeometry } from '@/application/scene/autoSceneMaskContract';
 import { createCanonicalAutoSceneMaskRunner } from '@/application/scene/createCanonicalAutoSceneMaskRunner';
 import { Button } from '@/components/ui/button';
 
@@ -39,6 +39,7 @@ export default function AutoSceneMasksPanel({
   });
   const [selectedCloudTarget,setSelectedCloudTarget] = useState('face');
   const currentMode=requested.sourceKey===sourceKey?requested.mode:'CLASSICAL';
+  const classicalGeometrySupported=supportsClassicalSceneGeometry(project);
   const currentRequest=requested.sourceKey===sourceKey?requested.request:0;
   const currentPromptKey=requested.sourceKey===sourceKey?requested.promptKey:null;
   const currentForce=requested.sourceKey===sourceKey&&requested.force===true;
@@ -49,6 +50,11 @@ export default function AutoSceneMasksPanel({
     if (disabled) {
       setState({ sourceKey,status:'PAUSED',
         message:'Анализ сцены начнётся, когда завершится текущее редактирование.' });
+      return undefined;
+    }
+    if(currentMode==='CLASSICAL' && !classicalGeometrySupported){
+      setState({sourceKey,status:'UNSUPPORTED_GEOMETRY',
+        message:'Маски без ИИ требуют фотографию от 8×8 пикселей. Исходник и история сохранены.'});
       return undefined;
     }
     const attemptKey=JSON.stringify([sourceKey,currentMode,currentRequest,currentPromptKey]);
@@ -76,7 +82,7 @@ export default function AutoSceneMasksPanel({
     };
   // Re-run on image identity, explicit retry or when the editor becomes idle.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[sourceKey,currentMode,currentRequest,currentPromptKey,currentForce,runner,disabled]);
+  },[sourceKey,currentMode,currentRequest,currentPromptKey,currentForce,runner,disabled,classicalGeometrySupported]);
 
   const matching = state.sourceKey === sourceKey ? state : {
     status:'RUNNING',message:'Ожидание проверки новой фотографии',
@@ -123,7 +129,7 @@ export default function AutoSceneMasksPanel({
       )}
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" size="sm"
-          disabled={disabled || running || !sourceKey}
+          disabled={disabled || running || !sourceKey || !classicalGeometrySupported}
           onClick={()=>setRequested(prev=>({
             sourceKey,mode:'CLASSICAL',request:prev.request+1,force:true,promptKey:null,
           }))}>

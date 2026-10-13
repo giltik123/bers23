@@ -1,6 +1,7 @@
 import { coreClient } from '../../api/coreClient.js';
 import { projectService } from '../../lib/projectService.js';
 import { createAutoSceneMaskCoordinator } from './createAutoSceneMaskCoordinator.js';
+import { supportsClassicalSceneGeometry } from './autoSceneMaskContract.js';
 
 /**
  * Only Core-verified source-bound MASK ids may be placed on a Project.
@@ -18,6 +19,9 @@ export function createCanonicalAutoSceneMaskRunner(provider) {
       start:async(source,{force=false,mode='CLASSICAL',promptKey=null}={})=>{
         const ticket=++sequence;
         try{
+          if(mode==='CLASSICAL' && !supportsClassicalSceneGeometry(source))
+            return {status:'UNSUPPORTED_GEOMETRY',objects:[],
+              message:'Классическая сегментация требует исходное изображение от 8×8 пикселей.'};
           const capability=await coreClient.scene.capability();
           if(ticket!==sequence)return {status:'CANCELLED',objects:[]};
           if(mode==='CLASSICAL' && capability?.supportsClassicalSegmentation!==true)
