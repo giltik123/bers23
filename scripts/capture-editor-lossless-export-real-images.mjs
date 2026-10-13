@@ -17,18 +17,24 @@ async function download(urlString) {
       url.search || url.hash) {
     throw new Error('Only direct fixed Wikimedia fixture photographs are authorized');
   }
-  for(let attempt=0;attempt<3;attempt++){
+  // Wikimedia may temporarily throttle CI runners. Retry only documented
+  // 429/503 conditions with a finite budget; never replace approved photos.
+  const maxAttempts=5;
+  const backoffMs=[10000,20000,40000,60000];
+  for(let attempt=0;attempt<maxAttempts;attempt++){
     const response=await fetch(url,{
       redirect:'error',signal:AbortSignal.timeout(35000),
       headers:{accept:'image/jpeg,image/png,image/webp','user-agent':'BERS-Editor-Lossless-QA/1.0 (github.com/giltik123/bers23)'},
     });
-    if ((response.status===429||response.status===503)&&attempt<2){
+    if ((response.status===429||response.status===503)&&attempt<maxAttempts-1){
       const header=response.headers.get('retry-after');
       const seconds=header===null?NaN:Number(header);
-      // Honor short server retry windows; fail closed rather than ignore a long throttle.
-      if(Number.isFinite(seconds)&&seconds>12)throw new Error(`Real-photo source rate-limited for ${seconds}s; retry later`);
-      const delayMs=Number.isFinite(seconds)&&seconds>=0?seconds*1000:(attempt+1)*4000;
       await response.body?.cancel();
+      // Honor any manageable Retry-After. Longer backoffs remain fail-closed
+      // instead of silently exhausting the quality workflow timeout.
+      if(Number.isFinite(seconds)&&seconds>60)throw new Error(`Real-photo source rate-limited for ${seconds}s; retry later`);
+      const delayMs=Number.isFinite(seconds)&&seconds>=0?seconds*1000:backoffMs[attempt];
+      console.warn(`Real-photo source HTTP ${response.status}; attempt ${attempt+1}/${maxAttempts}; retry in ${delayMs}ms`);
       await new Promise(resolve=>setTimeout(resolve,delayMs));
       continue;
     }
