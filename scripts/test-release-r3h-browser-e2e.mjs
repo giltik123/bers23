@@ -292,9 +292,9 @@ try {
   await collectionsRegion.getByRole('button', { name: `${collectionName} (1)`, exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
   await collectionsRegion.getByText(garmentName, { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
 
-  const prompt = page.getByRole('button', { name: 'Prompt', exact: true });
+  const prompt = page.getByRole('button', { name: 'Legacy prompt', exact: true });
   await prompt.click();
-  await assertActiveNavigation(prompt, 'Prompt');
+  await assertActiveNavigation(prompt, 'Legacy prompt');
 
   const remountLoad = waitForCoreResponses(page, [
     ['GET', '/api/core/garments'],
