@@ -13,6 +13,7 @@ WORKDIR /app
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/config/frontendSecurityPolicy.mjs ./config/frontendSecurityPolicy.mjs
 COPY --from=build --chown=node:node /app/scripts/serve-production-frontend.mjs ./scripts/serve-production-frontend.mjs
+COPY --from=build --chown=node:node /app/scripts/production-core-api-proxy.mjs ./scripts/production-core-api-proxy.mjs
 USER node
 EXPOSE 8080
 CMD ["node", "scripts/serve-production-frontend.mjs"]
