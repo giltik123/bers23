@@ -29,7 +29,7 @@ jobs:
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.11.16'
 
       - name: Set up Node.js 24
         uses: actions/setup-node@v4
@@ -150,18 +150,22 @@ jobs:
             safetensors==0.8.0 \
             onnx==1.22.0 \
             onnxscript==0.7.1 \
-            onnxruntime==1.27.0
+            onnxruntime==1.27.0 \
+            protobuf==7.36.0
           python - <<'PY'
-          import inspect, numpy, onnx, onnxruntime, onnxscript, safetensors, torch
+          import inspect, sys, numpy, onnx, onnxruntime, onnxscript, safetensors, torch
+          from google.protobuf import __version__ as protobuf_version
           assert torch.__version__.startswith('2.13.0'), torch.__version__
           assert numpy.__version__ == '2.4.6'
           assert safetensors.__version__ == '0.8.0'
           assert onnx.__version__ == '1.22.0'
           assert onnxscript.__version__ == '0.7.1'
           assert onnxruntime.__version__ == '1.27.0'
+          assert protobuf_version == '7.36.0', protobuf_version
+          assert sys.version_info[:3] == (3, 11, 16), sys.version
           assert 'fallback' not in inspect.signature(torch.onnx.export).parameters
           assert 'dynamic_shapes' in inspect.signature(torch.onnx.export).parameters
-          print('C8 EXPORT ENVIRONMENT: PASS', torch.__version__, numpy.__version__, onnx.__version__, onnxruntime.__version__)
+          print('C8 EXPORT ENVIRONMENT: PASS', torch.__version__, numpy.__version__, onnx.__version__, onnxruntime.__version__, 'protobuf', protobuf_version)
           PY
 
       - name: Prove independent-process LaMa ONNX byte reproducibility
