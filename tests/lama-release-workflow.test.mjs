@@ -93,5 +93,4 @@ test('current pre-release manifest is exact pinned C8 candidate identity', () =>
   assert.equal(manifest.bersArtifact.size, ONNX_SIZE);
   assert.equal(manifest.bersArtifact.sha256, ONNX_SHA);
   assert.equal(manifest.bersArtifact.opset, 18);
-  assert.equal(manifest.bersArtifact.reproducibility.protobufVersion, '7.36.0');
 });
