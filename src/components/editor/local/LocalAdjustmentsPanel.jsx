@@ -2,6 +2,7 @@ import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { Download, ImagePlus, Loader2, RotateCcw, ShieldCheck, Undo2, Redo2 } from 'lucide-react';
 import AdvancedLocalControls from '@/components/editor/local/AdvancedLocalControls';
 import { commitGroupedLocalHistory } from '@/lib/local-editor/localHistory';
+import { composeLocalSplitPreview } from '@/lib/local-editor/localCompare';
 import { readBoundedLocalImageResponse } from '@/lib/local-editor/localImageTransport';
 import LocalAnnotationControls from '@/components/editor/local/LocalAnnotationControls';
 import LocalRecipeControls from '@/components/editor/local/LocalRecipeControls';
@@ -114,6 +115,9 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
   const [savingDevice, setSavingDevice] = useState(false);
   const [restoringDevice, setRestoringDevice] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
+  const [splitCompare, setSplitCompare] = useState(false);
+  const [splitPosition, setSplitPosition] = useState(50);
+  const processedPreviewCache = useRef(null);
   const [histogram, setHistogram] = useState(null);
   const [openCategories, setOpenCategories] = useState({ Light: true, Color: false, Effects: false });
   const [history, dispatch] = useReducer(historyReducer, { entries: [LOCAL_DEFAULTS], index: 0 });
@@ -219,6 +223,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     abortRef.current?.abort();
     loadGeneration.current++;
     image.current = null;
+    processedPreviewCache.current = null;
     for (const url of exportUrls.current) URL.revokeObjectURL(url);
     exportUrls.current.clear();
   }, []);
@@ -227,8 +232,11 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     const raster = await decodeLocalImage(blob);
     if (generation !== loadGeneration.current) return;
     image.current = raster;
+    processedPreviewCache.current = null;
     dispatch({ type: 'reset' });
     setShowOriginal(false);
+    setSplitCompare(false);
+    setSplitPosition(50);
     setCloneMode('off');
     setCloneSource(null);
     cloneDrawing.current = null;
@@ -286,12 +294,24 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       try {
         const source = image.current, canvas = canvasRef.current;
         if (!source || !canvas) return;
+        const cache = processedPreviewCache.current;
+        // A moving split slider must not rerun expensive photo effects.
+        // Settings identity is stable across view-only changes (useMemo).
+        if (!cache || cache.source !== source || cache.settings !== settings || cache.advanced !== advanced) {
+          processedPreviewCache.current = {
+            source, settings, advanced,
+            pixels: applyAdvancedLocalAdjustments(
+              applyLocalAdjustments(source.preview, source.previewWidth, source.previewHeight, settings),
+              source.previewWidth, source.previewHeight, advanced, source.preview,
+            ),
+          };
+        }
+        const after = processedPreviewCache.current.pixels;
         const pixels = showOriginal
           ? new Uint8ClampedArray(source.preview)
-          : applyAdvancedLocalAdjustments(
-            applyLocalAdjustments(source.preview, source.previewWidth, source.previewHeight, settings),
-            source.previewWidth, source.previewHeight, advanced, source.preview,
-          );
+          : splitCompare
+            ? composeLocalSplitPreview(source.preview, after, source.previewWidth, source.previewHeight, splitPosition)
+            : after;
         canvas.width = source.previewWidth;
         canvas.height = source.previewHeight;
         const context = canvas.getContext('2d', { willReadFrequently: true });
@@ -301,7 +321,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       } catch (cause) { setError(cause?.message || 'Local preview failed.'); }
     });
     return () => cancelAnimationFrame(frame);
-  }, [details, settings, advanced, showOriginal]);
+  }, [details, settings, advanced, showOriginal, splitCompare, splitPosition]);
 
   useEffect(() => {
     const source = image.current, canvas = annotationCanvasRef.current;
@@ -549,6 +569,10 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     catch (cause) { setError(cause?.message || 'Could not place centered annotation.'); }
   };
   const setDrawingMode = mode => {
+    if (mode !== 'off') {
+      setSplitCompare(false);
+      setShowOriginal(false);
+    }
     cloneDrawing.current = null;
     annotationDrawing.current = null;
     setAnnotationDraft(null);
@@ -556,6 +580,10 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     setAnnotationMode(mode);
   };
   const setStampMode = mode => {
+    if (mode !== 'off') {
+      setSplitCompare(false);
+      setShowOriginal(false);
+    }
     annotationDrawing.current = null;
     setAnnotationDraft(null);
     setAnnotationMode('off');
@@ -680,12 +708,42 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0"><h3 className="truncate font-semibold">{details.name}</h3><p className="text-xs text-muted-foreground">{details.width} × {details.height} px · PNG at original resolution</p></div>
-            <div className="flex gap-2" role="group" aria-label="Compare local image">
-              <Button type="button" size="sm" aria-pressed={showOriginal} variant={showOriginal ? 'default' : 'outline'} onClick={() => setShowOriginal(true)}>Before</Button>
-              <Button type="button" size="sm" aria-pressed={!showOriginal} variant={!showOriginal ? 'default' : 'outline'} onClick={() => setShowOriginal(false)}>After</Button>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Compare local image">
+              <Button type="button" size="sm" aria-pressed={showOriginal} variant={showOriginal ? 'default' : 'outline'} onClick={() => { setSplitCompare(false); setShowOriginal(true); }}>Before</Button>
+              <Button type="button" size="sm" aria-pressed={!showOriginal && !splitCompare} variant={!showOriginal && !splitCompare ? 'default' : 'outline'} onClick={() => { setSplitCompare(false); setShowOriginal(false); }}>After</Button>
+              <Button
+                type="button" size="sm" aria-pressed={splitCompare}
+                variant={splitCompare ? 'default' : 'outline'}
+                onClick={() => {
+                  setShowOriginal(false);
+                  setSplitCompare(true);
+                  setCloneMode('off');
+                  setAnnotationMode('off');
+                  cloneDrawing.current = null;
+                  annotationDrawing.current = null;
+                  setAnnotationDraft(null);
+                }}
+              >Split view</Button>
             </div>
           </div>
 
+          {splitCompare && (
+            <div className="space-y-2 rounded-xl border border-border/70 bg-muted/40 p-3">
+              <label className="flex items-center justify-between gap-2 text-sm font-medium" htmlFor="local-split-position">
+                <span>Before / after divider</span>
+                <output className="tabular-nums" aria-label="Split comparison position">{splitPosition}%</output>
+              </label>
+              <input
+                id="local-split-position"
+                aria-label="Before and after split position"
+                type="range" min="0" max="100" step="1"
+                value={splitPosition}
+                onChange={event => setSplitPosition(Number(event.target.value))}
+                className="w-full accent-primary"
+              />
+              <p className="text-xs text-muted-foreground">Original on the left, edits on the right. For private photos, the original may be visible in this preview. Export always uses the complete edited photo, not the split view.</p>
+            </div>
+          )}
           <LocalAnnotationControls
             mode={annotationMode}
             onMode={setDrawingMode}
@@ -715,6 +773,18 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
                 onPointerCancel={cloneUp}
                 onPointerLeave={() => setCloneCursor(null)}
               />
+              {splitCompare && (
+                <>
+                  <div
+                    data-local-split-divider="true"
+                    className="pointer-events-none absolute inset-y-0 z-20 w-0 border-l-2 border-white shadow-[1px_0_1px_rgba(0,0,0,0.65)]"
+                    style={{ left: splitPosition + '%' }}
+                    aria-hidden="true"
+                  />
+                  <span className="pointer-events-none absolute left-2 top-2 z-20 rounded bg-black/70 px-2 py-1 text-xs font-semibold text-white">Before</span>
+                  <span className="pointer-events-none absolute right-2 top-2 z-20 rounded bg-black/70 px-2 py-1 text-xs font-semibold text-white">After</span>
+                </>
+              )}
               <canvas
                 ref={annotationCanvasRef}
                 data-local-annotation-surface="true"
@@ -722,6 +792,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
                 aria-label={annotationMode !== 'off' ? 'Draw ' + annotationMode + ' annotation on photo' : undefined}
                 tabIndex={annotationMode !== 'off' ? 0 : -1}
                 className={'absolute inset-0 h-full w-full rounded-xl ' + (annotationMode !== 'off' ? 'touch-none cursor-crosshair' : 'pointer-events-none')}
+                style={splitCompare ? { clipPath: 'inset(0 0 0 ' + splitPosition + '%)' } : undefined}
                 onPointerDown={annotationDown}
                 onPointerMove={annotationMove}
                 onPointerUp={annotationUp}
@@ -733,7 +804,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
                   }
                 }}
               />
-              {!showOriginal && selectedCanvasBounds && (
+              {!showOriginal && !splitCompare && selectedCanvasBounds && (
                 <div
                   data-local-annotation-selection="true"
                   className="pointer-events-none absolute z-10 rounded-sm border-2 border-dashed border-amber-400 shadow-[0_0_0_1px_rgba(15,23,42,0.7)]"
