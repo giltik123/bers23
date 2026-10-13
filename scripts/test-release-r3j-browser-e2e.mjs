@@ -491,6 +491,24 @@ try {
   const projectBeforeAccept = await readProjectState(projectId);
   assert.deepEqual(projectBeforeAccept, initialProject, 'Try-On execution/recovery/retry must not mutate Project before Accept');
 
+  // Scenario D: AI-first Editor must render both candidate images and require
+  // an explicit four-criterion Fashion review before Accept can be used.
+  // E2E simulates the review controls, NOT human photographic quality approval.
+  const acceptButton = page.getByRole('button', { name: 'Принять в историю', exact: true });
+  assert.equal(await acceptButton.isDisabled(), true, 'Fashion FINAL cannot be accepted before reviewed images and criteria');
+  await page.getByRole('button', { name: 'Сравнить границу', exact: true }).click();
+  await waitImage(page, 'Исходная фотография; сравните с результатом', 120, 160);
+  await waitImage(page, 'Результат обработки справа от границы сравнения', 120, 160);
+  const fashionReviewLabels = [
+    'Одежда сидит по телу, плечам и талии естественно',
+    'Руки, волосы и контуры тела правильно перекрывают ткань',
+    'Ткань, принт, швы и логотипы без заметных искажений',
+    'Лицо, освещение и фон остались естественными',
+  ];
+  for (const label of fashionReviewLabels) {
+    await page.getByRole('checkbox', { name: label, exact: true }).check();
+  }
+  assert.equal(await acceptButton.isEnabled(), true, 'Fashion Accept must require all four user review decisions');
   // Scenario D: existing Editor ResultCompare -> Accept is the sole Project mutation boundary.
   const acceptWait = waitForCoreResponse(page, 'POST', pathname => pathname === `/api/core/projects/${projectId}/accept-final`);
   await page.getByRole('button', { name: 'Принять в историю', exact: true }).click();
