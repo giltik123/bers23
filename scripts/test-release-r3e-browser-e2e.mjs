@@ -178,6 +178,32 @@ try {
     return canvas instanceof HTMLCanvasElement && canvas.width === 12 && canvas.height === 8
       && canvas.getContext('2d').getImageData(6, 4, 1, 1).data[0] > 44;
   }, null, { timeout: 10_000 });
+  // Split preview must show genuine original pixels on the left and edited
+  // pixels on the right; moving the divider must NOT alter any export bytes.
+  await localLab.getByRole('button', { name: 'Split view' }).click();
+  const comparePosition = localLab.getByRole('slider', { name: 'Before and after split position' });
+  await comparePosition.fill('50');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    if (!canvas || canvas.width !== 12 || canvas.height !== 8) return false;
+    const ctx = canvas.getContext('2d');
+    return ctx.getImageData(0, 4, 1, 1).data[0] === 44
+      && ctx.getImageData(11, 4, 1, 1).data[0] === 94;
+  }, null, { timeout: 10_000 });
+  assert.equal(await localLab.locator('[data-local-split-divider="true"]').count(), 1);
+  await comparePosition.fill('100');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    return canvas?.getContext('2d')?.getImageData(11, 4, 1, 1).data[0] === 44;
+  }, null, { timeout: 10_000 });
+  await comparePosition.fill('0');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    return canvas?.getContext('2d')?.getImageData(0, 4, 1, 1).data[0] === 94;
+  }, null, { timeout: 10_000 });
+  await comparePosition.fill('50');
+  assert.match(await localLab.getByLabel('Local undo history position').innerText(), /Edit \d+ of \d+/, 'split position must not consume Undo history');
+
   const localDownloadPromise = page.waitForEvent('download', { timeout: 10_000 });
   await localLab.getByRole('button', { name: 'Download edited PNG' }).click();
   const localDownload = await localDownloadPromise;
@@ -187,6 +213,8 @@ try {
   assert.equal(localPixels.info.width, 12);
   assert.equal(localPixels.info.height, 8);
   assert.deepEqual([...localPixels.data.subarray(0, 4)], [94, 146, 198, 255], 'full resolution local PNG must contain actual brightness-adjusted pixels');
+  await localLab.getByRole('button', { name: 'After', exact: true }).click();
+  assert.equal(await localLab.locator('[data-local-split-divider="true"]').count(), 0, 'comparison divider must disappear when returning to editing');
   assert.deepEqual(await readProjectState(projectId), initial, 'local PNG editing must never mutate canonical Core Project');
   assert.equal(providerCalls, 0, 'local image editing must never call AI providers');
   assert.deepEqual(diagnostics.localExecutionRequests, [], 'local PNG editing must not manufacture Core execution tickets');
