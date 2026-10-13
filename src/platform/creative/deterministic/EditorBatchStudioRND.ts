@@ -152,7 +152,9 @@ export async function executeEditorBatchPlanRND(
     throw new Error('Editor Batch Studio source requires exact RGBA8 bytes');
   }
   if(signal?.aborted)throw new Error('Editor Batch Studio cancelled');
-  let data=new Uint8ClampedArray(input);
+  // Native crop/resize/rotate kernels may return views backed by ArrayBufferLike.
+  // Preserve that exact typed-array type; no unsafe cast or pixel-copy bypass.
+  let data: Uint8ClampedArray<ArrayBufferLike> = new Uint8ClampedArray(input);
   const sourceHash=await sha256(new Uint8Array(data));
   if(sourceHash!==trusted.sourceSha256)throw new Error('Editor Batch Studio source SHA mismatch');
   let width=trusted.inputWidth,height=trusted.inputHeight;
