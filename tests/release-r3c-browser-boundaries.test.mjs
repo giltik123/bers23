@@ -15,7 +15,7 @@ test('R3c browser harness extends accepted R3 with Discard Version Restore and s
     'RESTORE_VERSION',
     'final_source_conflict',
     'The prepared result was not accepted because the Project changed. Run the edit again from the current image.',
-    "name: 'Discard'",
+    "name: 'Отклонить'",
     "name: 'Versions'",
     "name: 'Undo'",
     "name: 'Redo'",
