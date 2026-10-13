@@ -154,6 +154,11 @@ try {
   const localLab = page.getByRole('region', { name: 'Local photo adjustments' });
   await localLab.getByRole('heading', { name: 'Local photo lab' }).waitFor({ state: 'visible', timeout: 10_000 });
   const brightness = localLab.getByRole('slider', { name: 'Local Brightness' });
+  // The redesigned Editor places Local tools below a taller image workspace.
+  // A bounding box alone is not evidence that Chrome can hit the slider:
+  // scroll the *actual* control into the viewport before real pointer input.
+  await brightness.scrollIntoViewIfNeeded();
+  await brightness.waitFor({ state: 'visible', timeout: 10_000 });
   // A REAL Chrome slider drag fires many input updates. One user gesture must
   // create exactly one Undo entry, not consume the entire 40-step local history.
   const sliderRect = await brightness.boundingBox();
