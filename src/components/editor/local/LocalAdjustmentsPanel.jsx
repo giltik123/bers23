@@ -781,6 +781,47 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
                     style={{ left: splitPosition + '%' }}
                     aria-hidden="true"
                   />
+                  <button
+                    type="button"
+                    role="slider"
+                    aria-label="Drag comparison divider"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={splitPosition}
+                    aria-valuetext={splitPosition + '% original visible'}
+                    aria-orientation="horizontal"
+                    className="absolute inset-y-0 z-30 w-8 -translate-x-1/2 cursor-ew-resize touch-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    style={{ left: splitPosition + '%' }}
+                    onPointerDown={event => {
+                      if (event.pointerType === 'mouse' && event.button !== 0) return;
+                      event.preventDefault();
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                    }}
+                    onPointerMove={event => {
+                      if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+                      const rect = event.currentTarget.parentElement.getBoundingClientRect();
+                      if (rect.width > 0) setSplitPosition(Math.min(100, Math.max(0, Math.round(100 * (event.clientX - rect.left) / rect.width))));
+                    }}
+                    onPointerUp={event => {
+                      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+                    }}
+                    onPointerCancel={event => {
+                      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+                    }}
+                    onKeyDown={event => {
+                      const delta = event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -1
+                        : event.key === 'ArrowRight' || event.key === 'ArrowUp' ? 1 : 0;
+                      if (delta !== 0) {
+                        event.preventDefault();
+                        setSplitPosition(value => Math.min(100, Math.max(0, value + delta)));
+                      } else if (event.key === 'Home' || event.key === 'End') {
+                        event.preventDefault();
+                        setSplitPosition(event.key === 'Home' ? 0 : 100);
+                      }
+                    }}
+                  >
+                    <span aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 flex h-11 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-primary text-xs font-semibold text-primary-foreground shadow-md">↔</span>
+                  </button>
                   <span className="pointer-events-none absolute left-2 top-2 z-20 rounded bg-black/70 px-2 py-1 text-xs font-semibold text-white">Before</span>
                   <span className="pointer-events-none absolute right-2 top-2 z-20 rounded bg-black/70 px-2 py-1 text-xs font-semibold text-white">After</span>
                 </>
