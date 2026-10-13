@@ -24,7 +24,7 @@ test('R3g drives visible zero-object navigation into canonical Fashion and Outfi
   assert.match(tryOnRunner, /aria-label="Canonical deterministic Try-On runner"/);
 
   for (const text of [
-    "getByRole('button', { name: 'Prompt', exact: true })",
+    "getByRole('button', { name: 'Legacy prompt', exact: true })",
     "getByRole('button', { name: 'Fashion', exact: true })",
     "getByRole('button', { name: 'Outfits', exact: true })",
     "getByRole('region', { name: 'Canonical fashion wardrobe', exact: true })",
