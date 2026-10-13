@@ -31,17 +31,33 @@ function validateUrl(raw) {
   return url;
 }
 async function download(sourceUrl) {
-  const response=await fetch(validateUrl(sourceUrl),{
-    redirect:'error',signal:AbortSignal.timeout(45_000),
-    headers:{accept:'image/jpeg,image/png,image/webp',
-      'user-agent':'BERS-Professional-Editor-Quality/1.0 (github.com/giltik123/bers23)'},
-  });
-  if(!response.ok)throw new Error(`Photo source returned HTTP ${response.status}`);
-  const size=Number(response.headers.get('content-length'));
-  if(Number.isFinite(size)&&size>MAX_DOWNLOAD_BYTES)throw new Error('Downloaded photo too large');
-  const bytes=Buffer.from(await response.arrayBuffer());
-  if(bytes.length===0||bytes.length>MAX_DOWNLOAD_BYTES)throw new Error('Downloaded photo is empty/oversized');
-  return bytes;
+  const url=validateUrl(sourceUrl);
+  const backoffMs=[10000,20000,40000,60000];
+  for(let attempt=0;attempt<=backoffMs.length;attempt++){
+    const response=await fetch(url,{
+      redirect:'error',signal:AbortSignal.timeout(45_000),
+      headers:{accept:'image/jpeg,image/png,image/webp',
+        'user-agent':'BERS-Professional-Editor-Quality/1.0 (github.com/giltik123/bers23)'},
+    });
+    if((response.status===429||response.status===503)&&attempt<backoffMs.length){
+      const header=response.headers.get('retry-after');
+      const seconds=header===null?NaN:Number(header);
+      await response.body?.cancel();
+      if(Number.isFinite(seconds)&&seconds>60)
+        throw new Error('Professional photo source retry-after exceeds 60 seconds');
+      const delay=Number.isFinite(seconds)&&seconds>=0?seconds*1000:backoffMs[attempt];
+      console.warn(`Professional photo source HTTP ${response.status}; bounded retry ${attempt+1}/5 in ${delay}ms`);
+      await new Promise(resolve=>setTimeout(resolve,delay));
+      continue;
+    }
+    if(!response.ok)throw new Error(`Photo source returned HTTP ${response.status}`);
+    const size=Number(response.headers.get('content-length'));
+    if(Number.isFinite(size)&&size>MAX_DOWNLOAD_BYTES)throw new Error('Downloaded photo too large');
+    const bytes=Buffer.from(await response.arrayBuffer());
+    if(bytes.length===0||bytes.length>MAX_DOWNLOAD_BYTES)throw new Error('Downloaded photo is empty/oversized');
+    return bytes;
+  }
+  throw new Error('Professional photo source exhausted bounded retry budget');
 }
 async function normalize(bytes) {
   const original=await sharp(bytes,{failOn:'error',limitInputPixels:40_000_000}).metadata();
