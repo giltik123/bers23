@@ -4,8 +4,15 @@ import test from 'node:test';
 
 const probe = await readFile(new URL('../scripts/probe-lama-cross-process-reproducibility.py', import.meta.url), 'utf8');
 const manifest = JSON.parse(await readFile(new URL('../src/platform/creative/local-ai/models/lama-inpainting.manifest.json', import.meta.url), 'utf8'));
+const workflow = await readFile(new URL('../.github/workflows/sprint-6.42c8-lama-release-reproducibility.yml', import.meta.url), 'utf8');
 const LAMA_ONNX_SIZE = 208593659;
 const LAMA_ONNX_SHA256 = '8bf7891efa16ea07de31fc98c5f0c017b399956cba0182813ddf23d9072792c7';
+
+test('C8 requires the protobuf 7.36.0 serializer used by the historically green pinned export', () => {
+  assert.match(workflow, /protobuf==7\\.36\\.0/);
+  assert.match(workflow, /protobuf_version == '7\\.36\\.0'/);
+  assert.doesNotMatch(workflow, /pip install.*--upgrade.*protobuf/);
+});
 
 test('C8 uses two independent fixed-hash-seed Python exporters and the accepted C7 probe', () => {
   assert.match(probe, /EXPORT_PYTHON_HASH_SEED = "0"/);
