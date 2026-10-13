@@ -86,6 +86,8 @@ Dispatch **BERS v1 Fashion real-image quality evidence** on the exact candidate 
 - `fixture_manifest_url`;
 - `review_artifact_url`.
 
+The owner-only dispatch bridge resolves the evidence branch to one immutable Git commit SHA and reads both fixture/review JSON files from that single snapshot. It dispatches raw fixture/review URLs pinned to the same evidence commit, not a mutable branch ref, so changing the evidence branch while the workflow runs cannot substitute a different owner decision. The candidate SHA is bound separately to the exact `main` code commit.
+
 The workflow checks out the exact dispatched SHA, downloads and verifies all referenced image bytes, checks the review, computes fixture/review digests, derives p50/p95 latency and peak memory, and uploads:
 
 - `fashion-tryon-quality.json`;

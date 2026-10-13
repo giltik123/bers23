@@ -36,12 +36,22 @@ jobs:
             const fixturePath = `${evidencePrefix}/fixture-manifest.json`;
             const reviewPath = `${evidencePrefix}/review.json`;
 
+            // One immutable snapshot: branch refs can move between the owner
+            // check and the later Actions dispatch / raw-image verification.
+            const evidenceSnapshot = await github.rest.repos.getBranch({
+              owner, repo, branch: evidenceBranch,
+            });
+            const evidenceCommitSha = evidenceSnapshot.data.commit.sha;
+            if (!/^[0-9a-f]{40}$/.test(evidenceCommitSha)) {
+              throw new Error('Fashion evidence snapshot must resolve to an exact Git commit');
+            }
+
             const loadJson = async path => {
               const response = await github.rest.repos.getContent({
                 owner,
                 repo,
                 path,
-                ref: evidenceBranch,
+                ref: evidenceCommitSha,
               });
               if (Array.isArray(response.data) || response.data.type !== 'file' || !response.data.content) {
                 throw new Error(`Expected one file at ${evidenceBranch}:${path}`);
@@ -104,7 +114,7 @@ jobs:
               reviewedIds.add(sample.id);
             }
 
-            const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/${evidenceBranch}/${evidencePrefix}`;
+            const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/${evidenceCommitSha}/${evidencePrefix}`;
             const fixture_manifest_url = `${rawBase}/fixture-manifest.json`;
             const review_artifact_url = `${rawBase}/review.json`;
 

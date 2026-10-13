@@ -276,6 +276,12 @@ test('Fashion owner dispatch bridge checks review output byte identities before 
   const source = await readFile('.github/workflows/v1-fashion-real-image-quality-evidence-dispatch.yml', 'utf8');
   assert.match(source, /sample\.reviewedOutputSha256 !== fixtureSample\.result\.sha256/u);
   assert.match(source, /reviewedIds\.has\(sample\.id\)/u);
+  assert.match(source, /const evidenceSnapshot = await github\.rest\.repos\.getBranch/u);
+  assert.match(source, /const evidenceCommitSha = evidenceSnapshot\.data\.commit\.sha/u);
+  assert.match(source, /ref: evidenceCommitSha,/u);
+  assert.match(source, /raw\.githubusercontent\.com\/\$\{owner\}\/\$\{repo\}\/\$\{evidenceCommitSha\}/u);
+  assert.doesNotMatch(source, /ref: evidenceBranch,/u);
+  assert.doesNotMatch(source, /raw\.githubusercontent\.com\/\$\{owner\}\/\$\{repo\}\/\$\{evidenceBranch\}/u);
   assert.match(source, /sampleIds\.has\(sample\.id\)/u);
   const outputBinding = source.indexOf('sample.reviewedOutputSha256 !== fixtureSample.result.sha256');
   const dispatch = source.indexOf('github.rest.actions.createWorkflowDispatch');
