@@ -161,6 +161,9 @@ try {
   // R3p: retry only through the real Job Center owning-workflow control. The
   // browser never mutates ExecutionRun directly and does not reconstruct the
   // Automation/Agent command from local state.
+  // The redesigned Editor places canonical Job Center under an explicit
+  // progressive-disclosure section; a real user must open it before Retry.
+  await page.locator('details[aria-label="Additional editor tools and status"] > summary').click();
   const serverExecutions = page.locator('[data-job-center-canonical-executions]');
   await serverExecutions.waitFor({ state: 'visible', timeout: 20_000 });
   await serverExecutions.getByRole('button', { name: 'Refresh', exact: true }).click();
