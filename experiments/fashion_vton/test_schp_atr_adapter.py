@@ -52,6 +52,10 @@ class SchpAtrAdapterTests(unittest.TestCase):
             SchpAtrOnnxParser(self.checkpoint, "0" * 64, session=FakeOrtSession())
         with self.assertRaisesRegex(ValueError, "lowercase"):
             SchpAtrOnnxParser(self.checkpoint, "INVALID", session=FakeOrtSession())
+        symlink = Path(self.tmp.name) / "indirect.onnx"
+        symlink.symlink_to(self.checkpoint)
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            SchpAtrOnnxParser(symlink, self.sha, session=FakeOrtSession())
 
     def test_classification_and_resize_are_nearest_neighbor(self):
         parser, session = self.parser()
