@@ -15,13 +15,12 @@ export async function checkMaskArtifactSchema(pool: Pool): Promise<void> {
         AND conname='canonical_mask_artifacts_lineage_shape_check'
         AND contype='c'
         AND position('LOCAL_SEGMENTATION' in pg_get_constraintdef(oid)) > 0
-        AND position('CLOUD_SEGMENTATION' in pg_get_constraintdef(oid)) > 0
     ) AS shape_check,
     to_regclass('canonical_mask_artifacts_source_image_idx') IS NOT NULL AS source_idx,
     to_regclass('canonical_mask_artifacts_parent_mask_idx') IS NOT NULL AS parent_idx`);
   const row = result.rows[0] ?? {};
   if (!row.table_present || !row.lineage_columns || !row.source_fk || !row.parent_fk || !row.shape_check || !row.source_idx || !row.parent_idx) {
-    throw new Error('canonical MASK artifact schema is incomplete; apply migrations 002, 014, 017 and 049');
+    throw new Error('canonical MASK artifact schema is incomplete; apply migrations 002, 014 and 017');
   }
 }
 
@@ -36,16 +35,8 @@ export async function migrateMaskArtifactSchema(pool: Pool): Promise<void> {
     EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='canonical_mask_artifacts' AND column_name='source_image_storage_id') AS has_source,
     EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('canonical_mask_artifacts') AND conname='canonical_mask_artifacts_source_image_fk' AND contype='f') AS has_source_fk`);
   if (!lineageState.rows[0]?.has_source || !lineageState.rows[0]?.has_source_fk) await pool.query(await readLineageMigration());
-  // Preserve 017 before adding a distinct cloud producer in 049. Do not
-  // silently reinterpret existing LOCAL_SEGMENTATION rows as cloud inference.
-  const localShape = await pool.query(`SELECT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conrelid=to_regclass('canonical_mask_artifacts')
-      AND conname='canonical_mask_artifacts_lineage_shape_check' AND contype='c'
-      AND position('LOCAL_SEGMENTATION' in pg_get_constraintdef(oid)) > 0
-  ) AS present`);
-  if (!localShape.rows[0]?.present) await pool.query(await readLocalSegmentationLineageMigration());
-  await pool.query(await readCloudSegmentationLineageMigration());
+  try { await checkMaskArtifactSchema(pool); return; } catch { /* apply LOCAL_SEGMENTATION shape upgrade below */ }
+  await pool.query(await readLocalSegmentationLineageMigration());
   await checkMaskArtifactSchema(pool);
 }
 
@@ -67,14 +58,5 @@ async function readLocalSegmentationLineageMigration(): Promise<string> {
   } catch (error) {
     if (process.env.NODE_ENV === 'production') throw error;
     return readFile(resolve(process.cwd(), 'server/core/artifacts/migrations/017_local_segmentation_mask_lineage.sql'), 'utf8');
-  }
-}
-
-async function readCloudSegmentationLineageMigration(): Promise<string> {
-  try {
-    return await readFile(new URL('./migrations/049_cloud_scene_mask_lineage.sql', import.meta.url), 'utf8');
-  } catch (error) {
-    if (process.env.NODE_ENV === 'production') throw error;
-    return readFile(resolve(process.cwd(), 'server/core/artifacts/migrations/049_cloud_scene_mask_lineage.sql'), 'utf8');
   }
 }

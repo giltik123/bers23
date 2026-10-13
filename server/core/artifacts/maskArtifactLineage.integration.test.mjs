@@ -101,19 +101,6 @@ test('C1 real PostgreSQL + HTTP enforces canonical MASK lineage and geometry', {
       producerOperation: 'MANUAL_SELECTION',
     });
     const parentId = signing.issueStoredMask(parent.storageId, scope);
-    // Cloud-generated MASKs have their own durable producer identity, not
-    // LOCAL_SEGMENTATION. Core verifies the same source lineage on reload.
-    const cloud = await masks.persistManual(scope, 4, 4, new Uint8Array(16).fill(101), {
-      sourceImageStorageId: source.storageId, producerOperation: 'CLOUD_SEGMENTATION',
-    });
-    const cloudRead = await masks.load(cloud.storageId, scope);
-    assert.equal(cloudRead.producerOperation, 'CLOUD_SEGMENTATION');
-    assert.equal(cloudRead.sourceImageStorageId, source.storageId);
-    assert.equal(cloudRead.parentMaskStorageId, undefined);
-    await assert.rejects(() => masks.persistManual(scope, 4, 4, new Uint8Array(16).fill(5), {
-      sourceImageStorageId: source.storageId, parentMaskStorageId: parent.storageId,
-      producerOperation: 'CLOUD_SEGMENTATION',
-    }), /CLOUD_SEGMENTATION cannot claim a parent MASK/);
     const otherParent = await masks.persistManual(otherScope, 4, 4, new Uint8Array(16).fill(200), {
       sourceImageStorageId: otherSource.storageId,
       producerOperation: 'MANUAL_SELECTION',
