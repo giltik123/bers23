@@ -31,6 +31,8 @@ test('release rebuilds only exact pinned trust roots and exact C8 bytes', () => 
   assert.match(workflow, /probe-lama-cross-process-reproducibility\.py/);
   assert.match(workflow, /matchesPinnedReleaseIdentity/);
   assert.ok(workflow.includes('protobuf==7.36.0'));
+  assert.ok(workflow.includes("python-version: '3.11.16'"));
+  assert.ok(workflow.includes('sys.version_info[:3] == (3, 11, 16)'));
   assert.ok(workflow.includes("protobuf_version == '7.36.0'"));
   assert.match(workflow, /stat -c%s "\$\{PACK_DIR\}\/lama-big-places-inpainting\.onnx"/);
   assert.match(workflow, /sha256sum "\$\{PACK_DIR\}\/lama-big-places-inpainting\.onnx"/);
