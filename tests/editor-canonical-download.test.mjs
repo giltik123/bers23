@@ -27,6 +27,7 @@ function fixture({status=200,mime='image/png',bytes=verifiedPng,urlValue=url}={}
   const fetcher=async(request,init)=>{
     calls.push('fetch');
     assert.equal(init.credentials,'include');
+    assert.equal(init.redirect,'error');
     assert.equal(request,'https://bers.test'+urlValue);
     return new Response(new Blob([bytes],{type:mime}),{status,headers:{'Content-Type':mime}});
   };
@@ -117,6 +118,40 @@ test('HTTP errors, HTML responses and empty downloads never click an export link
     assert.equal(f.state().clicked,false);
   }
 });
+test('Core download enforces actual streamed-byte budget without trusting Content-Length',async()=>{
+  const body=new Uint8Array(2048).fill(65);
+  let cancelled=false;
+  const f=fixture();
+  const fetcher=async()=>new Response(new ReadableStream({
+    start(controller){ controller.enqueue(body); },
+    cancel(){ cancelled=true; },
+  }),{headers:{'content-type':'image/png','content-length':'20'}});
+  await assert.rejects(()=>downloadCanonicalImage({...f.options,fetcher,maxBytes:1024}),
+    /exceeds safety limits/);
+  assert.equal(cancelled,true);
+  assert.equal(f.state().clicked,false);
+  await assert.rejects(()=>downloadCanonicalImage({...f.options,maxBytes:100_000_001}),
+    /byte limit is invalid/);
+});
+
+test('Core image download rejects a forged image MIME, without creating a file',async()=>{
+  const f=fixture({mime:'image/png',bytes:Buffer.from('<html>not-a-png</html>')});
+  await assert.rejects(()=>downloadCanonicalImage(f.options),/declared image format/);
+  assert.equal(f.state().clicked,false);
+});
+
+test('Core image download rejects oversized declared Content-Length before reading a stream',async()=>{
+  const f=fixture();
+  let started=false;
+  const fetcher=async()=>new Response(new ReadableStream({
+    pull(){started=true;},
+  }),{headers:{'content-type':'image/png','content-length':'999999999'}});
+  await assert.rejects(()=>downloadCanonicalImage({...f.options,fetcher}),/exceeds safety limits/);
+  // No stream reader is acquired for an oversized declared image.
+  assert.equal(started,false);
+  assert.equal(f.state().clicked,false);
+});
+
 test('Editor uses file-download handler rather than a navigation to an image tab',async()=>{
   const editor=await readFile('src/pages/Editor.jsx','utf8');
   assert.match(editor,/downloadCanonicalImage\(/);
