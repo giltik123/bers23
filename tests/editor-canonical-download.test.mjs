@@ -142,13 +142,15 @@ test('Core image download rejects a forged image MIME, without creating a file',
 
 test('Core image download rejects oversized declared Content-Length before reading a stream',async()=>{
   const f=fixture();
-  let started=false;
-  const fetcher=async()=>new Response(new ReadableStream({
-    pull(){started=true;},
-  }),{headers:{'content-type':'image/png','content-length':'999999999'}});
+  let readerAcquired=false;
+  const fetcher=async()=>({
+    ok:true,
+    headers:new Headers({'content-type':'image/png','content-length':'999999999'}),
+    body:{getReader(){readerAcquired=true;throw new Error('must not read oversized body');}},
+  });
   await assert.rejects(()=>downloadCanonicalImage({...f.options,fetcher}),/exceeds safety limits/);
   // No stream reader is acquired for an oversized declared image.
-  assert.equal(started,false);
+  assert.equal(readerAcquired,false);
   assert.equal(f.state().clicked,false);
 });
 
