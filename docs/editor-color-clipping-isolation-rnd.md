@@ -1,7 +1,9 @@
 # Standalone Editor color and clipping diagnostics — R&D only
 
-Source: **six unchanged source/test files** from Draft #988 at exact SHA
+Source: six source/test files originally copied from Draft #988 at exact SHA
 `4adca122ea52d561cf6ba7a25b4d8e8a5d4de2cd`.
+**Four files remain byte-identical**. The Delta-E implementation and its
+test now contain a narrow independently audited **bug fix**, described below.
 
 - `EditorColorDifferenceRND.ts`: deterministic bounded CIEDE2000 (Delta-E)
   diagnostic using assumed common sRGB/D65 RGBA8 images, optional R8
@@ -12,14 +14,26 @@ Source: **six unchanged source/test files** from Draft #988 at exact SHA
   and near-white/near-black diagnostic (all three channels), used in one
   original `editor-tonal-clipping-rnd.test.mjs` case to distinguish
   saturated red from near-white. The module has no imports.
-- All **three original Node test files** are unchanged; the two primary
-  diagnostics alone are insufficient to execute the source suite because the
-  tonal test imports the original inspector module. This missing dependency
+- The original clipping and quality-inspector tests remain byte-identical,
+  while the original Delta-E tests gained one overflow regression. The two
+  primary diagnostics alone were insufficient to execute the source suite
+  because the tonal test imports the original inspector module. This missing dependency
   was found by exact-head CI at initial SHA `8576aa1c`; no test was deleted,
   skipped, rewritten or relaxed. A subsequent commit copied the dependency
   and its own tests unchanged, then included them in the workflow.
+- **Overflow bug discovered after initial 77/77 success:** the bounded
+  CIEDE2000 histogram used a 401 overflow bucket for values >=100.25,
+  but reported p95 `UpperBound=100` even when an evaluated sRGB pair
+  exceeded 100. A new single-pixel saturated-green versus magenta
+  regression asserts the returned upper bound is no smaller than the
+  measured Delta-E. In the overflow bucket the implementation now
+  conservatively returns the observed sampled maximum, not 100;
+  it remains an *upper bound on sampled observations*, not a claim
+  about every pixel or perceptual acceptability. The standalone source
+  #988 was **not** modified by this fix.
 - The workflow asserts exact pull-request head SHA and runs all three
-  test suites, typecheck, build and diff hygiene.
+  test suites, typecheck, build and diff hygiene. Pre-fix 77/77
+  success at `84d9d03` is historical, not evidence for the new SHA.
 
 **No runtime admission**: no active imports from Editor, Core or
 Project/Artifact, persistence, schema, HTTP endpoints, browser UX, provider,
