@@ -1,8 +1,10 @@
 import React, { lazy, Suspense, useState, useMemo, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Loader2, ExternalLink, Pencil, Maximize2, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Loader2, ExternalLink, Download, Pencil, Maximize2, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useProject from '@/hooks/useProject';
+import { projectService } from '@/lib/projectService';
+import { downloadCanonicalImage } from '@/application/editor/downloadCanonicalImage';
 import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
 import { createBackgroundIsolation } from '@/application/createBackgroundIsolation';
 import { createMaskedExposure } from '@/application/createMaskedExposure';
@@ -136,6 +138,7 @@ export default function Editor() {
   const [instruction, setInstruction] = useState('');
   const [applying, setApplying] = useState(false);
   const [aiError, setAiError] = useState(null);
+  const [downloading, setDownloading] = useState(false);
   const [pendingResult, setPendingResult] = useState(null);
   const [committing, setCommitting] = useState(false);
   const [editTab, setEditTab] = useState('prompt');
@@ -931,6 +934,32 @@ export default function Editor() {
     return next;
   });
 
+  // Integration of #1000 with the #1003 canvas-first toolbar. The "View image"
+  // link remains a separate action; only explicit Download saves Core bytes.
+  const handleDownload = async () => {
+    if(!project?.id || !project.current_image_url || !project.current_image_artifact_id ||
+       downloading || editorBusy || committing || pendingResult ||
+       cropInteractionActive || resizeInteractionActive)return;
+    setDownloading(true);
+    setAiError(null);
+    try{
+      // Core signed URLs expire. Refresh the same Project/source from Core
+      // before fetching bytes; never export a new image under a stale label.
+      const fresh=await projectService.get(project.id);
+      if(!fresh?.current_image_url ||
+         fresh.current_image_artifact_id!==project.current_image_artifact_id)
+        throw new Error('The photo changed in another session. Reload before exporting.');
+      await downloadCanonicalImage({
+        imageUrl:fresh.current_image_url,projectName:fresh.name,
+        origin:window.location.origin,
+      });
+    }catch(error){
+      setAiError(error?.message || 'Core export failed');
+    }finally{
+      setDownloading(false);
+    }
+  };
+
   const handleRename = async () => {
     const name = window.prompt('Rename project', project.name);
     if (name && name !== project.name) await rename(name);
@@ -990,6 +1019,14 @@ export default function Editor() {
           <a href={project.current_image_url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm font-medium text-foreground hover:bg-accent" aria-label="View full-size image in a new tab">
             <ExternalLink className="h-4 w-4" aria-hidden="true" /> View image
           </a>
+          <Button type="button" variant="outline" size="sm"
+            onClick={handleDownload}
+            disabled={downloading || editorBusy || committing || Boolean(pendingResult) || cropInteractionActive || resizeInteractionActive || !project.current_image_artifact_id}
+            aria-label="Download current Core image">
+            {downloading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" /> :
+              <Download className="mr-1.5 h-4 w-4" aria-hidden="true" />}
+            Download
+          </Button>
         </AdaptiveToolbar>
       </header>
 
