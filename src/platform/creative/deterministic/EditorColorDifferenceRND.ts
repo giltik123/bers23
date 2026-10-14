@@ -192,7 +192,9 @@ export function inspectEditorColorDifferenceRgba8(
     totalPixels:count,stride,sampledPositions,evaluatedOpaquePositions,
     skippedProtectedPositions,skippedLowAlphaPositions,
     meanDeltaE2000:totalDifference/evaluatedOpaquePositions,
-    p95DeltaE2000UpperBound:p95Bucket === 401 ? 100 : (p95Bucket + 1)/4,
+    // 401 is the overflow histogram bin (Delta-E >= 100.25). The
+    // observed maximum is the only known finite upper bound in that bin.
+    p95DeltaE2000UpperBound:p95Bucket === 401 ? maximum : (p95Bucket + 1)/4,
     maximumDeltaE2000:maximum,largeColorShiftPositions,
     colorSpaceAssumption:'BOTH_SRGB_D65',qualityApproved:false,
   });
