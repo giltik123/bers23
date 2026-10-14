@@ -55,7 +55,7 @@ test('R3f proves failed LOCAL_ONLY Crop stops after prepare input and leaves Cor
     'ticketRow.finalized_status, null',
     'countCropArtifacts(projectId), 0',
     'browser-local Crop failure must not mutate canonical Project image/history',
-    "getByRole('button', { name: 'Изменить / повторить', exact: true })",
+    "getByRole('button', { name: 'Retry', exact: true })",
   ]) assert.equal(harness.includes(text), true, `R3f harness must prove ${text}`);
 
   assert.match(harness, /providerCalls, 0/);

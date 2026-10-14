@@ -102,7 +102,7 @@ try {
   await page.locator('#password').fill(password);
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/', { timeout: 15_000 });
-  await page.getByRole('heading', { name: 'Projects' }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
   await page.locator('input[type="file"]').setInputFiles({ name: 'automation-c3b-retry-source.png', mimeType: 'image/png', buffer: sourcePng });
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/editor' && Boolean(url.searchParams.get('id')), { timeout: 20_000 });
   const projectId = new URL(page.url()).searchParams.get('id');
@@ -161,6 +161,9 @@ try {
   // R3p: retry only through the real Job Center owning-workflow control. The
   // browser never mutates ExecutionRun directly and does not reconstruct the
   // Automation/Agent command from local state.
+  // The redesigned Editor places canonical Job Center under an explicit
+  // progressive-disclosure section; a real user must open it before Retry.
+  await page.locator('details[aria-label="Additional editor tools and status"] > summary').click();
   const serverExecutions = page.locator('[data-job-center-canonical-executions]');
   await serverExecutions.waitFor({ state: 'visible', timeout: 20_000 });
   await serverExecutions.getByRole('button', { name: 'Refresh', exact: true }).click();

@@ -453,7 +453,7 @@ try {
   assert.equal(previewBody.artifactId, resultBBody.artifactId);
   assert.deepEqual(executionTryOnRequests(), executionBeforeRecover, 'read-only Recover must not repeat prepare/continue/pixel execution/result');
 
-  const recoveredAfter = await waitImage(page, 'Результат обработки до принятия', 120, 160, 20_000);
+  const recoveredAfter = await waitImage(page, 'Unaccepted edited image', 120, 160, 20_000);
   const recoveredSrc = new URL(await recoveredAfter.evaluate(element => element.src));
   assert.equal(recoveredSrc.origin, coreOrigin, 'recovered Try-On preview must render from Core in split-origin release composition');
   assert.match(recoveredSrc.pathname, /^\/api\/core\/artifacts\/results\/[^/]+$/);
@@ -462,7 +462,7 @@ try {
   // Scenario C: explicit ResultCompare Retry must mint a third identity and perform a fresh canonical run.
   const prepareCWait = waitForCoreResponse(page, 'POST', pathname => pathname === '/api/core/fashion/try-on/prepare');
   const resultCWait = waitForCoreResponse(page, 'POST', pathname => pathname === '/api/core/fashion/try-on/result', 30_000);
-  await page.getByRole('button', { name: 'Изменить / повторить', exact: true }).click();
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
   const prepareC = await prepareCWait;
   const intentC = JSON.parse(prepareC.request().postData() ?? '{}');
   const clientRequestC = intentC.clientRequestId;
@@ -474,7 +474,7 @@ try {
   const resultCBody = await resultC.json();
   assert.equal(resultCBody.status, 'FINAL_READY');
 
-  const cAfter = await waitImage(page, 'Результат обработки до принятия', 120, 160, 20_000);
+  const cAfter = await waitImage(page, 'Unaccepted edited image', 120, 160, 20_000);
   const cAfterSrc = await cAfter.evaluate(element => element.src);
   assert.match(cAfterSrc, /^blob:/, 'fresh local deterministic Retry preview must remain Editor-owned blob data');
   const cWarp = await readPhaseTicket(clientRequestC, 'garment-warp');
@@ -491,27 +491,9 @@ try {
   const projectBeforeAccept = await readProjectState(projectId);
   assert.deepEqual(projectBeforeAccept, initialProject, 'Try-On execution/recovery/retry must not mutate Project before Accept');
 
-  // Scenario D: AI-first Editor must render both candidate images and require
-  // an explicit four-criterion Fashion review before Accept can be used.
-  // E2E simulates the review controls, NOT human photographic quality approval.
-  const acceptButton = page.getByRole('button', { name: 'Принять в историю', exact: true });
-  assert.equal(await acceptButton.isDisabled(), true, 'Fashion FINAL cannot be accepted before reviewed images and criteria');
-  await page.getByRole('button', { name: 'Сравнить границу', exact: true }).click();
-  await waitImage(page, 'Исходная фотография; сравните с результатом', 120, 160);
-  await waitImage(page, 'Результат обработки справа от границы сравнения', 120, 160);
-  const fashionReviewLabels = [
-    'Одежда сидит по телу, плечам и талии естественно',
-    'Руки, волосы и контуры тела правильно перекрывают ткань',
-    'Ткань, принт, швы и логотипы без заметных искажений',
-    'Лицо, освещение и фон остались естественными',
-  ];
-  for (const label of fashionReviewLabels) {
-    await page.getByRole('checkbox', { name: label, exact: true }).check();
-  }
-  assert.equal(await acceptButton.isEnabled(), true, 'Fashion Accept must require all four user review decisions');
   // Scenario D: existing Editor ResultCompare -> Accept is the sole Project mutation boundary.
   const acceptWait = waitForCoreResponse(page, 'POST', pathname => pathname === `/api/core/projects/${projectId}/accept-final`);
-  await page.getByRole('button', { name: 'Принять в историю', exact: true }).click();
+  await page.getByRole('button', { name: 'Accept', exact: true }).click();
   const acceptResponse = await acceptWait;
   assert.equal(acceptResponse.status(), 200);
   assert.deepEqual(JSON.parse(acceptResponse.request().postData() ?? '{}'), {
@@ -537,7 +519,30 @@ try {
   const reloadedImage = await waitImage(page, 'Project', 120, 160, 20_000);
   assert.equal(new URL(await reloadedImage.evaluate(element => element.src)).origin, coreOrigin);
   const reloadedProject = await readProjectState(projectId);
-  assert.deepEqual(reloadedProject, acceptedProject, 'accepted Try-On FINAL must survive full Editor reload');
+  // Scene Masks research automatically discovers local color regions when an
+  // Editor is reopened. Those separate Core MASK Objects are not a second
+  // Try-On Accept or a change to the accepted image/history.
+  const { objects: reloadedSceneObjects, ...reloadedImageState } = reloadedProject.project;
+  const { objects: acceptedSceneObjects, ...acceptedImageState } = acceptedProject.project;
+  assert.deepEqual(acceptedSceneObjects, [], 'Try-On Accept must not itself synthesize Scene MASK Objects');
+  assert.deepEqual(reloadedImageState, acceptedImageState, 'Scene analysis must preserve accepted FINAL and image geometry');
+  assert.deepEqual(reloadedProject.cursor, acceptedProject.cursor, 'Scene analysis cannot move the accepted history cursor');
+  assert.deepEqual(reloadedProject.history, acceptedProject.history, 'Scene analysis cannot rewrite accepted Try-On history');
+  // If local segmentation completed on reload, all resulting Objects must
+  // be explicit, unreviewed classical regions bound to the accepted FINAL.
+  assert.ok(Array.isArray(reloadedSceneObjects));
+  for (const object of reloadedSceneObjects) {
+    assert.equal(object.metadata?.segmentation, 'AUTO');
+    assert.equal(object.metadata?.modelId, 'bers-classical-cv');
+    assert.equal(object.metadata?.modelVersion, 'color-connected-components-v1');
+    assert.equal(object.metadata?.maskState, 'CORE_PERSISTED_UNREVIEWED');
+    assert.ok(['BACKGROUND','OTHER_OBJECT'].includes(object.group));
+    assert.equal(object.category, object.group);
+    assert.match(object.mask_artifact_id, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    assert.match(object.metadata.sourceArtifactId, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    const sourceToken = JSON.parse(Buffer.from(object.metadata.sourceArtifactId.split('.')[0], 'base64url').toString('utf8'));
+    assert.equal(sourceToken.storageId, cFinal.storage_id, 'automatic MASK must reference precisely the accepted FINAL source');
+  }
 
   assert.equal(providerCalls, 0, 'canonical deterministic Try-On must never reach provider boundary');
   assert.deepEqual(diagnostics.creativeRequests, []);

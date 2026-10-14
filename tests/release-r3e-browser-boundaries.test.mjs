@@ -22,7 +22,9 @@ test('R3e drives real manual Selection pointer input into Core-issued canonical 
 
   assert.match(editor, /new CoreMaskArtifactPort\(project\.id\)/);
   assert.match(editor, /new SelectionApplicationService\(segmentation, artifacts\)/);
-  assert.match(editor, /const artifact = await selectionServiceRef\.current\.done\(\)/);
+  assert.match(editor, /const service = selectionServiceRef\.current/);
+  assert.match(editor, /if \(!service \|\| finishingMaskRef\.current\) return/);
+  assert.match(editor, /const artifact = await service\.done\(\)/);
   assert.match(editor, /mask_artifact_id: artifact\.id/);
   assert.match(maskPort, /client\.artifacts\.persistMask\(/);
   assert.doesNotMatch(maskPort, /randomUUID|crypto\.randomUUID/);
@@ -40,7 +42,8 @@ test('R3e drives real manual Selection pointer input into Core-issued canonical 
     "'/api/core/artifacts/masks'",
   ]) assert.equal(harness.includes(text), true, `R3e harness must drive ${text}`);
 
-  assert.doesNotMatch(harness, /page\.mouse\./, 'R3e must not fall back to a mouse-only event assumption');
+  const manualSelection = harness.slice(harness.indexOf('// Start Selection without invoking Smart Select'));
+  assert.doesNotMatch(manualSelection, /page\.mouse\./, 'R3e manual Selection must remain actual touch, even when local annotations are tested with mouse');
   assert.doesNotMatch(harness, /projectImage\.click\(/, 'R3e touch acceptance must not silently regress to mouse-like locator click');
   assert.match(harness, /window\.__r3eSelectionPointer/);
   assert.match(harness, /touch pointer X must stay on the requested Project-image coordinate/);
@@ -70,8 +73,8 @@ test('R3e consumes the exact selected canonical MASK through production Backgrou
 
   for (const text of [
     "getByRole('button', { name: 'Remove background', exact: true })",
-    "getByRole('button', { name: 'Отклонить', exact: true })",
-    "getByRole('button', { name: 'Принять в историю', exact: true })",
+    "getByRole('button', { name: 'Discard', exact: true })",
+    "getByRole('button', { name: 'Accept', exact: true })",
     "waitEnabledButton(page, 'Undo')",
     "waitEnabledButton(page, 'Redo')",
     "waitForProjectMutationResponse(page, projectId, 'accept-final')",

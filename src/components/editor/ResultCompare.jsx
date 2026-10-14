@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Trash2, RotateCcw, Loader2, ScanEye } from 'lucide-react';
+import { Check, Trash2, RotateCcw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAdaptiveGestures } from '@/components/adaptive/AdaptiveGestures';
-import {
-  reviewCandidateIdentity, canAcceptReviewedCandidate,
-} from '@/application/editor/ai-first/resultReviewGate';
+import { canCompareOperationAligned, canComparePixelsAligned, nativeInspectionCanvasSize } from './compareGeometryPolicy';
+import { reviewCandidateIdentity, canAcceptReviewedCandidate } from '@/application/editor/ai-first/resultReviewGate';
 
 const FASHION_REVIEW = Object.freeze([
   ['fit', 'Одежда сидит по телу, плечам и талии естественно'],
@@ -14,33 +13,30 @@ const FASHION_REVIEW = Object.freeze([
 ]);
 const EMPTY_REVIEW = Object.freeze({ fit: false, occlusion: false, texture: false, identity: false });
 
-/**
- * Visual accept/reject is owned by the user. The browser cannot infer fit
- * quality from pixel identity or Core deterministic success. A photo not
- * visually reviewed should never be described as an accepted Fashion output.
- */
-export default function ResultCompare({
-  beforeUrl, result, kind = null, editScope = null, onAccept, onDiscard, onRetry, busy,
-}) {
+// A read-only inspector for an unaccepted candidate. The Core-owned Accept,
+// Discard, and Retry callbacks remain the ONLY controls changing Project state.
+// Split view is admitted only after both images have identical real geometry;
+// cropping/rotation/failed image delivery must never masquerade as aligned pixels.
+export default function ResultCompare({ beforeUrl, result, candidateOperation, kind = null, editScope = null, onAccept, onDiscard, onRetry, busy }) {
   const [view, setView] = useState('after');
-  const [split, setSplit] = useState(50);
+  const [splitPosition, setSplitPosition] = useState(50);
   const [zoom, setZoom] = useState(1);
+  const [geometry, setGeometry] = useState('loading');
+  const [naturalSizes, setNaturalSizes] = useState({ before: null, after: null });
+  const afterUrl = result?.preview_url || result?.image_url || '';
   const [fashionReview, setFashionReview] = useState(EMPTY_REVIEW);
   const [scopedReview, setScopedReview] = useState(false);
   const [acknowledgedIdentity, setAcknowledgedIdentity] = useState(null);
   const [loaded, setLoaded] = useState({ before: null, after: null });
   const [failed, setFailed] = useState({ before: null, after: null });
-  const imageUrl = result?.preview_url || result?.image_url;
   const fashion = kind === 'FASHION_TRYON';
   const scopedGeneration = kind === 'AI_SCOPED_GENERATION';
   const allFashionAccepted = !fashion || Object.values(fashionReview).every(Boolean);
   const identity = reviewCandidateIdentity({
-    beforeUrl, afterUrl: imageUrl, finalArtifactId: result?.finalArtifactId,
+    beforeUrl, afterUrl, finalArtifactId: result?.finalArtifactId,
     executionId: result?.executionId, kind, scope: editScope,
   });
   const needsHumanReview = scopedGeneration || fashion;
-  // A quality checklist is meaningful only after the current pair was
-  // displayed and both images decoded successfully in this candidate.
   const reviewImagesReady = loaded.before === identity && loaded.after === identity
     && failed.before !== identity && failed.after !== identity;
   const markLoaded = role => {
@@ -51,7 +47,7 @@ export default function ResultCompare({
     setFailed(previous => ({ ...previous, [role]: identity }));
     setLoaded(previous => ({ ...previous, [role]: null }));
   };
-  const acceptDisabled = !imageUrl || !canAcceptReviewedCandidate({
+  const reviewBlocked = needsHumanReview && !canAcceptReviewedCandidate({
     identity, acknowledgedIdentity,
     afterLoadedIdentity: loaded.after, beforeLoadedIdentity: loaded.before,
     afterErrorIdentity: failed.after, beforeErrorIdentity: failed.before,
@@ -60,169 +56,205 @@ export default function ResultCompare({
     reviewComplete: scopedGeneration ? scopedReview : allFashionAccepted,
     busy,
   });
+  useEffect(() => {
+    setFashionReview(EMPTY_REVIEW);
+    setScopedReview(false);
+    setAcknowledgedIdentity(identity);
+  }, [identity]);
   const gestures = useAdaptiveGestures({
     onSwipeLeft: () => setView('after'),
     onSwipeRight: () => setView('before'),
   });
 
   useEffect(() => {
-    setFashionReview(EMPTY_REVIEW);
-    setScopedReview(false);
-    setAcknowledgedIdentity(identity);
-    // Loaded/error flags carry the candidate identity. Do not reset them
-    // here: a cached image may fire onLoad before this passive effect runs.
-    setSplit(50);
+    setGeometry('loading');
+    setNaturalSizes({ before: null, after: null });
     setView('after');
     setZoom(1);
-  }, [identity]);
+    setSplitPosition(50);
+    if (!beforeUrl || !afterUrl) {
+      setGeometry('unavailable');
+      return undefined;
+    }
+    let alive = true;
+    let beforeSize = null;
+    let afterSize = null;
+    const before = new Image();
+    const after = new Image();
+    const resolve = () => {
+      if (!alive || !beforeSize || !afterSize) return;
+      setGeometry(
+        canComparePixelsAligned(beforeSize, afterSize)
+          ? 'aligned' : 'different',
+      );
+    };
+    before.onload = () => {
+      beforeSize = { width: before.naturalWidth, height: before.naturalHeight };
+      if (alive) setNaturalSizes((current) => ({ ...current, before: beforeSize }));
+      resolve();
+    };
+    after.onload = () => {
+      afterSize = { width: after.naturalWidth, height: after.naturalHeight };
+      if (alive) setNaturalSizes((current) => ({ ...current, after: afterSize }));
+      resolve();
+    };
+    const unavailable = () => { if (alive) setGeometry('unavailable'); };
+    before.onerror = unavailable;
+    after.onerror = unavailable;
+    before.src = beforeUrl;
+    after.src = afterUrl;
+    return () => {
+      alive = false;
+      before.onload = null;
+      after.onload = null;
+      before.onerror = null;
+      after.onerror = null;
+      before.src = '';
+      after.src = '';
+    };
+  }, [beforeUrl, afterUrl]);
+
+  const splitAllowed = geometry === 'aligned' && canCompareOperationAligned(candidateOperation);
+  const mode = view === 'split' && !splitAllowed ? 'after' : view;
+  // At 100%, one decoded source pixel occupies one CSS pixel (200%=2 CSS px).
+  // A fixed-height object-contain container would otherwise pretend to be 100%
+  // while silently reducing detail on tall/large photographs.
+  const naturalSize = mode === 'before' ? naturalSizes.before : naturalSizes.after;
+  const inspectedCanvas = nativeInspectionCanvasSize(naturalSize, zoom)
+    || { width: '100%', height: 340 };
+  const executionLabel = result?.provider || 'Local / Core preview';
+  const creditLabel = Number.isFinite(result?.credits_used) && result.credits_used > 0
+    ? ` · ${result.credits_used} credits` : '';
+  const durationLabel = Number.isFinite(result?.generation_time_ms) && result.generation_time_ms > 0
+    ? ` · ${(result.generation_time_ms / 1000).toFixed(1)}s` : '';
 
   return (
-    <section className="border border-border/60 rounded-2xl p-3 space-y-4"
-      aria-label="Просмотр готовой обработки перед сохранением">
+    <section className="border border-border/60 rounded-2xl p-3 space-y-3" aria-label="Review pending image before accepting">
+      <header className="mb-3">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">Almost there</p>
+        <h2 className="mt-1 text-xl font-semibold">Review your edit</h2>
+        <p role="status" className="text-sm text-muted-foreground">Preview ready — not saved yet. Compare both images, then choose Accept to keep the change or Discard to leave your original untouched.</p>
+      </header>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex rounded-lg border border-border overflow-hidden text-xs"
-          aria-label="Режим сравнения фотографии">
-          {[['before','До'], ['after','После'], ['split','Сравнить границу']].map(([mode,label])=>(
-            <button key={mode} type="button" onClick={()=>setView(mode)}
-              aria-pressed={view===mode}
-              className={`px-3 py-2 ${view===mode?'bg-primary text-primary-foreground':'hover:bg-accent'}`}>
-              {label}
-            </button>
-          ))}
+        <div className="flex rounded-lg border border-border overflow-hidden text-xs" role="group" aria-label="Image comparison mode">
+          <button type="button" aria-pressed={mode === 'before'} onClick={() => setView('before')}
+            className={`px-3 py-1.5 ${mode === 'before' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>Before</button>
+          <button type="button" aria-pressed={mode === 'after'} onClick={() => setView('after')}
+            className={`px-3 py-1.5 ${mode === 'after' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>After</button>
+          <button type="button" aria-pressed={mode === 'split'} disabled={!splitAllowed} onClick={() => setView('split')}
+            className={`px-3 py-1.5 disabled:opacity-40 ${mode === 'split' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>Split</button>
         </div>
-        <div className="flex items-center gap-2 text-xs">
-          <ScanEye className="w-4 h-4"/>
-          <button type="button" aria-pressed={zoom===1}
-            onClick={()=>setZoom(1)}
-            className={zoom===1?'font-semibold underline':'hover:underline'}>1×</button>
-          <button type="button" aria-pressed={zoom===2}
-            onClick={()=>setZoom(2)}
-            className={zoom===2?'font-semibold underline':'hover:underline'}>2×</button>
+        <span className="text-[11px] text-muted-foreground">
+          {executionLabel}{creditLabel}{durationLabel}
+        </span>
+      </div>
+
+      {(naturalSizes.before || naturalSizes.after) && (
+        <p className="text-xs text-muted-foreground" role="status">
+          Source: {naturalSizes.before ? `${naturalSizes.before.width}×${naturalSizes.before.height}` : 'unavailable'}
+          {' → '}
+          Candidate: {naturalSizes.after ? `${naturalSizes.after.width}×${naturalSizes.after.height}` : 'unavailable'} pixels
+        </p>
+      )}
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2">
+          <label htmlFor="editor-preview-zoom">Inspection zoom</label>
+          <select id="editor-preview-zoom" aria-label="Inspection zoom" value={zoom} disabled={!naturalSize}
+            onChange={(event) => setZoom(Number(event.target.value))}
+            className="rounded-md border border-border bg-background px-2 py-1">
+            <option value={1}>100%</option>
+            <option value={2}>200%</option>
+          </select>
+        </div>
+        {mode === 'split' && (
+          <label className="flex flex-1 items-center gap-2 min-w-[160px] max-w-xs">
+            Split boundary
+            <input aria-label="Split boundary" type="range" min="0" max="100" step="1"
+              value={splitPosition} onChange={(event) => setSplitPosition(Number(event.target.value))}
+              className="flex-1 accent-primary" />
+            <span className="tabular-nums">{splitPosition}%</span>
+          </label>
+        )}
+      </div>
+
+      {geometry === 'aligned' && !canCompareOperationAligned(candidateOperation) && (
+        <p role="status" className="text-xs text-muted-foreground">
+          This operation may change image registration. Split inspection is disabled; review Before and After separately.
+        </p>
+      )}
+      {geometry === 'different' && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Images have different pixel dimensions. Split comparison is disabled to avoid false alignment.
+        </p>
+      )}
+      {geometry === 'unavailable' && (
+        <p role="status" className="text-xs text-muted-foreground">
+          One image cannot be measured. Before and After remain available when its preview loads.
+        </p>
+      )}
+
+      <div className="overflow-auto rounded-xl bg-muted max-h-[420px]" {...gestures.handlers}>
+        <div className="relative" style={inspectedCanvas}>
+          {mode === 'split' ? (
+            <>
+              <img src={afterUrl} alt="Edited image, right side of split" draggable={false}
+                onLoad={()=>markLoaded('after')} onError={()=>markFailed('after')}
+                className="absolute inset-0 h-full w-full object-fill" />
+              <img src={beforeUrl} alt="Original image, left side of split" draggable={false}
+                onLoad={()=>markLoaded('before')} onError={()=>markFailed('before')}
+                className="absolute inset-0 h-full w-full object-fill"
+                style={{ clipPath: `inset(0 ${100 - splitPosition}% 0 0)` }} />
+              <div aria-hidden="true" className="absolute top-0 bottom-0 w-px bg-primary pointer-events-none"
+                style={{ left: `${splitPosition}%` }} />
+            </>
+          ) : (
+            <img src={mode === 'before' ? beforeUrl : afterUrl}
+              onLoad={()=>markLoaded(mode === 'before' ? 'before' : 'after')}
+              onError={()=>markFailed(mode === 'before' ? 'before' : 'after')}
+              alt={mode === 'before' ? 'Original image' : 'Unaccepted edited image'}
+              draggable={false} className="h-full w-full object-fill" />
+          )}
         </div>
       </div>
 
       <p className="text-[11px] text-muted-foreground">
-        {result?.provider || 'Core result'} · {result?.credits_used ?? 0} credits
-        {result?.generation_time_ms ? ` · ${(result.generation_time_ms/1000).toFixed(1)}s` : ''}
-        {' · '}2× увеличивает видимую область, но не добавляет деталей в исходное изображение.
+        Zoom uses actual decoded image dimensions (one CSS pixel per source pixel at 100%). This remains a visual preview, not a pixel-level quality certificate. Accept alone commits to Project history.
       </p>
-
-      {view==='split'&&(
-        <label className="flex items-center gap-3 text-xs" htmlFor="bers-photo-compare-boundary">
-          <span>Граница сравнения</span>
-          <input id="bers-photo-compare-boundary" type="range" min="0" max="100"
-            className="flex-1" value={split}
-            onChange={e=>setSplit(Number(e.target.value))}
-            aria-label="Граница сравнения до и после"/>
-          <span className="tabular-nums w-10 text-right">{split}%</span>
+      {(failed.before === identity || failed.after === identity) && needsHumanReview && (
+        <p role="alert" className="text-sm text-destructive">Не удалось загрузить изображение для проверки. Принятие заблокировано.</p>
+      )}
+      {needsHumanReview && !reviewImagesReady && (
+        <p role="status" className="text-xs text-muted-foreground">Перед принятием просмотрите «Before» и «After»; необходимо загрузить обе версии текущего результата.</p>
+      )}
+      {scopedGeneration && (
+        <label className="flex gap-2 text-sm rounded-xl border p-3" aria-label="Ручная проверка ИИ">
+          <input type="checkbox" disabled={busy || !reviewImagesReady}
+            checked={scopedReview} onChange={event=>setScopedReview(event.target.checked)}/>
+          <span>{editScope==='MASKED' ? 'Я сравнил изображение и проверил, что вне выбранной Core-маски ничего не изменилось.' : 'Я просмотрел изображение и проверил лицо, руки, объекты, текст и свет.'} Это ручная оценка, не сертификат качества.</span>
         </label>
       )}
-
-      <div className="rounded-xl overflow-auto bg-muted border touch-pan-y" {...gestures.handlers}
-        aria-label="Фактические изображения до и после">
-        <div className="relative" style={{width:zoom===2?'200%':'100%'}}>
-          {view==='before' ? (
-            <img src={beforeUrl} alt="Исходная фотография до обработки"
-              onLoad={()=>markLoaded('before')} onError={()=>markFailed('before')}
-              className="block w-full h-auto max-h-[620px] object-contain"/>
-          ) : view==='after' ? (
-            <img src={imageUrl} alt="Результат обработки до принятия"
-              onLoad={()=>markLoaded('after')} onError={()=>markFailed('after')}
-              className="block w-full h-auto max-h-[620px] object-contain"/>
-          ) : (
-            <div className="relative">
-              <img src={beforeUrl} alt="Исходная фотография; сравните с результатом"
-                onLoad={()=>markLoaded('before')} onError={()=>markFailed('before')}
-                className="block w-full h-auto max-h-[620px] object-contain"/>
-              <img src={imageUrl} alt="Результат обработки справа от границы сравнения"
-                onLoad={()=>markLoaded('after')} onError={()=>markFailed('after')}
-                className="absolute inset-0 w-full h-full object-contain"
-                style={{clipPath:`inset(0 0 0 ${split}%)`}}/>
-              <div className="absolute inset-y-0 border-l-2 border-white pointer-events-none shadow-lg"
-                style={{left:`${split}%`}} aria-hidden="true"/>
-            </div>
-          )}
-        </div>
-      </div>
-      {view==='split'&&(
-        <p className="text-xs text-muted-foreground">
-          Для изменения размера или ориентации изображения граница является приблизительной:
-          исходник и результат могут иметь разную геометрию.
-        </p>
-      )}
-
-      {(failed.before === identity || failed.after === identity)&&(
-        <p role="alert" className="text-xs text-destructive">
-          Не удалось загрузить исходник или результат. Принятие заблокировано:
-          отклоните обработку либо повторите её.
-        </p>
-      )}
-      {needsHumanReview && (
-        loaded.before !== identity || loaded.after !== identity
-      ) && (
-        <p role="status" className="text-xs text-muted-foreground">
-          Для принятия откройте «До» и «После» либо «Сравнить границу».
-          Подтверждение доступно только после загрузки обоих изображений.
-        </p>
-      )}
-      {scopedGeneration&&(
-        <div className="rounded-xl border border-amber-600/35 p-3 space-y-3"
-          aria-label="Проверка результата генеративного ИИ">
-          <h3 className="font-medium text-sm">ИИ · качество готовой фотографии</h3>
-          <p className="text-xs text-muted-foreground">
-            {editScope==='MASKED'
-              ? 'Проверьте в сравнении, что вне выбранной маски человек, фон, текстуры и мелкие детали не изменились. Если изменения заметны — отклоните результат.'
-              : 'Проверьте весь кадр: нет ли искажений лица, рук, объектов, текста, света и текстур.'}
-            {' '}Галочка означает только вашу проверку, а не автоматическую оценку качества.
-          </p>
-          <label className="flex gap-2 items-start text-sm">
-            <input type="checkbox" className="mt-1" disabled={busy || !reviewImagesReady}
-              checked={scopedReview} onChange={e=>setScopedReview(e.target.checked)}/>
-            <span>Я просмотрел итоговое изображение и считаю результат подходящим для принятия.</span>
-          </label>
-        </div>
-      )}
-      {fashion&&(
-        <div className="rounded-xl border border-amber-600/35 p-3 space-y-3"
-          aria-label="Ручная оценка реализма Fashion">
-          <h3 className="font-medium text-sm">Fashion · проверка готовой примерки</h3>
-          <p className="text-xs text-muted-foreground">
-            Технический успех не означает реалистичную посадку. Если хоть один пункт не выполнен,
-            отклоните результат и исправьте контур/якоря тела. Блокировка не подтверждает
-            качество автоматически — решение остаётся за вами.
-          </p>
+      {fashion && (
+        <section className="rounded-xl border p-3 space-y-2" aria-label="Ручная оценка реализма Fashion">
+          <p className="font-medium text-sm">Принятие примерки требует вашей проверки посадки и перекрытий.</p>
           {FASHION_REVIEW.map(([key,label])=>(
             <label key={key} className="flex gap-2 items-start text-sm">
-              <input type="checkbox" className="mt-1" disabled={busy || !reviewImagesReady}
+              <input type="checkbox" disabled={busy || !reviewImagesReady}
                 checked={fashionReview[key]}
-                onChange={event=>setFashionReview(current=>({
-                  ...current,[key]:event.target.checked,
-                }))}/>
+                onChange={event=>setFashionReview(previous=>({...previous,[key]:event.target.checked}))}/>
               <span>{label}</span>
             </label>
           ))}
-          {!allFashionAccepted&&(
-            <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
-              Примерка не принята по визуальным критериям. Можно исправить посадку, повторить
-              генерацию или отказаться от результата.
-            </p>
-          )}
-        </div>
+        </section>
       )}
-
-      <div className="flex gap-2 flex-wrap">
-        <Button type="button" onClick={onAccept} disabled={acceptDisabled}
-          className="flex-1 min-w-28 rounded-xl">
-          {busy?<Loader2 className="w-4 h-4 mr-2 animate-spin"/>:
-            <Check className="w-4 h-4 mr-2"/>} Принять в историю
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={onAccept} disabled={busy || reviewBlocked} className="flex-1 min-w-[100px]">
+          {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />} Accept
         </Button>
-        <Button type="button" variant="outline" onClick={onRetry} disabled={busy}
-          className="rounded-xl">
-          <RotateCcw className="w-4 h-4 mr-2"/> Изменить / повторить
+        <Button variant="outline" onClick={onRetry} disabled={busy} className="rounded-xl">
+          <RotateCcw className="w-4 h-4 mr-2" /> Retry
         </Button>
-        <Button type="button" variant="outline" onClick={onDiscard} disabled={busy}
-          className="rounded-xl text-destructive hover:text-destructive">
-          <Trash2 className="w-4 h-4 mr-2"/> Отклонить
+        <Button variant="outline" onClick={onDiscard} disabled={busy} className="rounded-xl text-destructive hover:text-destructive">
+          <Trash2 className="w-4 h-4 mr-2" /> Discard
         </Button>
       </div>
     </section>

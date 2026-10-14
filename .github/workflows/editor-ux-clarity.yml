@@ -1,0 +1,136 @@
+name: Editor UX clarity and real control wiring
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'src/pages/Editor.jsx'
+      - 'src/components/editor/local/AdvancedLocalControls.jsx'
+      - 'src/lib/local-editor/localAdvanced.js'
+      - 'tests/local-advanced-adjustments.test.mjs'
+      - 'tests/local-advanced-editor-wiring.test.mjs'
+      - 'src/components/editor/local/LocalAdjustmentsPanel.jsx'
+      - 'src/components/editor/local/LocalAnnotationControls.jsx'
+      - 'src/lib/local-editor/localAnnotations.js'
+      - 'src/lib/local-editor/localImageTransport.js'
+      - 'tests/local-image-transport.test.mjs'
+      - 'tests/local-image-transport-editor-wiring.test.mjs'
+      - 'tests/local-redaction.test.mjs'
+      - 'tests/local-redaction-editor-wiring.test.mjs'
+      - 'src/lib/local-editor/localRecipe.js'
+      - 'src/lib/local-editor/localDraftStorage.js'
+      - 'tests/local-device-draft.test.mjs'
+      - 'tests/local-device-draft-editor-wiring.test.mjs'
+      - 'src/components/editor/local/LocalRecipeControls.jsx'
+      - 'tests/local-recipe.test.mjs'
+      - 'tests/local-recipe-editor-wiring.test.mjs'
+      - 'tests/local-annotations.test.mjs'
+      - 'tests/local-annotations-editor-wiring.test.mjs'
+      - 'tests/local-annotation-editing.test.mjs'
+      - 'tests/local-annotation-editing-wiring.test.mjs'
+      - 'src/lib/local-editor/localAdjustments.js'
+      - 'src/lib/local-editor/localCompare.js'
+      - 'tests/local-compare.test.mjs'
+      - 'tests/local-compare-editor-wiring.test.mjs'
+      - 'src/lib/local-editor/localHistory.js'
+      - 'tests/local-history.test.mjs'
+      - 'tests/local-history-editor-wiring.test.mjs'
+      - 'tests/local-adjustments.test.mjs'
+      - 'src/application/selection/contracts.ts'
+      - 'src/application/selection/SelectionApplicationService.ts'
+      - 'src/pages/Projects.jsx'
+      - 'src/components/AppLayout.jsx'
+      - 'src/components/ThemeToggle.jsx'
+      - 'src/components/NotificationCenter.jsx'
+      - 'src/components/AuthLayout.jsx'
+      - 'src/components/projects/ProjectCard.jsx'
+      - 'src/components/projects/ProjectToolbar.jsx'
+      - 'src/components/projects/ProjectActionsMenu.jsx'
+      - 'src/components/editor/HistoryControls.jsx'
+      - 'src/components/editor/VersionsPanel.jsx'
+      - 'src/components/editor/InstructionBar.jsx'
+      - 'src/components/editor/ResultCompare.jsx'
+      - 'src/components/adaptive/AdaptiveLayout.jsx'
+      - 'src/components/adaptive/AdaptiveToolbar.jsx'
+      - 'src/components/adaptive/AdaptiveNavigation.jsx'
+      - 'src/index.css'
+      - 'src/components/editor/SelectionToolbar.jsx'
+      - 'src/components/editor/ObjectPanel.jsx'
+      - 'src/components/editor/ImageCanvas.jsx'
+      - 'scripts/test-release-r3b-browser-e2e.mjs'
+      - 'scripts/test-release-r3c-browser-e2e.mjs'
+      - 'scripts/test-release-r3e-browser-e2e.mjs'
+      - 'tests/editor-ux-progressive-disclosure.test.mjs'
+      - 'tests/bers-ux-system-redesign.test.mjs'
+      - 'tests/mask-photoshop-controls.test.mjs'
+      - 'tests/local-adjustments-editor-wiring.test.mjs'
+      - 'tests/selection-brush-opacity.test.ts'
+      - '.github/workflows/editor-ux-clarity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  editor-ux-clarity:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Verify exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Regression - contextual controls and canonical editor boundaries
+        run: |
+          node --test \
+            tests/editor-ux-progressive-disclosure.test.mjs \
+            tests/bers-ux-system-redesign.test.mjs \
+            tests/mask-photoshop-controls.test.mjs \
+            tests/local-adjustments.test.mjs \
+            tests/local-compare.test.mjs \
+            tests/local-compare-editor-wiring.test.mjs \
+            tests/local-history.test.mjs \
+            tests/local-history-editor-wiring.test.mjs \
+            tests/local-adjustments-editor-wiring.test.mjs \
+            tests/local-advanced-adjustments.test.mjs \
+            tests/local-advanced-editor-wiring.test.mjs \
+            tests/local-annotations.test.mjs \
+            tests/local-redaction.test.mjs \
+            tests/local-redaction-editor-wiring.test.mjs \
+            tests/local-image-transport.test.mjs \
+            tests/local-image-transport-editor-wiring.test.mjs \
+            tests/local-annotation-editing.test.mjs \
+            tests/local-annotation-editing-wiring.test.mjs \
+            tests/local-annotations-editor-wiring.test.mjs \
+            tests/local-recipe.test.mjs \
+            tests/local-recipe-editor-wiring.test.mjs \
+            tests/local-device-draft.test.mjs \
+            tests/local-device-draft-editor-wiring.test.mjs \
+            tests/editor-canonical-boundary.test.mjs \
+            tests/editor-zero-object-navigation.test.mjs \
+            tests/editor-orthogonal-transform-ui.test.mjs \
+            tests/realesrgan-editor-boundary.test.mjs
+      - name: Deterministic local photo and export authority regression
+        run: node --test tests/local-compare.test.mjs tests/local-compare-editor-wiring.test.mjs tests/local-adjustments.test.mjs tests/local-history.test.mjs tests/local-history-editor-wiring.test.mjs tests/local-adjustments-editor-wiring.test.mjs
+      - name: Real canonical alpha brush opacity regression
+        run: |
+          mkdir -p .test-cache/editor-mask
+          npx esbuild tests/selection-brush-opacity.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/editor-mask/selection-brush-opacity.test.mjs \
+            --external:node:*
+          node --test .test-cache/editor-mask/selection-brush-opacity.test.mjs
+      - name: Typecheck mask service and frontend integration
+        run: npm run typecheck
+      - name: Build production SPA - catch JSX and bundle regressions
+        run: npm run build
+      - name: Verify whitespace
+        if: github.event_name == 'pull_request'
+        run: git diff --check "${{ github.event.pull_request.base.sha }}"..HEAD

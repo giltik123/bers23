@@ -327,9 +327,9 @@ try {
   assert.equal(await outfitRegion.getByRole('button', { name: `Move ${pantsName} up`, exact: true }).isDisabled(), true);
   assert.equal(await outfitRegion.getByRole('button', { name: `Move ${jacketName} down`, exact: true }).isDisabled(), true);
 
-  const prompt = page.getByRole('button', { name: 'Legacy prompt', exact: true });
+  const prompt = page.getByRole('button', { name: 'Prompt', exact: true });
   await prompt.click();
-  await assertActiveNavigation(prompt, 'Legacy prompt');
+  await assertActiveNavigation(prompt, 'Prompt');
 
   const remountOutfitLoad = waitForCoreResponses(page, [
     ['GET', '/api/core/wardrobe/outfits'],

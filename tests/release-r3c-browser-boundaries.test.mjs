@@ -15,7 +15,7 @@ test('R3c browser harness extends accepted R3 with Discard Version Restore and s
     'RESTORE_VERSION',
     'final_source_conflict',
     'The prepared result was not accepted because the Project changed. Run the edit again from the current image.',
-    "name: 'Отклонить'",
+    "name: 'Discard'",
     "name: 'Versions'",
     "name: 'Undo'",
     "name: 'Redo'",
@@ -58,7 +58,7 @@ test('R3c stale recovery remains fail closed with no Retry rerun provider cloud 
   assert.match(harness, /diagnostics\.financialRequests,\s*\[\]/);
   assert.match(harness, /diagnostics\.externalBrowserRequests,\s*\[\]/);
   assert.match(harness, /diagnostics\.legacyRequests,\s*\[\]/);
-  assert.match(harness, /getByRole\('button', \{ name: 'Изменить \/ повторить'/);
+  assert.match(harness, /getByRole\('button', \{ name: 'Retry'/);
   assert.match(harness, /R3_PROVIDER_BOUNDARY_MUST_NOT_BE_CALLED/);
   assert.match(recovery, /disarmRetry\(\);/);
   assert.match(recovery, /await reloadCanonicalProject\(\)/);

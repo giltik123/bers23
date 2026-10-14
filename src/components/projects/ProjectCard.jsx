@@ -9,15 +9,15 @@ export default function ProjectCard({ project, onRename, onToggleFavorite, onTog
   const edits = project.operations?.length || 0;
   const previewUrl = previewCache.gallery(project);
   return (
-    <div className="group relative rounded-2xl overflow-hidden border border-border/60 bg-card hover:shadow-lg transition-all duration-300">
+    <div className="group relative rounded-3xl overflow-hidden border border-border/70 bg-card shadow-sm hover:-translate-y-0.5 hover:shadow-xl transition-all duration-300">
       <Link to={`/editor?id=${project.id}`} className="block">
-        <div className="aspect-square bg-muted overflow-hidden">
+        <div className="aspect-[4/3] bg-muted overflow-hidden">
           {previewUrl ? <img src={previewUrl} alt={project.name} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /> : <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">Preview unavailable</div>}
         </div>
-        <div className="p-3">
+        <div className="space-y-2 p-4">
           <div className="flex items-center gap-1.5 min-w-0">
             {project.favorite && <Star className="w-3.5 h-3.5 shrink-0 fill-amber-400 text-amber-400" />}
-            <p className="font-medium text-sm truncate">{project.name}</p>
+            <p className="truncate text-base font-semibold">{project.name}</p>
           </div>
           <div className="flex items-center justify-between mt-1 text-xs text-muted-foreground">
             <span>{moment(project.updated_date).fromNow()}</span>
@@ -26,17 +26,20 @@ export default function ProjectCard({ project, onRename, onToggleFavorite, onTog
             )}
           </div>
           {project.width && project.height && (
-            <p className="text-[11px] text-muted-foreground/70 mt-0.5">{project.width} × {project.height}px</p>
+            <p className="text-xs text-muted-foreground">{project.width} × {project.height}px</p>
           )}
+          <span className="inline-flex items-center gap-1 text-sm font-medium text-primary">Open editor <span aria-hidden="true">→</span></span>
         </div>
       </Link>
-      <div className="absolute top-2 right-2 flex gap-1">
+      <div className="absolute right-3 top-3 flex flex-wrap items-center gap-2">
         <button
           onClick={(e) => { e.preventDefault(); onToggleFavorite(project); }}
-          className="p-2 rounded-lg bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity"
-          aria-label="Toggle favorite"
+          className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-slate-950/75 px-3 text-xs font-medium text-white shadow-sm backdrop-blur hover:bg-slate-950"
+          aria-label={project.favorite ? "Remove from favorites" : "Add to favorites"}
+          title={project.favorite ? "Remove from favorites" : "Add to favorites"}
         >
-          <Star className={project.favorite ? 'w-4 h-4 fill-amber-400 text-amber-400' : 'w-4 h-4'} />
+          <Star className={project.favorite ? 'h-4 w-4 fill-amber-400 text-amber-400' : 'h-4 w-4'} aria-hidden="true" />
+          {project.favorite ? 'Saved' : 'Favorite'}
         </button>
         <ProjectActionsMenu
           project={project}

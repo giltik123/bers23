@@ -147,7 +147,7 @@ try {
 
   resetJourneyDiagnostics();
 
-  const prompt = page.getByRole('button', { name: 'Legacy prompt', exact: true });
+  const prompt = page.getByRole('button', { name: 'Prompt', exact: true });
   const fashion = page.getByRole('button', { name: 'Fashion', exact: true });
   const outfits = page.getByRole('button', { name: 'Outfits', exact: true });
   await prompt.waitFor({ state: 'visible', timeout: 10_000 });
@@ -177,7 +177,7 @@ try {
   await assertActiveNavigation(outfits, 'Outfits');
 
   await prompt.click();
-  await assertActiveNavigation(prompt, 'Legacy prompt');
+  await assertActiveNavigation(prompt, 'Prompt');
 
   const fashionReload = waitForCoreResponses(page, [
     '/api/core/garments',
