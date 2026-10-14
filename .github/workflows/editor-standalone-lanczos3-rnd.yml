@@ -1,0 +1,45 @@
+name: Editor standalone Lanczos3 R&D integrity
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/deterministic/ProfessionalResizeLanczosRND.ts'
+      - 'tests/editor-professional-resize-lanczos-rnd.test.mjs'
+      - 'docs/editor-standalone-lanczos3-rnd.md'
+      - '.github/workflows/editor-standalone-lanczos3-rnd.yml'
+permissions:
+  contents: read
+jobs:
+  pure-resize-integrity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify exact tested commit
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Bundle independent Lanczos3 reference tests against accepted Resize v1
+        run: |
+          mkdir -p .test-cache/editor-lanczos3-rnd
+          npx esbuild tests/editor-professional-resize-lanczos-rnd.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/editor-lanczos3-rnd/lanczos3-test.mjs \
+            --external:node:*
+      - name: Verify pixel laws and deterministic boundaries
+        run: node --test .test-cache/editor-lanczos3-rnd/lanczos3-test.mjs
+      - name: Typecheck and production build with candidate unreferenced
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Reject whitespace errors
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git diff --check "$BASE_SHA..HEAD"
