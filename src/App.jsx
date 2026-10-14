@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { TranslationProvider } from '@/lib/i18n/TranslationProvider';
@@ -21,6 +22,12 @@ import Billing from '@/pages/Billing';
 import Subscription from '@/pages/Subscription';
 import AssetLibrary from '@/pages/AssetLibrary';
 import AutomationStudio from '@/pages/AutomationStudio';
+
+// Never expose this standalone, unauthoritative image lab in deployed builds.
+// It cannot create or accept Core FINAL Artifacts and cannot upload images.
+const EDITOR_PRO_LAB_LOCAL_ONLY = import.meta.env.DEV &&
+  import.meta.env.VITE_BERS_EDITOR_PRO_LAB === 'true';
+const ProfessionalEditorLabRND = lazy(() => import('@/pages/ProfessionalEditorLabRND'));
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings } = useAuth();
@@ -47,6 +54,13 @@ const AuthenticatedApp = () => {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Projects />} />
           <Route path="/editor" element={<Editor />} />
+          {EDITOR_PRO_LAB_LOCAL_ONLY && (
+            <Route path="/editor-pro-lab" element={
+              <Suspense fallback={<p role="status" className="p-6">Loading local image-quality lab…</p>}>
+                <ProfessionalEditorLabRND />
+              </Suspense>
+            } />
+          )}
           <Route path="/settings" element={<Settings />} />
           <Route path="/billing" element={<Billing />} />
           <Route path="/subscription" element={<Subscription />} />
