@@ -2,7 +2,9 @@ import React, { lazy, Suspense, useState, useMemo, useRef, useEffect } from 'rea
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Loader2, Download, Pencil, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { downloadCanonicalImage } from '@/application/editor/downloadCanonicalImage';
 import useProject from '@/hooks/useProject';
+import { projectService } from '@/lib/projectService';
 import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
 import { createBackgroundIsolation } from '@/application/createBackgroundIsolation';
 import { createMaskedExposure } from '@/application/createMaskedExposure';
@@ -127,6 +129,7 @@ export default function Editor() {
   const [instruction, setInstruction] = useState('');
   const [applying, setApplying] = useState(false);
   const [aiError, setAiError] = useState(null);
+  const [downloading, setDownloading] = useState(false);
   const [pendingResult, setPendingResult] = useState(null);
   const [committing, setCommitting] = useState(false);
   const [editTab, setEditTab] = useState('prompt');
@@ -887,6 +890,26 @@ export default function Editor() {
     if (pending?.kind === 'BOUNDED_AGENT') boundedAgent.dismiss();
   };
 
+  const handleDownload = async () => {
+    if(!project?.current_image_url || downloading)return;
+    setDownloading(true);
+    setAiError(null);
+    try{
+      // Core delivery URLs expire after five minutes; refresh the signed
+      // URL without silently exporting a photo changed by another session.
+      const fresh=await projectService.get(project.id);
+      if(!fresh?.current_image_url ||
+         fresh.current_image_artifact_id!==project.current_image_artifact_id)
+        throw new Error('The photo changed in another session. Reload before exporting.');
+      await downloadCanonicalImage({
+        imageUrl:fresh.current_image_url,projectName:fresh.name,
+        origin:window.location.origin,
+      });
+    }catch(error){
+      setAiError(error?.message || 'Core export failed');
+    }finally{setDownloading(false);}
+  };
+
   const handleRename = async () => {
     const name = window.prompt('Rename project', project.name);
     if (name && name !== project.name) await rename(name);
@@ -936,9 +959,13 @@ export default function Editor() {
             {upscaling ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Maximize2 className="w-4 h-4 mr-1.5" />}
             {SUPER_RESOLUTION_PRODUCTION_AVAILABLE ? 'Upscale x4' : 'Upscale x4 · Candidate'}
           </Button>
-          <a href={project.current_image_url} target="_blank" rel="noreferrer" className="p-2 rounded-lg hover:bg-accent transition-colors" aria-label="Download">
-            <Download className="w-5 h-5" />
-          </a>
+          <button type="button" onClick={handleDownload}
+            disabled={downloading || committing || Boolean(pendingResult)}
+            className="p-2 rounded-lg hover:bg-accent transition-colors disabled:opacity-50"
+            aria-label="Download">
+            {downloading ? <Loader2 className="w-5 h-5 animate-spin" /> :
+              <Download className="w-5 h-5" />}
+          </button>
         </AdaptiveToolbar>
       </div>
 
