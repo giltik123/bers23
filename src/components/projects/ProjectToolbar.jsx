@@ -7,29 +7,39 @@ import { SORT_OPTIONS } from '@/lib/projectService';
 
 export default function ProjectToolbar({ query, onQueryChange, sortBy, onSortChange, showArchived, onToggleArchived }) {
   return (
-    <div className="flex flex-col sm:flex-row gap-2 mb-6">
-      <div className="relative flex-1">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          placeholder="Search projects…"
-          className="pl-9 rounded-xl"
-        />
-      </div>
-      <div className="flex gap-2">
-        <Select value={sortBy} onValueChange={onSortChange}>
-          <SelectTrigger className="w-[150px] rounded-xl"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {SORT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
+    <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-sm sm:flex-row sm:items-end sm:gap-4" role="search" aria-label="Find projects">
+      <label className="relative flex-1 space-y-1.5 text-xs font-medium text-muted-foreground">
+        <span>Search your projects</span>
+        <span className="relative block">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Input
+            aria-label="Search projects"
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="Project name…"
+            className="h-11 rounded-xl pl-10"
+          />
+        </span>
+      </label>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1.5">
+          <label htmlFor="project-sort" className="block text-xs font-medium text-muted-foreground">Sort by</label>
+          <Select value={sortBy} onValueChange={onSortChange}>
+            <SelectTrigger id="project-sort" aria-label="Sort projects" className="h-11 w-[155px] rounded-xl"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
         <Button
+          type="button"
           variant={showArchived ? 'secondary' : 'outline'}
           onClick={onToggleArchived}
-          className="rounded-xl"
+          aria-pressed={showArchived}
+          className="min-h-11 rounded-xl"
         >
-          <Archive className="w-4 h-4 mr-2" /> {showArchived ? 'Archived' : 'Active'}
+          <Archive className="h-4 w-4" aria-hidden="true" /> {showArchived ? 'View active' : 'View archived'}
         </Button>
       </div>
     </div>

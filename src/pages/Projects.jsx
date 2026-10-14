@@ -95,52 +95,83 @@ export default function Projects() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-          <p className="text-sm text-muted-foreground mt-1">Edit objects, not entire images.</p>
-        </div>
-        <Button onClick={() => fileRef.current.click()} disabled={uploading} className="rounded-xl">
-          {uploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-          New project
-        </Button>
-      </div>
+    <div className="mx-auto w-full max-w-6xl space-y-7 px-4 py-7 sm:space-y-8 sm:px-6 sm:py-10">
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} aria-label="Choose a photo for a new project" />
+      <header>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Your workspace</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Projects</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Your photos and edits live here. Choose an existing project or start with a new image.</p>
+      </header>
 
-      {uploadError && <p className="mb-4 rounded-xl border border-destructive/30 px-3 py-2 text-sm text-destructive">{uploadError}</p>}
-
-      {loadError && <div className="mb-4"><ErrorBanner message={loadError} onRetry={reload} /></div>}
-      {actionError && <div className="mb-4"><ErrorBanner message={actionError} /></div>}
-
-      <ProjectToolbar
-        query={query} onQueryChange={setQuery}
-        sortBy={sortBy} onSortChange={setSortBy}
-        showArchived={showArchived} onToggleArchived={() => setShowArchived(!showArchived)}
-      />
-
-      {!visible && !loadError ? (
-        <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-      ) : loadError ? null : visible.length === 0 ? (
-        query || showArchived ? (
-          <p className="text-center text-sm text-muted-foreground py-20">
-            {showArchived ? 'No archived projects.' : 'No projects match your search.'}
-          </p>
-        ) : (
-          <button
-            onClick={() => fileRef.current.click()}
-            className="w-full border-2 border-dashed border-border rounded-3xl py-20 flex flex-col items-center gap-3 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors"
+      <section aria-label="Start editing" className="relative overflow-hidden rounded-3xl border border-teal-800/40 bg-gradient-to-br from-teal-950 via-teal-900 to-teal-800 p-6 text-white shadow-lg sm:p-8">
+        <div className="relative z-10 max-w-2xl space-y-5">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-teal-200">CREATE SOMETHING</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Bring your next photo to life.</h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-teal-50/85">Open a photo, make a focused change, compare the preview and save only when it looks right.</p>
+          </div>
+          <Button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="min-h-12 rounded-xl bg-white px-5 font-semibold text-teal-950 shadow-sm hover:bg-teal-50"
           >
-            <ImageIcon className="w-10 h-10" />
-            <span className="font-medium">Upload a photo to start</span>
-            <span className="text-xs">Your projects will appear here</span>
-          </button>
-        )
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-          {visible.map((p) => <ProjectCard key={p.id} project={p} {...cardActions} />)}
+            {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="mr-2 h-4 w-4" aria-hidden="true" />}
+            {uploading ? 'Creating project…' : 'New project'}
+          </Button>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-teal-50/80" aria-label="How editing works">
+            <span><strong className="mr-1 text-white">01</strong> Upload photo</span>
+            <span><strong className="mr-1 text-white">02</strong> Choose an edit</span>
+            <span><strong className="mr-1 text-white">03</strong> Preview & save</span>
+          </div>
         </div>
-      )}
+        <div className="pointer-events-none absolute -right-16 -top-24 h-80 w-80 rounded-full border border-teal-200/15 bg-teal-200/10 blur-2xl" aria-hidden="true" />
+      </section>
+
+      {uploadError && <p className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert">{uploadError}</p>}
+      {loadError && <ErrorBanner message={loadError} onRetry={reload} />}
+      {actionError && <ErrorBanner message={actionError} />}
+
+      <section aria-label="Project library" className="space-y-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">Your projects</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Find a photo and continue where you left off.</p>
+          </div>
+          {visible && <span className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground" aria-live="polite">{visible.length} shown</span>}
+        </div>
+
+        <ProjectToolbar
+          query={query} onQueryChange={setQuery}
+          sortBy={sortBy} onSortChange={setSortBy}
+          showArchived={showArchived} onToggleArchived={() => setShowArchived(!showArchived)}
+        />
+
+        {!visible && !loadError ? (
+          <div className="flex justify-center rounded-3xl border border-border/70 bg-card py-20" role="status" aria-label="Loading projects"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+        ) : loadError ? null : visible.length === 0 ? (
+          query || showArchived ? (
+            <div className="rounded-3xl border border-border/70 bg-card px-6 py-16 text-center">
+              <p className="text-sm font-medium">{showArchived ? 'No archived projects found' : 'No matching projects'}</p>
+              <p className="mt-2 text-sm text-muted-foreground">Try another search or switch back to active projects.</p>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="flex w-full flex-col items-center gap-3 rounded-3xl border-2 border-dashed border-border bg-card px-5 py-20 text-muted-foreground transition-colors hover:border-primary/50 hover:bg-accent/40 hover:text-foreground"
+            >
+              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><ImageIcon className="h-7 w-7" /></span>
+              <span className="text-base font-semibold text-foreground">Add your first photo</span>
+              <span className="max-w-sm text-center text-sm">Choose an image from your device to start editing. Your projects will appear here.</span>
+            </button>
+          )
+        ) : (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {visible.map((p) => <ProjectCard key={p.id} project={p} {...cardActions} />)}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

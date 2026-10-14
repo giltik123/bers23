@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
@@ -123,7 +124,7 @@ try {
   await page.locator('#password').fill(password);
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/', { timeout: 15_000 });
-  await page.getByRole('heading', { name: 'Projects' }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
 
   await page.locator('input[type="file"]').setInputFiles({ name: 'release-r3e-source.png', mimeType: 'image/png', buffer: sourcePng });
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/editor' && Boolean(url.searchParams.get('id')), { timeout: 20_000 });
@@ -143,6 +144,421 @@ try {
   assert.deepEqual(initial.objects, []);
   assert.equal((await readMasks(projectId)).length, 0);
 
+  // Local-only browser workspace: real uploaded-in-memory PNG, real pixel
+  // processing and a real downloadable file. The canonical Core Project must
+  // remain byte-for-byte unchanged; no AI provider or local execution ticket.
+  await page.getByRole('button', { name: 'Local tools', exact: true }).click();
+  await page.locator('input[aria-label="Choose a local photo without uploading it"]').setInputFiles({
+    name: 'release-r3e-local.png', mimeType: 'image/png', buffer: sourcePng,
+  });
+  const localLab = page.getByRole('region', { name: 'Local photo adjustments' });
+  await localLab.getByRole('heading', { name: 'Local photo lab' }).waitFor({ state: 'visible', timeout: 10_000 });
+  const brightness = localLab.getByRole('slider', { name: 'Local Brightness' });
+  // The redesigned Editor places Local tools below a taller image workspace.
+  // A bounding box alone is not evidence that Chrome can hit the slider:
+  // scroll the *actual* control into the viewport before real pointer input.
+  await brightness.scrollIntoViewIfNeeded();
+  await brightness.waitFor({ state: 'visible', timeout: 10_000 });
+  // A REAL Chrome slider drag fires many input updates. One user gesture must
+  // create exactly one Undo entry, not consume the entire 40-step local history.
+  const sliderRect = await brightness.boundingBox();
+  assert(sliderRect && sliderRect.width > 20, 'brightness slider must have a real pointer target');
+  await page.mouse.move(sliderRect.x + sliderRect.width * .50, sliderRect.y + sliderRect.height / 2);
+  await page.mouse.down();
+  for (const fraction of [.57, .64, .71, .78, .85]) {
+    await page.mouse.move(sliderRect.x + sliderRect.width * fraction, sliderRect.y + sliderRect.height / 2, { steps: 3 });
+  }
+  await page.mouse.up();
+  const draggedBrightness = await brightness.inputValue();
+  assert.notEqual(draggedBrightness, '0', 'real pointer drag must modify the brightness');
+  assert.match(await localLab.getByLabel('Local undo history position').innerText(), /Edit 1 of 1/, 'one drag must create only one history entry');
+  await page.keyboard.press('Control+z');
+  assert.equal(await brightness.inputValue(), '0', 'one Ctrl+Z must restore pre-drag brightness after many pointer samples');
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal(await brightness.inputValue(), draggedBrightness, 'Ctrl+Shift+Z must redo the whole slider gesture');
+  await brightness.fill('40');
+  assert.equal(await brightness.inputValue(), '40', 'local brightness slider must drive real pixel settings');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    return canvas instanceof HTMLCanvasElement && canvas.width === 12 && canvas.height === 8
+      && canvas.getContext('2d').getImageData(6, 4, 1, 1).data[0] > 44;
+  }, null, { timeout: 10_000 });
+  // Split preview must show genuine original pixels on the left and edited
+  // pixels on the right; moving the divider must NOT alter any export bytes.
+  await localLab.getByRole('button', { name: 'Split view' }).click();
+  const comparePosition = localLab.getByRole('slider', { name: 'Before and after split position' });
+  await comparePosition.fill('50');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    if (!canvas || canvas.width !== 12 || canvas.height !== 8) return false;
+    const ctx = canvas.getContext('2d');
+    return ctx.getImageData(0, 4, 1, 1).data[0] === 44
+      && ctx.getImageData(11, 4, 1, 1).data[0] === 94;
+  }, null, { timeout: 10_000 });
+  assert.equal(await localLab.locator('[data-local-split-divider="true"]').count(), 1);
+  const comparisonHandle = localLab.getByRole('slider', { name: 'Drag comparison divider' });
+  await comparisonHandle.focus();
+  await comparisonHandle.press('ArrowRight');
+  assert.equal(await comparePosition.inputValue(), '51', 'keyboard right arrow must shift the real divider by one percentage point');
+  await comparisonHandle.press('Home');
+  assert.equal(await comparePosition.inputValue(), '0');
+  await comparisonHandle.press('End');
+  assert.equal(await comparePosition.inputValue(), '100');
+  await comparePosition.fill('50');
+  const dividerBox = await comparisonHandle.boundingBox();
+  const compareCanvasBox = await localLab.getByRole('img', { name: 'Locally edited photo preview' }).boundingBox();
+  assert(dividerBox && compareCanvasBox, 'comparison divider and photo must have pointer geometry');
+  await page.mouse.move(dividerBox.x + dividerBox.width / 2, dividerBox.y + dividerBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(compareCanvasBox.x + compareCanvasBox.width * .25, compareCanvasBox.y + compareCanvasBox.height / 2, { steps: 4 });
+  await page.mouse.up();
+  const draggedPosition = Number(await comparePosition.inputValue());
+  assert(draggedPosition >= 20 && draggedPosition <= 30, 'dragging the real image divider must update comparison percentage');
+  await comparePosition.fill('100');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    return canvas?.getContext('2d')?.getImageData(11, 4, 1, 1).data[0] === 44;
+  }, null, { timeout: 10_000 });
+  await comparePosition.fill('0');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    return canvas?.getContext('2d')?.getImageData(0, 4, 1, 1).data[0] === 94;
+  }, null, { timeout: 10_000 });
+  await comparePosition.fill('50');
+  assert.match(await localLab.getByLabel('Local undo history position').innerText(), /Edit \d+ of \d+/, 'split position must not consume Undo history');
+
+  const localDownloadPromise = page.waitForEvent('download', { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Download edited PNG' }).click();
+  const localDownload = await localDownloadPromise;
+  assert.match(localDownload.suggestedFilename(), /-local-edit\.png$/);
+  const localPng = await fs.readFile(await localDownload.path());
+  const localPixels = await sharp(localPng).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.equal(localPixels.info.width, 12);
+  assert.equal(localPixels.info.height, 8);
+  assert.deepEqual([...localPixels.data.subarray(0, 4)], [94, 146, 198, 255], 'full resolution local PNG must contain actual brightness-adjusted pixels');
+  await localLab.getByRole('button', { name: 'After', exact: true }).click();
+  assert.equal(await localLab.locator('[data-local-split-divider="true"]').count(), 0, 'comparison divider must disappear when returning to editing');
+  assert.deepEqual(await readProjectState(projectId), initial, 'local PNG editing must never mutate canonical Core Project');
+  assert.equal(providerCalls, 0, 'local image editing must never call AI providers');
+  assert.deepEqual(diagnostics.localExecutionRequests, [], 'local PNG editing must not manufacture Core execution tickets');
+
+  // User-owned recipe: save original-bound reversible settings and vectors as
+  // JSON (never an image/upload), modify photo, restore exactly, then Undo
+  // the entire import as a single history step.
+  const recipeDownloadPending = page.waitForEvent('download', { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Save edit recipe' }).click();
+  const recipeDownload = await recipeDownloadPending;
+  assert.match(recipeDownload.suggestedFilename(), /\.bers-edit\.json$/);
+  const recipeBytes = await fs.readFile(await recipeDownload.path());
+  const recipeRecord = JSON.parse(recipeBytes.toString('utf8'));
+  assert.equal(recipeRecord.format, 'bers.local-photo-recipe');
+  assert.equal(recipeRecord.version, 1);
+  assert.equal(recipeRecord.source.width, 12);
+  assert.equal(recipeRecord.source.height, 8);
+  assert.match(recipeRecord.source.sha256, /^[0-9a-f]{64}$/);
+  const originalRgbaBytes = await sharp(sourcePng).ensureAlpha().raw().toBuffer();
+  assert.equal(recipeRecord.source.sha256, createHash('sha256').update(originalRgbaBytes).digest('hex'), 'recipe SHA-256 must hash the entire original RGBA8, not a downscaled preview');
+  assert.equal(recipeRecord.edits.settings.brightness, 40);
+  assert.equal(Object.hasOwn(recipeRecord, 'pixels'), false, 'edit recipe must never bundle source image bytes');
+
+  await brightness.fill('10');
+  assert.equal(await brightness.inputValue(), '10');
+  await localLab.locator('input[aria-label="Choose BERS local recipe JSON"]').setInputFiles({
+    name: 'approved-original.bers-edit.json', mimeType: 'application/json', buffer: recipeBytes,
+  });
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[aria-label="Local Brightness"]');
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    return input?.value === '40'
+      && canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data[0] === 94;
+  }, null, { timeout: 10_000 });
+  await localLab.getByText(/Edit recipe restored for this exact photo/).waitFor({ state: 'visible' });
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+  assert.equal(await brightness.inputValue(), '10', 'Undo must reverse entire recipe import');
+  await localLab.getByRole('button', { name: 'Redo', exact: true }).click();
+  assert.equal(await brightness.inputValue(), '40', 'Redo must restore imported recipe state');
+  await localLab.locator('input[aria-label="Choose BERS local recipe JSON"]').setInputFiles({
+    name: 'wrong-photo.bers-edit.json', mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({
+      ...recipeRecord, source: { ...recipeRecord.source, sha256: 'a'.repeat(64) },
+    })),
+  });
+  await localLab.getByRole('alert').getByText(/different original image/).waitFor({ state: 'visible' });
+  assert.equal(await brightness.inputValue(), '40', 'invalid recipe import must never mutate settings');
+  await localLab.locator('input[aria-label="Choose BERS local recipe JSON"]').setInputFiles({
+    name: 'approved-original.bers-edit.json', mimeType: 'application/json', buffer: recipeBytes,
+  });
+  await localLab.getByText(/Edit recipe restored for this exact photo/).waitFor({ state: 'visible' });
+  assert.deepEqual(await readProjectState(projectId), initial, 'portable edit recipe must not mutate canonical Core Project');
+  assert.equal(providerCalls, 0, 'portable edit recipe must never call an AI provider');
+
+  // A browser draft is EXPLICIT and reversible. It must survive a full
+  // page reload while never storing photo bytes or touching Core authority.
+  await localLab.getByText('Save on this device', { exact: true }).click();
+  await localLab.getByRole('button', { name: 'Save browser draft' }).click();
+  await localLab.getByText(/Saved on this device only/).waitFor({ state: 'visible', timeout: 10_000 });
+  const deviceDraft = await page.evaluate(() => localStorage.getItem('bers.local-photo-edit.explicit-draft.v1'));
+  assert(deviceDraft && deviceDraft.length < 2 * 1024 * 1024, 'explicit saved browser draft should fit the bounded JSON recipe');
+  assert.equal(JSON.parse(deviceDraft).source.sha256, recipeRecord.source.sha256, 'saved browser draft must bind the exact original source');
+  assert.equal(JSON.parse(deviceDraft).edits.settings.brightness, 40);
+  assert.equal(JSON.parse(deviceDraft).pixels, undefined, 'browser storage must not persist decoded image bytes');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Local tools', exact: true }).click();
+  await page.locator('input[aria-label="Choose a local photo without uploading it"]').setInputFiles({
+    name: 'release-r3e-local.png', mimeType: 'image/png', buffer: sourcePng,
+  });
+  await localLab.getByText('release-r3e-local.png', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+  await localLab.getByText('Save on this device', { exact: true }).click();
+  await localLab.getByRole('button', { name: 'Restore browser draft' }).click();
+  await page.waitForFunction(() =>
+    document.querySelector('input[aria-label="Local Brightness"]')?.value === '40', null, { timeout: 10_000 });
+  await localLab.getByText(/Browser draft restored for this exact original/).waitFor({ state: 'visible' });
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+  assert.equal(await localLab.getByRole('slider', { name: 'Local Brightness' }).inputValue(), '0', 'Undo must revert restored browser draft');
+  await localLab.getByRole('button', { name: 'Redo', exact: true }).click();
+  assert.equal(await localLab.getByRole('slider', { name: 'Local Brightness' }).inputValue(), '40', 'Redo must reapply restored browser draft');
+  await localLab.getByRole('button', { name: 'Delete browser draft' }).click();
+  assert.equal(await page.evaluate(() => localStorage.getItem('bers.local-photo-edit.explicit-draft.v1')), null, 'deletion must remove only the browser draft');
+  assert.equal(await localLab.getByRole('button', { name: 'Restore browser draft' }).isDisabled(), true);
+  assert.deepEqual(await readProjectState(projectId), initial, 'saved browser drafts must not mutate canonical Core Project');
+  assert.equal(providerCalls, 0, 'browser draft save/reload/restore must never invoke an AI provider');
+
+  // New precision controls must modify the rendered pixels, support unified
+  // Undo, and not mutate the protected Core Project.
+  await localLab.getByText('Tone curve', { exact: true }).click();
+  const curveMidpoint = localLab.getByRole('slider', { name: 'Curve Midtones' });
+  await curveMidpoint.fill('200');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    return canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data[0] > 94;
+  }, null, { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    return canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data[0] === 94;
+  }, null, { timeout: 10_000 });
+
+  // Independent Red-channel tone curve must alter only red (not green/blue).
+  await localLab.getByRole('combobox', { name: 'Tone curve channel' }).selectOption('red');
+  await curveMidpoint.fill('200');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    const rgba = canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data;
+    return rgba && rgba[0] > 94 && rgba[1] === 146 && rgba[2] === 198 && rgba[3] === 255;
+  }, null, { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Reset tone curve' }).click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    const rgba = canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data;
+    return rgba && rgba[0] === 94 && rgba[1] === 146 && rgba[2] === 198 && rgba[3] === 255;
+  }, null, { timeout: 10_000 });
+  await localLab.getByRole('combobox', { name: 'Tone curve channel' }).selectOption('rgb');
+
+  await localLab.getByText('Selective HSL', { exact: true }).click();
+  await localLab.getByRole('combobox', { name: 'Selective HSL color range' }).selectOption('blue');
+  const selectiveSaturation = localLab.getByRole('slider', { name: 'Selective Saturation' });
+  await selectiveSaturation.fill('-90');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    const sample = canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data;
+    return sample && (sample[0] !== 94 || sample[1] !== 146 || sample[2] !== 198);
+  }, null, { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+
+  // Local gradients must blend the original unadjusted pixels (left side)
+  // with the corrected pixels (right side), and Reset must fully undo the mask.
+  await localLab.getByText('Local gradient mask', { exact: true }).click();
+  await localLab.getByRole('combobox', { name: 'Local gradient mask direction' }).selectOption('left-right');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    if (!canvas) return false;
+    const context = canvas.getContext('2d');
+    return context.getImageData(0, 4, 1, 1).data[0] === 44
+      && context.getImageData(11, 4, 1, 1).data[0] === 94;
+  }, null, { timeout: 10_000 });
+  await localLab.getByRole('slider', { name: 'Gradient start' }).fill('20');
+  await localLab.getByRole('slider', { name: 'Gradient end' }).fill('80');
+  await localLab.getByRole('button', { name: 'Clear gradient mask' }).click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    return canvas?.getContext('2d')?.getImageData(0, 4, 1, 1).data[0] === 94;
+  }, null, { timeout: 10_000 });
+
+  // A nonuniform image proves the manual clone tool copies actual user-chosen
+  // source pixels. The same exact output must arrive in the downloaded PNG.
+  const stampRgba = Buffer.alloc(12 * 8 * 4);
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 12; x++) {
+    const i = (y * 12 + x) * 4;
+    stampRgba[i] = x < 4 ? 255 : 0;
+    stampRgba[i + 1] = 0;
+    stampRgba[i + 2] = x < 4 ? 0 : 255;
+    stampRgba[i + 3] = 255;
+  }
+  const stampPng = await sharp(stampRgba, { raw: { width: 12, height: 8, channels: 4 } }).png().toBuffer();
+  await page.locator('input[aria-label="Choose a local photo without uploading it"]').setInputFiles({
+    name: 'r3e-stamp.png', mimeType: 'image/png', buffer: stampPng,
+  });
+  await localLab.getByText('r3e-stamp.png', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+  await localLab.getByText('Manual clone stamp', { exact: true }).click();
+  await localLab.getByRole('button', { name: 'Pick source' }).click();
+  const stampCanvas = localLab.getByRole('img', { name: 'Locally edited photo preview' });
+  await stampCanvas.scrollIntoViewIfNeeded();
+  const stampRect = await stampCanvas.boundingBox();
+  assert(stampRect && stampRect.width > 4 && stampRect.height > 4, 'stamp preview must offer a real pointer surface');
+  await stampCanvas.click({ position: { x: stampRect.width * 2.5 / 12, y: stampRect.height * 4.5 / 8 } });
+  await localLab.getByText(/Source selected/).waitFor({ state: 'visible', timeout: 10_000 });
+  await stampCanvas.click({ position: { x: stampRect.width * 7.5 / 12, y: stampRect.height * 4.5 / 8 } });
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    const sample = canvas?.getContext('2d')?.getImageData(7, 4, 1, 1).data;
+    return sample && sample[0] === 255 && sample[1] === 0 && sample[2] === 0 && sample[3] === 255;
+  }, null, { timeout: 10_000 });
+  const stampDownloadPending = page.waitForEvent('download', { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Download edited PNG' }).click();
+  const stampDownload = await stampDownloadPending;
+  const stampBytes = await fs.readFile(await stampDownload.path());
+  const stampResult = await sharp(stampBytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual([...stampResult.data.subarray((4 * 12 + 7) * 4, (4 * 12 + 7) * 4 + 4)], [255, 0, 0, 255], 'manual clone stroke must survive exact full-resolution local PNG export');
+  assert.deepEqual(await readProjectState(projectId), initial, 'local clone editing must not mutate canonical Core Project');
+  assert.equal(providerCalls, 0, 'precision local tools must never contact an AI provider');
+  assert.deepEqual(diagnostics.localExecutionRequests, [], 'precision local tools must never issue Core execution tickets');
+
+  // Browser annotation acceptance: this must draw genuinely new RGBA on a
+  // separate overlay canvas, then flatten those vectors into an actual PNG.
+  await localLab.getByRole('button', { name: 'Rectangle', exact: true }).click();
+  await localLab.getByRole('button', { name: 'Add centered rectangle' }).click();
+  await localLab.getByRole('button', { name: 'Delete annotation 1' }).waitFor({ state: 'visible' });
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('canvas[data-local-annotation-surface="true"]');
+    if (!canvas || canvas.width !== 12 || canvas.height !== 8) return false;
+    const rgba = canvas.getContext('2d')?.getImageData(0, 0, 12, 8).data;
+    if (!rgba) return false;
+    for (let i = 0; i < rgba.length; i += 4) if (rgba[i + 3] > 0) return true;
+    return false;
+  }, null, { timeout: 10_000 });
+  const annotatedDownloadPromise = page.waitForEvent('download', { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Download edited PNG' }).click();
+  const annotatedDownload = await annotatedDownloadPromise;
+  const annotationBytes = await fs.readFile(await annotatedDownload.path());
+  const annotationPixels = await sharp(annotationBytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  let modifiedAnnotationPixels = 0;
+  for (let offset = 0; offset < annotationPixels.data.length; offset += 4) {
+    const current = annotationPixels.data.subarray(offset, offset + 4);
+    const previous = stampResult.data.subarray(offset, offset + 4);
+    if (!current.every((value, channel) => value === previous[channel])) modifiedAnnotationPixels++;
+    assert.equal(current[3], previous[3], 'annotation must preserve original fully opaque RGBA alpha');
+  }
+  assert(modifiedAnnotationPixels > 0, 'rectangle must change real exported PNG pixels, not just UI controls');
+  await localLab.getByRole('button', { name: 'Delete annotation 1' }).click();
+  assert.equal(await localLab.getByRole('button', { name: 'Delete annotation 1' }).count(), 0, 'individual annotation deletion must take effect');
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+  await localLab.getByRole('button', { name: 'Delete annotation 1' }).waitFor({ state: 'visible' });
+  // Drag actual arrow geometry over the interactive overlay; no center-button
+  // shortcut. Pointer coordinates are normalized and must reach the saved list.
+  await localLab.getByRole('button', { name: 'Arrow', exact: true }).click();
+  const drawSurface = localLab.locator('canvas[data-local-annotation-surface="true"]');
+  await drawSurface.scrollIntoViewIfNeeded();
+  const drawRect = await drawSurface.boundingBox();
+  assert(drawRect && drawRect.width > 8 && drawRect.height > 5, 'annotation canvas must accept pointer geometry');
+  await page.mouse.move(drawRect.x + drawRect.width * .2, drawRect.y + drawRect.height * .3);
+  await page.mouse.down();
+  await page.mouse.move(drawRect.x + drawRect.width * .85, drawRect.y + drawRect.height * .7, { steps: 7 });
+  await page.mouse.up();
+  await localLab.getByRole('button', { name: 'Delete annotation 2' }).waitFor({ state: 'visible', timeout: 10_000 });
+
+  await localLab.getByRole('button', { name: 'Text', exact: true }).click();
+  await localLab.getByRole('textbox', { name: 'Annotation text' }).fill('Retouch this area');
+  await localLab.getByRole('button', { name: 'Add centered text' }).click();
+  await localLab.getByRole('button', { name: 'Delete annotation 3' }).waitFor({ state: 'visible' });
+
+  // Existing vector annotations must be editable after placement. Verify
+  // actual stored text/color and shared Undo rather than simply moving sliders.
+  await localLab.getByRole('button', { name: 'Select annotation 1' }).click();
+  const selectionGuide = localLab.locator('[data-local-annotation-selection="true"]');
+  await selectionGuide.waitFor({ state: 'visible', timeout: 10_000 });
+  assert.equal(await selectionGuide.evaluate(element => getComputedStyle(element).pointerEvents), 'none', 'editing selection guide must never intercept drawing gestures');
+  await localLab.getByRole('button', { name: 'Select annotation 3' }).click();
+  const selectedProperties = localLab.getByRole('region', { name: 'Selected annotation properties' });
+  await selectedProperties.getByRole('textbox', { name: 'Selected annotation text' }).fill('Final review');
+  await selectedProperties.getByRole('combobox', { name: 'Selected annotation color' }).selectOption('#0f766e');
+  await selectedProperties.getByRole('button', { name: 'Move annotation right' }).click();
+  await localLab.getByText('3. text: Final review').waitFor({ state: 'visible', timeout: 10_000 });
+  assert.equal(await selectedProperties.getByRole('combobox', { name: 'Selected annotation color' }).inputValue(), '#0f766e');
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+  await localLab.getByText('3. text: Final review').waitFor({ state: 'visible' });
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+  assert.equal(await selectedProperties.getByRole('combobox', { name: 'Selected annotation color' }).inputValue(), '#ef4444', 'Undo must restore vector annotation color without altering source pixels');
+
+  assert.deepEqual(await readProjectState(projectId), initial, 'local annotations must never mutate canonical Core Project');
+  assert.equal(providerCalls, 0, 'annotation drawing must never invoke an AI provider');
+
+  // Solid local privacy cover: unlike blur/pixelation, the FULL-RES PNG must
+  // physically contain opaque [0,0,0,255] inside the user-selected area.
+  // Later colored vector annotations are deliberately drawn below covers.
+  await localLab.getByRole('button', { name: 'Solid cover', exact: true }).click();
+  await localLab.getByRole('button', { name: 'Add centered solid cover' }).click();
+  const redactionProperties = localLab.getByRole('region', { name: 'Selected annotation properties' });
+  assert.equal(await redactionProperties.getByRole('slider', { name: 'Selected annotation opacity' }).count(), 0, 'privacy cover opacity must not be adjustable');
+  await localLab.getByRole('button', { name: 'Rectangle', exact: true }).click();
+  await localLab.getByRole('button', { name: 'Add centered rectangle' }).click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('canvas[data-local-annotation-surface="true"]');
+    const rgba = canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data;
+    return rgba && rgba[0] === 0 && rgba[1] === 0 && rgba[2] === 0 && rgba[3] === 255;
+  }, null, { timeout: 10_000 });
+  const coverDownloadPending = page.waitForEvent('download', { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Download edited PNG' }).click();
+  const coverDownload = await coverDownloadPending;
+  const coveredRgba = await sharp(await fs.readFile(await coverDownload.path())).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual([...coveredRgba.data.subarray((4 * 12 + 6) * 4, (4 * 12 + 6) * 4 + 4)], [0, 0, 0, 255], 'export must overwrite ALL RGB and alpha bytes beneath private-area cover');
+  assert.deepEqual([...coveredRgba.data.subarray(0, 4)], [255, 0, 0, 255], 'pixels outside private-area cover must remain unchanged');
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click(); // later rectangle
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click(); // cover
+  await localLab.getByRole('button', { name: 'Redo', exact: true }).click(); // cover
+  assert.deepEqual(await readProjectState(projectId), initial, 'solid black covers must not alter the original Core Project');
+  assert.equal(providerCalls, 0, 'privacy covers must never call an AI provider');
+
+  // Manual color-matched repair samples a clean source and target surroundings,
+  // then repairs an isolated dark blemish without any network or AI execution.
+  const repairRgba = Buffer.alloc(11 * 7 * 4);
+  for (let y = 0; y < 7; y++) for (let x = 0; x < 11; x++) {
+    const i = (y * 11 + x) * 4;
+    const tone = (x === 8 && y === 3) ? 0 : (x < 5 ? 70 : 130);
+    repairRgba[i] = tone;
+    repairRgba[i + 1] = tone;
+    repairRgba[i + 2] = tone;
+    repairRgba[i + 3] = 255;
+  }
+  const repairPng = await sharp(repairRgba, { raw: { width: 11, height: 7, channels: 4 } }).png().toBuffer();
+  await page.locator('input[aria-label="Choose a local photo without uploading it"]').setInputFiles({
+    name: 'r3e-repair.png', mimeType: 'image/png', buffer: repairPng,
+  });
+  await localLab.getByText('r3e-repair.png', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+  await localLab.getByRole('combobox', { name: 'Local retouch method' }).selectOption('color-match');
+  await localLab.getByRole('button', { name: 'Pick source' }).click();
+  const repairCanvas = localLab.getByRole('img', { name: 'Locally edited photo preview' });
+  await repairCanvas.scrollIntoViewIfNeeded();
+  const repairBox = await repairCanvas.boundingBox();
+  assert(repairBox && repairBox.width > 4, 'repair canvas must be an actual interactive image');
+  await repairCanvas.click({ position: { x: repairBox.width * 2.5 / 11, y: repairBox.height * 3.5 / 7 } });
+  await repairCanvas.click({ position: { x: repairBox.width * 8.5 / 11, y: repairBox.height * 3.5 / 7 } });
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    const color = canvas?.getContext('2d')?.getImageData(8, 3, 1, 1).data;
+    return color && color[0] === 130 && color[1] === 130 && color[2] === 130 && color[3] === 255;
+  }, null, { timeout: 10_000 });
+  const repairDownloadPending = page.waitForEvent('download', { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Download edited PNG' }).click();
+  const repairDownload = await repairDownloadPending;
+  const repairBytes = await fs.readFile(await repairDownload.path());
+  const repairPixels = await sharp(repairBytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual([...repairPixels.data.subarray((3 * 11 + 8) * 4, (3 * 11 + 8) * 4 + 4)], [130, 130, 130, 255], 'color-matched repair must transfer actual neighboring tone into full-resolution PNG');
+  assert.deepEqual(await readProjectState(projectId), initial, 'manual tonal retouch must not mutate Core Project');
+  assert.equal(providerCalls, 0, 'manual tonal retouch must never invoke AI providers');
+  assert.deepEqual(diagnostics.localExecutionRequests, [], 'manual tonal retouch must never create Core execution tickets');
+
+  await page.getByRole('button', { name: 'Prompt', exact: true }).click();
+
   // Start Selection without invoking Smart Select, switch immediately to deterministic manual Add,
   // and use Playwright's locator pointer action against the real Project image. A single brush dot
   // is sufficient for the release-floor MASK while preserving normal actionability and pointer events.
@@ -150,6 +566,20 @@ try {
   await page.getByRole('region', { name: 'Selection tools' }).waitFor({ state: 'visible', timeout: 10_000 });
   await page.getByRole('button', { name: 'Add', exact: true }).click();
   await page.getByLabel('Brush Size').fill('96');
+  // The Photoshop-inspired opacity control must be keyboard/touch-actionable;
+  // reset it to fully opaque before the existing canonical byte-exact baseline.
+  const brushOpacity = page.getByLabel('Brush Opacity');
+  await brushOpacity.fill('50');
+  assert.equal(await brushOpacity.inputValue(), '50', 'real browser brush-opacity slider must accept intermediate values');
+  await brushOpacity.fill('100');
+
+  // Display-only mask overlay controls must not touch Core or modify canonical alpha.
+  await page.getByLabel('Mask overlay opacity').fill('80');
+  await page.getByRole('button', { name: 'Magenta overlay' }).click();
+  await page.getByLabel('Show mask overlay').uncheck();
+  assert.equal(await page.locator('section[aria-label="Image canvas"] canvas').count(), 0, 'hiding the overlay must remove the visualization');
+  await page.getByLabel('Show mask overlay').check();
+
 
   const projectImage = page.getByRole('img', { name: 'Project', exact: true });
   await projectImage.scrollIntoViewIfNeeded();
@@ -173,6 +603,20 @@ try {
   assert.equal(observedPointer?.pointerType, 'touch', 'release-floor Selection input must exercise the real touch PointerEvent path');
   assert(Math.abs(observedPointer.clientX - touchX) <= 1, 'touch pointer X must stay on the requested Project-image coordinate');
   assert(Math.abs(observedPointer.clientY - touchY) <= 1, 'touch pointer Y must stay on the requested Project-image coordinate');
+
+  // Read actual rendered RGBA pixel data to prove that the chosen overlay color
+  // and opacity reach the canvas, rather than merely updating inert slider state.
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Image canvas"] canvas');
+    if (!(canvas instanceof HTMLCanvasElement) || canvas.width !== 12 || canvas.height !== 8) return false;
+    return canvas.getContext('2d').getImageData(6, 4, 1, 1).data[3] > 0;
+  }, null, { timeout: 10_000 });
+  const overlayColor = await page.locator('section[aria-label="Image canvas"] canvas').evaluate((element) => {
+    const rgba = element.getContext('2d').getImageData(6, 4, 1, 1).data;
+    return [...rgba];
+  });
+  assert.deepEqual(overlayColor.slice(0, 3), [217, 70, 239], 'mask visualization must be magenta after changing the color');
+  assert.equal(overlayColor[3], 204, '80% overlay transparency must produce a real RGBA alpha value');
 
   const done = page.getByRole('button', { name: 'Done', exact: true });
   await waitForEnabled(done, 'Done');
@@ -220,6 +664,7 @@ try {
   assert(selectedPixels > 0, 'manual Add must persist a non-empty MASK');
   assert(selectedPixels < 12 * 8, 'manual Add fixture must remain a bounded partial MASK');
   assert(maskAlpha[4 * 12 + 6] > 0, 'center touch must map through the real pointer/view transform into the center of the ORIGINAL-coordinate MASK');
+  assert.equal(maskAlpha[4 * 12 + 6], 255, 'display-only magenta and 80% overlay must not attenuate the opaque canonical MASK byte');
 
   const selectedState = await readProjectState(projectId);
   assert.equal(selectedState.project.current_image_storage_id, initial.project.current_image_storage_id);

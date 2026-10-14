@@ -1,4 +1,5 @@
 import React from 'react';
-import { usePlatformProfile } from '@/lib/platform/PlatformManager';
 
-export default function AdaptiveToolbar({ children, className = '' }) { const profile = usePlatformProfile(); return <div className={`flex items-center gap-1 ${profile.compact ? 'max-w-[52%] overflow-x-auto scrollbar-none' : ''} ${className}`}>{children}</div>; }
+export default function AdaptiveToolbar({ children, className = '' }) {
+  return <div className={['flex w-full flex-wrap items-center gap-1.5 sm:w-auto', className].join(' ')}>{children}</div>;
+}

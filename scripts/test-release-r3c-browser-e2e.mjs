@@ -138,7 +138,7 @@ try {
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/', { timeout: 15_000 });
   authenticated = true;
-  await page.getByRole('heading', { name: 'Projects' }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
 
   const input = page.locator('input[type="file"]');
   await input.setInputFiles({ name: 'release-r3c-source.png', mimeType: 'image/png', buffer: sourcePng });
@@ -454,6 +454,10 @@ async function runVerifiedRotate(page, expectedWidth, expectedHeight, label) {
       && url?.origin === coreOrigin
       && /^\/api\/core\/local-execution\/orthogonal-transform\/[^/]+\/result$/.test(url.pathname);
   }, { timeout: 20_000 });
+  // The streamlined Editor keeps Rotate/Flip behind an explicit disclosure.
+  const rotateToggle = page.getByText('Rotate or flip', { exact: true });
+  const rotateAction = page.getByRole('button', { name: 'Rotate 90° clockwise', exact: true });
+  if (!(await rotateAction.isVisible())) await rotateToggle.click();
   const rotate = page.getByRole('button', { name: 'Rotate 90° clockwise', exact: true });
   await rotate.waitFor({ state: 'visible', timeout: 10_000 });
   assert.equal(await rotate.isEnabled(), true, `${label}: Rotate must be enabled`);
