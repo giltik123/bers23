@@ -230,7 +230,8 @@ export default function Editor() {
 
   useEffect(() => () => disposePendingPreview(pendingResultRef.current), []);
   useEffect(() => { setHiddenObjectIds(new Set()); }, [project?.id]);
-  useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); setHiddenObjectIds(new Set()); }, [project?.current_image_artifact_id]);
+  useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); }, [project?.current_image_artifact_id]);
+  useEffect(() => { setHiddenObjectIds(new Set()); }, [project?.current_image_artifact_id]);
   useEffect(() => {
     if (!selection) return undefined;
     const handleSelectionHistoryShortcut = (event) => {
