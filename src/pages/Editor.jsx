@@ -81,7 +81,7 @@ import { isFinalSourceConflict, recoverFinalSourceConflict } from '@/application
 const EDITOR_TABS = [
   { id: 'ai', label: 'AI Studio', description: 'Build a bounded text plan, choose an actual Core mask and confirm the edit before execution.' },
   { id: 'local', label: 'Local tools', description: 'No AI, no credits: tune light, color and detail in your browser, compare before/after and download a PNG.' },
-  { id: 'prompt', label: 'Legacy prompt', description: 'Describe what you want to change, preview the result, then decide whether to save it.' },
+  { id: 'prompt', label: 'Prompt', description: 'Describe what you want to change, preview the result, then decide whether to save it.' },
   { id: 'creative', label: 'Creative Studio', description: 'Explore visual ideas and mood boards. This section plans ideas; it does not edit your photo.' },
   { id: 'recipes', label: 'Recipes', description: 'Choose a ready-made editing recipe and adapt it to your image.' },
   { id: 'agent', label: 'AI Agent', description: 'Build a controlled sequence of editing steps and review the result.' },
