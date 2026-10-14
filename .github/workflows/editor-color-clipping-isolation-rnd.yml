@@ -5,8 +5,10 @@ on:
     paths:
       - 'src/platform/creative/deterministic/EditorColorDifferenceRND.ts'
       - 'src/platform/creative/deterministic/EditorTonalClippingRND.ts'
+      - 'src/platform/creative/deterministic/EditorQualityInspectorRND.ts'
       - 'tests/editor-color-difference-rnd.test.mjs'
       - 'tests/editor-tonal-clipping-rnd.test.mjs'
+      - 'tests/editor-quality-inspector-rnd.test.mjs'
       - '.github/workflows/editor-color-clipping-isolation-rnd.yml'
       - 'docs/editor-color-clipping-isolation-rnd.md'
 permissions:
@@ -33,7 +35,8 @@ jobs:
         run: |
           node --experimental-strip-types --test \
             tests/editor-color-difference-rnd.test.mjs \
-            tests/editor-tonal-clipping-rnd.test.mjs
+            tests/editor-tonal-clipping-rnd.test.mjs \
+            tests/editor-quality-inspector-rnd.test.mjs
       - name: Typecheck and build without runtime wiring
         run: |
           npm run typecheck
