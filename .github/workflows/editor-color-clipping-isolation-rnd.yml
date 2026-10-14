@@ -1,0 +1,44 @@
+name: Isolated Editor color and clipping diagnostics R&D
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/platform/creative/deterministic/EditorColorDifferenceRND.ts'
+      - 'src/platform/creative/deterministic/EditorTonalClippingRND.ts'
+      - 'tests/editor-color-difference-rnd.test.mjs'
+      - 'tests/editor-tonal-clipping-rnd.test.mjs'
+      - '.github/workflows/editor-color-clipping-isolation-rnd.yml'
+      - 'docs/editor-color-clipping-isolation-rnd.md'
+permissions:
+  contents: read
+jobs:
+  exact-head-pixel-diagnostics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert tested exact PR head
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Verify sRGB Delta-E and alpha-aware clipping diagnostics
+        run: |
+          node --experimental-strip-types --test \
+            tests/editor-color-difference-rnd.test.mjs \
+            tests/editor-tonal-clipping-rnd.test.mjs
+      - name: Typecheck and build without runtime wiring
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Verify diff hygiene
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git diff --check "$BASE_SHA..HEAD"
