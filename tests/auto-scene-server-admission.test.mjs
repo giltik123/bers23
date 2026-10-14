@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertCanonicalSceneObjectPublication } from '../server/core/projects/sceneObjectAdmission.ts';
+import { readFileSync } from 'node:fs';
+import {
+  assertCanonicalSceneObjectPublication,
+  CLOUD_SCENE_MASK_PROVENANCE_ADMITTED,
+} from '../server/core/projects/sceneObjectAdmission.ts';
 
 const scope={tenantId:'tenant',userId:'user',projectId:'project'};
 const photo='signed-photo';
@@ -87,4 +91,25 @@ test('manual objects are allowed alongside verified auto objects, but never repl
   const g=fixture();
   g.input.objects=[{id:'manual-only',label:'Other',metadata:{segmentation:'MANUAL'}}];
   await assert.rejects(()=>assertCanonicalSceneObjectPublication(g.input),/one to 64/);
+});
+
+test('cloud SAM3 cannot masquerade as locally produced canonical MASK even with a valid signature',async()=>{
+  const f=fixture();
+  f.input.objects=[{...object,metadata:{
+    ...object.metadata,modelId:'fal-ai/sam-3/image',
+    modelVersion:'sam3-semantic-v1',promptKey:'face',
+  }}];
+  await assert.rejects(
+    ()=>assertCanonicalSceneObjectPublication(f.input),
+    /Cloud SAM3 MASK lacks admitted producer provenance/,
+  );
+});
+
+test('SAM3 env opt-in cannot bypass the unadmitted cloud producer schema; CLASSICAL remains enabled',()=>{
+  assert.equal(CLOUD_SCENE_MASK_PROVENANCE_ADMITTED,false);
+  const adapter=readFileSync('server/core/http/nodeHttpAdapter.ts','utf8');
+  assert.match(adapter,/&& CLOUD_SCENE_MASK_PROVENANCE_ADMITTED;/u);
+  assert.match(adapter,/if\(sceneMode==='SAM3'&&!sceneEnabled\)/u);
+  assert.match(adapter,/supportsClassicalSegmentation:true/u);
+  assert.match(adapter,/producerOperation:'LOCAL_SEGMENTATION'/u);
 });

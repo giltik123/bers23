@@ -1,6 +1,14 @@
 import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 
+/**
+ * The 48-migration production Artifact schema accepts only local segmentation
+ * producer provenance. Cloud masks MUST NOT claim LOCAL_SEGMENTATION.
+ * Separate CLOUD producer persistence, schema, lineage checks and migration
+ * closure require an independently reviewed release change.
+ */
+export const CLOUD_SCENE_MASK_PROVENANCE_ADMITTED=false;
+
 const GROUP_BY_CATEGORY: Readonly<Record<string,string>>=Object.freeze({
   FACE:'FACE',CLOTHING_GENERIC:'CLOTHING',CLOTHING_UPPER:'CLOTHING',CLOTHING_LOWER:'CLOTHING',
   OUTERWEAR:'CLOTHING',FOOTWEAR:'CLOTHING',DRESS:'CLOTHING',
@@ -58,6 +66,10 @@ export async function assertCanonicalSceneObjectPublication(input: Readonly<{
        box.x<0 || box.y<0 || box.w<=0 || box.h<=0 ||
        box.x+box.w>1.00000001 || box.y+box.h>1.00000001)
       throw denied('Scene Object bounding box is not in normalized image coordinates');
+    // A valid signature or local-producer claim cannot launder cloud SAM3
+    // inference into a canonical LOCAL_SEGMENTATION artifact.
+    if(obj.metadata.modelId==='fal-ai/sam-3/image')
+      throw denied('Cloud SAM3 MASK lacks admitted producer provenance');
     let maskClaim;
     try {maskClaim=input.artifacts.external.resolveStoredMask(obj.mask_artifact_id,input.scope);}
     catch {throw denied('Scene Object MASK signature or scope is invalid');}

@@ -21,7 +21,7 @@ import {
 } from './browserSessionCookie.ts';
 import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import type { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
-import { assertCanonicalSceneObjectPublication } from '../projects/sceneObjectAdmission.ts';
+import { assertCanonicalSceneObjectPublication, CLOUD_SCENE_MASK_PROVENANCE_ADMITTED } from '../projects/sceneObjectAdmission.ts';
 import { runFalSam3Scene, findSam3ScenePrompt } from '../scene/falSam3SemanticInstances.ts';
 import { runClassicalSceneSegmentation } from '../scene/classicalSceneSegmentation.ts';
 import { authenticatedOwnerScope, authenticatedProjectScope } from './authenticatedPrincipalScope.ts';
@@ -176,8 +176,12 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       const principal = await input.auth.verify(currentAuthorization());
       const auth = authenticatedOwnerScope(principal);
       // Production model work is explicitly opt-in, server-owned and bounded.
+      // Fail closed even when SAM3 env opt-in and FAL credentials exist:
+      // cloud-produced masks have no honest admitted durable producer yet.
+      // The free CLASSICAL path keeps LOCAL_SEGMENTATION authority.
       const sceneEnabled=process.env.BERS_AUTO_SCENE_SAM3_ENABLED==='true'
-        && input.config.provider==='FAL' && Boolean(input.config.falKey);
+        && input.config.provider==='FAL' && Boolean(input.config.falKey)
+        && CLOUD_SCENE_MASK_PROVENANCE_ADMITTED;
       if(path==='/api/core/scene/capability'&&request.method==='GET'){
         return send(response,200,{supportsSemanticInstances:sceneEnabled,
           supportsClassicalSegmentation:true,classicalModelId:'bers-classical-cv',
