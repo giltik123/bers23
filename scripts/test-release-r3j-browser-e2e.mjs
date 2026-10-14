@@ -491,9 +491,25 @@ try {
   const projectBeforeAccept = await readProjectState(projectId);
   assert.deepEqual(projectBeforeAccept, initialProject, 'Try-On execution/recovery/retry must not mutate Project before Accept');
 
+  // Real image loads and explicit human-review decisions gate Fashion Accept.
+  // This browser fixture simulates interactions; it does not certify visual realism.
+  const acceptButton = page.getByRole('button', { name: 'Accept', exact: true });
+  assert.equal(await acceptButton.isDisabled(), true, 'unreviewed Fashion FINAL must be blocked');
+  await page.getByRole('button', { name: 'Before', exact: true }).click();
+  await waitImage(page, 'Original image', 120, 160, 20_000);
+  await page.getByRole('button', { name: 'After', exact: true }).click();
+  await waitImage(page, 'Unaccepted edited image', 120, 160, 20_000);
+  for (const label of [
+    'Одежда сидит по телу, плечам и талии естественно',
+    'Руки, волосы и контуры тела правильно перекрывают ткань',
+    'Ткань, принт, швы и логотипы без заметных искажений',
+    'Лицо, освещение и фон остались естественными',
+  ]) await page.getByRole('checkbox', { name: label, exact: true }).check();
+  assert.equal(await acceptButton.isEnabled(), true, 'all four review decisions gate the existing Core Accept');
+
   // Scenario D: existing Editor ResultCompare -> Accept is the sole Project mutation boundary.
   const acceptWait = waitForCoreResponse(page, 'POST', pathname => pathname === `/api/core/projects/${projectId}/accept-final`);
-  await page.getByRole('button', { name: 'Accept', exact: true }).click();
+  await acceptButton.click();
   const acceptResponse = await acceptWait;
   assert.equal(acceptResponse.status(), 200);
   assert.deepEqual(JSON.parse(acceptResponse.request().postData() ?? '{}'), {
