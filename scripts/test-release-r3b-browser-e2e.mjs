@@ -255,7 +255,7 @@ try {
 
   const accept = page.getByRole('button', { name: 'Accept', exact: true });
   await accept.waitFor({ state: 'visible', timeout: 20_000 });
-  const previewImage = await loadedImageEvidence(page, 'after', 8, 12, 20_000);
+  const previewImage = await loadedImageEvidence(page, 'Unaccepted edited image', 8, 12, 20_000);
   diagnostics.deterministicEdit.previewImage = previewImage;
   assertLocalVerifiedPreview(previewImage, [8, 12], 'orthogonal-transform preview');
 
@@ -370,7 +370,7 @@ try {
 
   const r3qAccept = page.getByRole('button', { name: 'Accept', exact: true });
   await r3qAccept.waitFor({ state: 'visible', timeout: 20_000 });
-  const r3qPreviewImage = await loadedImageEvidence(page, 'after', 12, 8, 20_000);
+  const r3qPreviewImage = await loadedImageEvidence(page, 'Unaccepted edited image', 12, 8, 20_000);
   assertLocalVerifiedPreview(r3qPreviewImage, [12, 8], 'R3q side-effect-fault Preview');
   assert.deepEqual(await readProjectState(projectId), redoState, 'R3q Preview must remain non-mutating before Accept');
 
