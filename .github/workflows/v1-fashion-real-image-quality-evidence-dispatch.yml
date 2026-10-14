@@ -36,12 +36,22 @@ jobs:
             const fixturePath = `${evidencePrefix}/fixture-manifest.json`;
             const reviewPath = `${evidencePrefix}/review.json`;
 
+            // One immutable snapshot: branch refs can move between the owner
+            // check and the later Actions dispatch / raw-image verification.
+            const evidenceSnapshot = await github.rest.repos.getBranch({
+              owner, repo, branch: evidenceBranch,
+            });
+            const evidenceCommitSha = evidenceSnapshot.data.commit.sha;
+            if (!/^[0-9a-f]{40}$/.test(evidenceCommitSha)) {
+              throw new Error('Fashion evidence snapshot must resolve to an exact Git commit');
+            }
+
             const loadJson = async path => {
               const response = await github.rest.repos.getContent({
                 owner,
                 repo,
                 path,
-                ref: evidenceBranch,
+                ref: evidenceCommitSha,
               });
               if (Array.isArray(response.data) || response.data.type !== 'file' || !response.data.content) {
                 throw new Error(`Expected one file at ${evidenceBranch}:${path}`);
@@ -81,8 +91,30 @@ jobs:
                 review.decision !== 'ACCEPT_FOR_V1_DETERMINISTIC_TRYON') {
               throw new Error('Fashion owner review does not explicitly accept current exact main');
             }
+            if (!Array.isArray(fixture.samples) || !Array.isArray(review.samples) ||
+                fixture.samples.length < 1 || fixture.samples.length !== review.samples.length) {
+              throw new Error('Fashion owner review and fixture samples must match');
+            }
+            const sampleIds = new Set();
+            const reviewedIds = new Set();
+            for (const sample of fixture.samples) {
+              if (typeof sample.id !== 'string' || sampleIds.has(sample.id) ||
+                  !/^[a-f0-9]{64}$/.test(sample.result?.sha256 ?? '')) {
+                throw new Error('Fashion fixture sample identities are invalid');
+              }
+              sampleIds.add(sample.id);
+            }
+            const fixtureById = new Map(fixture.samples.map(sample => [sample.id, sample]));
+            for (const sample of review.samples) {
+              const fixtureSample = fixtureById.get(sample.id);
+              if (!fixtureSample || reviewedIds.has(sample.id) ||
+                  sample.reviewedOutputSha256 !== fixtureSample.result.sha256) {
+                throw new Error('Fashion owner review must bind each exact output SHA-256 before dispatch');
+              }
+              reviewedIds.add(sample.id);
+            }
 
-            const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/${evidenceBranch}/${evidencePrefix}`;
+            const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/${evidenceCommitSha}/${evidencePrefix}`;
             const fixture_manifest_url = `${rawBase}/fixture-manifest.json`;
             const review_artifact_url = `${rawBase}/review.json`;
 

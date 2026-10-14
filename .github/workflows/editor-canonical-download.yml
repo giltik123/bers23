@@ -1,0 +1,34 @@
+name: Editor canonical download acceptance
+on:
+  pull_request:
+    paths:
+      - 'src/application/editor/downloadCanonicalImage.js'
+      - 'src/pages/Editor.jsx'
+      - 'tests/editor-canonical-download.test.mjs'
+      - '.github/workflows/editor-canonical-download.yml'
+permissions:
+  contents: read
+jobs:
+  core-pixel-download:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify exact PR SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Real PNG bytes and actual download gesture admission
+        run: node --test tests/editor-canonical-download.test.mjs
+      - name: Typecheck and compile Editor
+        run: |
+          npm run typecheck
+          npm run build
+      - name: No malformed diffs
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
