@@ -30,5 +30,7 @@ privacy verification and combined Editor integration with #1003/#1009,
 physical on-device processing.
 
 This is inert research content only. Leave #365, Fashion and all
-production release gates blocked. Keep Draft until full exact-head CI,
-diff review and independent code review.
+production release gates blocked. A research-only merge requires a
+fully successful exact-head CI run, reviewed file diff and compliance
+with GitHub branch protection/review rules. Neither a repository merge
+nor policy tests attest physical on-device ASR or product readiness.
