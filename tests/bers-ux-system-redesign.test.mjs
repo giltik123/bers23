@@ -74,7 +74,8 @@ test('the text tool previews first; only Accept commits the result', async () =>
   for (const [label, action] of [['Accept','onAccept'], ['Retry','onRetry'], ['Discard','onDiscard']]) {
     assert.match(compare, new RegExp('onClick=\\{' + action + '\\}[^>]*>[\\s\\S]*?' + label));
   }
-  assert.match(compare, /aria-pressed=\{view === 'before'\}/);
+  assert.match(compare, /aria-pressed=\{mode === 'before'\}/);
+  assert.match(compare, /geometry === 'aligned' && canCompareOperationAligned\(candidateOperation\)/);
   assert.match(editor, /<ResultCompare[\s\S]*?onAccept=\{acceptResult\}[\s\S]*?onDiscard=\{discardResult\}/);
 });
 

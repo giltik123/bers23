@@ -1,0 +1,43 @@
+name: Isolated local Russian voice intent policy R&D
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/application/voice/VoiceCapabilityRouter.js'
+      - 'src/application/voice/VoiceIntentDraftV1.js'
+      - 'src/application/voice/parseRussianVoiceIntent.js'
+      - 'src/application/voice/normalizeRussianFashionVoice.js'
+      - 'src/application/voice/filterCanonicalWardrobeVoice.js'
+      - 'tests/voice-ru-eval-v1.test.mjs'
+      - '.github/workflows/voice-ru-intent-policy-isolation-rnd.yml'
+      - 'docs/voice-ru-intent-policy-isolation-rnd.md'
+permissions:
+  contents: read
+jobs:
+  exact-head-local-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Verify local-only capability and bounded Russian text intents
+        run: node --test tests/voice-ru-eval-v1.test.mjs
+      - name: Typecheck and build with no runtime imports
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Diff whitespace check
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git diff --check "$BASE_SHA..HEAD"

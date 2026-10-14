@@ -154,13 +154,17 @@ test('Core image download rejects oversized declared Content-Length before readi
   assert.equal(f.state().clicked,false);
 });
 
-test('Editor uses file-download handler rather than a navigation to an image tab',async()=>{
+test('Editor separates labeled View image from authenticated Core file download',async()=>{
   const editor=await readFile('src/pages/Editor.jsx','utf8');
-  assert.match(editor,/downloadCanonicalImage\(/);
+  // Viewing the signed image in another tab is allowed, but is NOT a download.
+  assert.match(editor,/<a href=\{project\.current_image_url\} target="_blank" rel="noopener noreferrer"[^>]*aria-label="View full-size image in a new tab"/);
+  assert.match(editor,/<ExternalLink[^>]*\/> View image/);
+  // Download is a separate, explicitly labeled button backed by real Core bytes.
+  assert.match(editor,/const handleDownload = async/);
+  assert.match(editor,/projectService\.get\(project\.id\)/);
+  assert.match(editor,/fresh\.current_image_artifact_id!==project\.current_image_artifact_id/);
+  assert.match(editor,/downloadCanonicalImage\(\{/);
   assert.match(editor,/onClick=\{handleDownload\}/);
-  // A separate View image link is legitimate. The Download action must
-  // remain an explicit click-to-save Core Blob, not a disguised new tab.
-  assert.match(editor, /aria-label="View full-size image in a new tab"/);
-  assert.match(editor, /aria-label="Download current Core image"/);
-  assert.doesNotMatch(editor, /<a[^>]*aria-label="Download"[^>]*>/u);
+  assert.match(editor,/aria-label="Download current Core image"/);
+  assert.doesNotMatch(editor,/<a href=\{project\.current_image_url\}[^>]*aria-label="Download/);
 });

@@ -1,0 +1,96 @@
+name: Editor local lossless export R&D
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/application/editor/EditorLosslessExportRND.ts'
+      - 'src/platform/creative/deterministic/DeterministicPng.ts'
+      - 'tests/editor-lossless-export-rnd.test.mjs'
+      - 'scripts/capture-editor-lossless-export-real-images.mjs'
+      - 'config/v1-fashion-real-image-fixtures.json'
+      - 'docs/editor-lossless-export-rnd.md'
+      - '.github/workflows/editor-local-lossless-export-rnd.yml'
+permissions:
+  contents: read
+concurrency:
+  group: bers-editor-export-rnd-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  no-cloud-lossless-png:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify head commit under test
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Bundle browser PNG kernel and independent Sharp decoder test
+        run: |
+          mkdir -p .test-cache/editor-export-build
+          npx esbuild tests/editor-lossless-export-rnd.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/editor-export-build/png-export.test.mjs \
+            --external:sharp --external:node:*
+      - name: Prove lossless PNG, exact RGBA and SHA invariants
+        run: node --test .test-cache/editor-export-build/png-export.test.mjs
+      - name: Validate browser and Core TypeScript contracts
+        run: npm run typecheck
+      - name: Diff contract
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git diff --check "$BASE_SHA..HEAD"
+
+  real-photo-lossless-export:
+    needs: no-cloud-lossless-png
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+      EXPORT_EVIDENCE_DIR: .test-cache/editor-export-real-image-quality
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Build single-runner real-photo PNG parity campaign
+        run: |
+          mkdir -p .test-cache/editor-export-build
+          npx esbuild scripts/capture-editor-lossless-export-real-images.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/editor-export-build/real-photo.mjs \
+            --external:sharp --external:node:*
+      - name: Verify 3 licensed photographs preserve every canonical RGBA byte
+        run: |
+          node .test-cache/editor-export-build/real-photo.mjs "$EXPORT_EVIDENCE_DIR"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const d=JSON.parse(readFileSync(process.env.EXPORT_EVIDENCE_DIR+'/editor-export-quality-manifest.json','utf8'));
+          assert.equal(d.candidateSha,process.env.EXPECTED_SHA);
+          assert.equal(d.sampleCount,3);
+          assert.equal(d.exactDecodedRgbaParity,true);
+          assert.equal(d.pngDeterministicOnOneRunner,true);
+          assert.equal(d.status,'PENDING_INDEPENDENT_REVIEW');
+          assert.equal(d.productionEnabled,false);
+          assert.ok(d.records.every(x=>x.exactLosslessDecodedPixelMatch && /^[0-9a-f]{64}$/.test(x.pngSha256)));
+          NODE
+      - name: Preserve immutable export artifacts and proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: bers-editor-png-export-real-photo-${{ github.event.pull_request.head.sha }}
+          path: ${{ env.EXPORT_EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 30
