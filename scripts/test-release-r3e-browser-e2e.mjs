@@ -233,7 +233,7 @@ try {
   const isolationDiscardBefore = selectedState;
   const firstIsolationRequests = diagnostics.localExecutionRequests.length;
   await runBackgroundIsolation(page);
-  await waitImage(page, 'after', 12, 8);
+  await waitImage(page, 'Unaccepted edited image', 12, 8);
   assert.equal(diagnostics.localExecutionRequests.length, firstIsolationRequests + 4, 'Background Isolation must use exactly prepare/input/upload/result semantic requests');
   assert.deepEqual(await readProjectState(projectId), isolationDiscardBefore, 'Background Isolation Preview must not mutate Project before explicit Accept');
   const firstTicket = await readLatestBackgroundIsolationTicket(projectId);
@@ -247,7 +247,7 @@ try {
   const sourceStorageId = isolationDiscardBefore.project.current_image_storage_id;
   const secondIsolationRequests = diagnostics.localExecutionRequests.length;
   await runBackgroundIsolation(page);
-  await waitImage(page, 'after', 12, 8);
+  await waitImage(page, 'Unaccepted edited image', 12, 8);
   assert.equal(diagnostics.localExecutionRequests.length, secondIsolationRequests + 4);
   assert.equal((await readMasks(projectId)).length, 1, 'repeated Background Isolation must reuse the exact canonical MASK rather than minting another');
   const secondTicket = await readLatestBackgroundIsolationTicket(projectId);
