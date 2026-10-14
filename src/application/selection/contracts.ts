@@ -30,4 +30,4 @@ export interface CanonicalMaskArtifactPort {
   admitted?(artifactId: string, mask: OriginalMask, metadata: Readonly<Record<string, unknown>>): CreativeArtifact | Promise<CreativeArtifact>;
 }
 export type SelectionDraftSnapshot = Readonly<{ id: string; imageArtifactId: string; width: number; height: number; alpha: Uint8Array; state: SelectionState; mode: SelectionMode; points: readonly PromptPoint[]; polygonVertices: readonly PolygonVertex[]; shapeVertices: readonly PolygonVertex[]; provenance: readonly string[]; requestId?: string; quality?: MaskQualityResult; warning?: string; canUndo: boolean; canRedo: boolean }>;
-export type BrushStroke = Readonly<{ points: readonly Readonly<{ x: number; y: number }>[]; radius: number; hardness: number; view: DisplayTransform }>;
+export type BrushStroke = Readonly<{ points: readonly Readonly<{ x: number; y: number }>[]; radius: number; hardness: number; opacity?: number; view: DisplayTransform }>;

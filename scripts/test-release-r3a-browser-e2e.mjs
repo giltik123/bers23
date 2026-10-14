@@ -149,6 +149,25 @@ try {
   authenticated = true;
   await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
 
+  // Browser UX acceptance: every top-level destination is named, and mobile navigation is discoverable.
+  const desktopNavigation = page.getByRole('navigation', { name: 'Main navigation' });
+  const projectsNav = desktopNavigation.getByRole('link', { name: 'Projects', exact: true });
+  await projectsNav.waitFor({ state: 'visible', timeout: 10_000 });
+  assert.equal(await projectsNav.getAttribute('aria-current'), 'page', 'the current Projects section must be identifiable');
+  await page.getByRole('button', { name: /^Notifications/ }).waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByRole('button', { name: /Switch to (dark|light) appearance/ }).waitFor({ state: 'visible', timeout: 10_000 });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const openMobileMenu = page.getByRole('button', { name: 'Open navigation menu' });
+  await openMobileMenu.waitFor({ state: 'visible', timeout: 10_000 });
+  await openMobileMenu.click();
+  const mobileNavigation = page.getByRole('navigation', { name: 'Mobile navigation' });
+  await mobileNavigation.getByRole('link', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+  assert.equal(await page.getByRole('button', { name: 'Close navigation menu' }).getAttribute('aria-expanded'), 'true');
+  await page.getByRole('button', { name: 'Close navigation menu' }).click();
+  await page.setViewportSize({ width: 1280, height: 720 });
+
+
   const input = page.locator('input[type="file"]');
   await input.setInputFiles({ name: 'release-r3a-source.png', mimeType: 'image/png', buffer: sourcePng });
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/editor' && !!url.searchParams.get('id'), { timeout: 20_000 });
@@ -157,7 +176,7 @@ try {
   assert(projectId, 'Projects upload must navigate to Editor with canonical project id');
   diagnostics.projectId = projectId;
 
-  await page.getByRole('img', { name: 'Project' })
+  await page.getByText('Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.', { exact: true })
     .waitFor({ state: 'visible', timeout: 20_000 });
   await page.getByText('Prompt', { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
   await page.getByRole('button', { name: 'Smart Select' }).waitFor({ state: 'visible', timeout: 10_000 });

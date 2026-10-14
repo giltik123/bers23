@@ -107,7 +107,7 @@ try {
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/editor' && Boolean(url.searchParams.get('id')), { timeout: 20_000 });
   const projectId = new URL(page.url()).searchParams.get('id');
   assert(projectId);
-  await page.getByText('Automatic object detection is not available in this version.', { exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
+  await page.getByText('Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.', { exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
   await ensureCsrf(page);
 
   const baseline = await readProject(projectId);
@@ -161,6 +161,9 @@ try {
   // R3p: retry only through the real Job Center owning-workflow control. The
   // browser never mutates ExecutionRun directly and does not reconstruct the
   // Automation/Agent command from local state.
+  // The redesigned Editor places canonical Job Center under an explicit
+  // progressive-disclosure section; a real user must open it before Retry.
+  await page.locator('details[aria-label="Additional editor tools and status"] > summary').click();
   const serverExecutions = page.locator('[data-job-center-canonical-executions]');
   await serverExecutions.waitFor({ state: 'visible', timeout: 20_000 });
   await serverExecutions.getByRole('button', { name: 'Refresh', exact: true }).click();

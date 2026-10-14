@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, Eye, EyeOff, User, Car, Trees, Cloud, Shirt, Dog, Box } from 'lucide-react';
-import { SCENE_GROUPS, SCENE_LABELS } from '@/application/scene/autoSceneMaskContract';
+import { ChevronDown, ChevronRight, Eye, EyeOff, User, Car, Trees, Cloud, Shirt, Dog, Box, Layers2 } from 'lucide-react';
 
 const iconFor = (label = '') => {
   const l = label.toLowerCase();
@@ -16,31 +15,55 @@ const iconFor = (label = '') => {
 function ObjectRow({ obj, objects, depth, hidden, onToggleHidden, onSelect }) {
   const [expanded, setExpanded] = useState(true);
   const children = objects.filter((o) => o.parent_object === obj.id);
-  const Icon = iconFor(obj.label);
+  const isMask = Boolean(obj.mask_artifact_id);
+  const Icon = isMask ? Layers2 : iconFor(obj.label);
   const isHidden = hidden.has(obj.id);
   return (
     <>
       <div
-        className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-sm transition-colors ${
-          obj.selected ? 'bg-primary/10 text-primary' : 'hover:bg-accent'
-        } ${isHidden ? 'opacity-40' : ''}`}
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
-        onClick={() => onSelect(obj)}
+        role="group"
+        aria-label={'Object ' + obj.label}
+        className={[
+          'flex min-h-11 items-center gap-2 rounded-xl px-2 py-1 text-sm transition-colors',
+          obj.selected ? 'bg-primary/10 text-primary' : 'hover:bg-accent',
+          isHidden ? 'opacity-60' : '',
+        ].join(' ')}
+        style={{ paddingLeft: 8 + depth * 16 }}
       >
         {children.length > 0 ? (
-          <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }} className="shrink-0">
-            {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          <button
+            type="button"
+            onClick={() => setExpanded(!expanded)}
+            aria-expanded={expanded}
+            aria-label={expanded ? 'Collapse ' + obj.label : 'Expand ' + obj.label}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg hover:bg-accent"
+          >
+            {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
           </button>
         ) : (
-          <span className="w-3.5" />
+          <span className="w-9 shrink-0" aria-hidden="true" />
         )}
-        <Icon className="w-4 h-4 shrink-0 text-muted-foreground" />
-        <span className="flex-1 truncate">{obj.label}</span>
-        {obj.confidence != null && (
-          <span className="text-[10px] text-muted-foreground tabular-nums">{Math.round(obj.confidence * 100)}%</span>
-        )}
-        <button onClick={(e) => { e.stopPropagation(); onToggleHidden(obj.id); }} className="shrink-0 text-muted-foreground hover:text-foreground" aria-label="Toggle visibility">
-          {isHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+        <button
+          type="button"
+          aria-pressed={Boolean(obj.selected)}
+          aria-label={obj.selected ? 'Deselect ' + obj.label : 'Select ' + obj.label}
+          className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left hover:bg-accent"
+          onClick={() => onSelect(obj.selected ? null : obj)}
+        >
+          <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <span className="flex-1 truncate">{obj.label}</span>
+          {isMask && <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary" title="Saved canonical alpha mask">Mask</span>}
+          {obj.confidence != null && <span className="text-xs tabular-nums text-muted-foreground">{Math.round(obj.confidence * 100)}%</span>}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onToggleHidden(obj.id); }}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+          aria-label={isHidden ? "Show object overlay" : "Hide object overlay"}
+          aria-pressed={!isHidden}
+          title={isHidden ? "Show selection frame on image" : "Hide selection frame on image"}
+        >
+          {isHidden ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
         </button>
       </div>
       {expanded && children.map((c) => (
@@ -50,56 +73,27 @@ function ObjectRow({ obj, objects, depth, hidden, onToggleHidden, onSelect }) {
   );
 }
 
-export default function ObjectPanel({ objects, onSelect, onVisibilityChange }) {
+export default function ObjectPanel({ objects, onSelect, hidden, onToggleHidden }) {
   const [open, setOpen] = useState(true);
-  const [hidden, setHidden] = useState(new Set());
   const roots = objects.filter((o) => !o.parent_object);
-  const grouped=SCENE_GROUPS.map(group=>({
-    group,label:SCENE_LABELS[group],objects:roots.filter(obj=>obj.group===group),
-  }));
-  const ungrouped=roots.filter(obj=>!SCENE_GROUPS.includes(obj.group));
+  const maskCount = objects.filter((object) => Boolean(object.mask_artifact_id)).length;
 
-  const toggleHidden = (id) => {
-    const next = new Set(hidden);
-    next.has(id) ? next.delete(id) : next.add(id);
-    setHidden(next);
-    onVisibilityChange?.(new Set(next));
-  };
+  const toggleHidden = (id) => onToggleHidden(id);
 
   return (
-    <div className="rounded-2xl border border-border/60 bg-card">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium">
-        <span>Objects ({objects.length})</span>
+    <section className="rounded-2xl border border-border/70 bg-card" aria-label="Saved masks and objects">
+      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex min-h-11 w-full items-center justify-between px-4 py-2.5 text-sm font-semibold">
+        <span>Masks &amp; objects ({objects.length})</span>
         {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
       </button>
       {open && (
         <div className="px-1.5 pb-2 max-h-64 overflow-y-auto">
-          {grouped.filter(section=>section.objects.length>0).map(section=>(
-            <div key={section.group} className="space-y-0.5">
-              <p className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
-                {section.label} · {section.objects.length}
-              </p>
-              {section.objects.map(o=>(
-                <ObjectRow key={o.id} obj={o} objects={objects} depth={0} hidden={hidden}
-                  onToggleHidden={toggleHidden} onSelect={onSelect}/>
-              ))}
-            </div>
+          <p className="px-2 pb-2 text-xs leading-5 text-muted-foreground">{maskCount} saved {maskCount === 1 ? 'mask' : 'masks'}. Select one to adjust exposure, white balance or levels in the tool panel. Eye icons only show or hide on-canvas guides; they do not edit the image.</p>
+          {roots.map((o) => (
+            <ObjectRow key={o.id} obj={o} objects={objects} depth={0} hidden={hidden} onToggleHidden={toggleHidden} onSelect={onSelect} />
           ))}
-          {ungrouped.length>0 &&(
-            <div className="space-y-0.5">
-              {grouped.some(section=>section.objects.length>0)&&(
-                <p className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
-                  Ручные и неклассифицированные
-                </p>
-              )}
-              {ungrouped.map(o=>(
-                <ObjectRow key={o.id} obj={o} objects={objects} depth={0} hidden={hidden}
-                  onToggleHidden={toggleHidden} onSelect={onSelect}/>
-              ))}
-            </div>
-          )}
         </div>
       )}
-    </div>
+    </section>
   );
 }

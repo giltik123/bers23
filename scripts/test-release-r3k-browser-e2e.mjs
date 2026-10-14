@@ -105,7 +105,6 @@ let browser;
 const diagnostics = {
   pageErrors: [],
   consoleErrors: [],
-  httpErrors: [],
   requestFailures: [],
   agentRequests: [],
   localExecutionRequests: [],
@@ -191,7 +190,7 @@ try {
   assert(projectId, 'Projects upload must navigate to Editor with canonical project id');
   const hintKey = `${HINT_PREFIX}${projectId}`;
 
-  await page.getByRole('img', { name: 'Project' })
+  await page.getByText('Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.', { exact: true })
     .waitFor({ state: 'visible', timeout: 20_000 });
   await waitImage(page, 'Project', 12, 8);
   const baseline = await readProjectState(projectId);
@@ -276,6 +275,7 @@ try {
     ['WORKFLOW_STEP', 'SUCCEEDED'],
   ].sort());
 
+  await page.getByText('More tools and activity', { exact: true }).click();
   const serverExecutions = page.locator('[data-job-center-canonical-executions]');
   await serverExecutions.waitFor({ state: 'visible', timeout: 15_000 });
   await serverExecutions.getByRole('button', { name: 'Refresh', exact: true }).click();
@@ -390,19 +390,12 @@ try {
 }
 
 function resetJourneyDiagnostics() {
-  for (const key of ['pageErrors', 'consoleErrors', 'httpErrors', 'requestFailures', 'agentRequests', 'localExecutionRequests', 'executionRunRequests', 'terminalDeliveryRequests', 'creativeRequests', 'financialRequests', 'projectMutations', 'externalBrowserRequests']) diagnostics[key].length = 0;
+  for (const key of ['pageErrors', 'consoleErrors', 'requestFailures', 'agentRequests', 'localExecutionRequests', 'executionRunRequests', 'terminalDeliveryRequests', 'creativeRequests', 'financialRequests', 'projectMutations', 'externalBrowserRequests']) diagnostics[key].length = 0;
 }
 
 function attachDiagnostics(page) {
   page.on('pageerror', error => diagnostics.pageErrors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') diagnostics.consoleErrors.push(message.text()); });
-  page.on('response', response => {
-    if (response.status() < 400) return;
-    const url = new URL(response.url());
-    diagnostics.httpErrors.push({ status: response.status(), method: response.request().method(),
-      origin: url.origin === coreOrigin ? 'Core' : url.origin === frontendOrigin ? 'Editor' : 'External',
-      path: url.pathname });
-  });
   page.on('requestfailed', request => diagnostics.requestFailures.push({ url: request.url(), failure: request.failure()?.errorText }));
   page.on('request', request => {
     let url;

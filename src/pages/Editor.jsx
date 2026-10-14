@@ -1,10 +1,10 @@
 import React, { lazy, Suspense, useState, useMemo, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Loader2, Download, Pencil, Maximize2 } from 'lucide-react';
+import { ArrowLeft, Loader2, ExternalLink, Download, Pencil, Maximize2, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { downloadCanonicalImage } from '@/application/editor/downloadCanonicalImage';
 import useProject from '@/hooks/useProject';
 import { projectService } from '@/lib/projectService';
+import { downloadCanonicalImage } from '@/application/editor/downloadCanonicalImage';
 import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
 import { createBackgroundIsolation } from '@/application/createBackgroundIsolation';
 import { createMaskedExposure } from '@/application/createMaskedExposure';
@@ -23,6 +23,7 @@ import { SUPER_RESOLUTION_PRODUCTION_AVAILABLE } from '@/platform/creative/super
 import GenerationProgress from '@/components/editor/GenerationProgress';
 import ResultCompare from '@/components/editor/ResultCompare';
 const RecipePanel = lazy(() => import('@/components/editor/recipes/RecipePanel'));
+const LocalAdjustmentsPanel = lazy(() => import('@/components/editor/local/LocalAdjustmentsPanel'));
 const AgentPanel = lazy(() => import('@/components/editor/agent/AgentPanel'));
 import useBoundedAgentEditor from '@/components/editor/agent/useBoundedAgentEditor';
 import { recipeEngine } from '@/lib/recipes/recipeEngine';
@@ -37,9 +38,9 @@ import ErrorBanner from '@/components/editor/ErrorBanner';
 import PlanPreview from '@/components/editor/PlanPreview';
 import { aiPlanner } from '@/lib/planner/aiPlanner';
 import ObjectPanel from '@/components/editor/ObjectPanel';
+import AutoSceneMasksPanel from '@/components/editor/AutoSceneMasksPanel';
 import EditorStatusBar from '@/components/editor/EditorStatusBar';
 import SegmentationProgress from '@/components/editor/SegmentationProgress';
-import AutoSceneMasksPanel from '@/components/editor/AutoSceneMasksPanel';
 import PipelineStatusBar from '@/components/editor/PipelineStatusBar';
 import { sceneMemory } from '@/lib/scene/sceneMemory';
 import { styleLock } from '@/lib/scene/styleLock';
@@ -72,7 +73,15 @@ import { CoreMaskArtifactPort } from '@/application/selection/CoreMaskArtifactPo
 import { finalizeAcceptedResult } from '@/application/editor/finalizeAcceptedResult';
 import { isFinalSourceConflict, recoverFinalSourceConflict } from '@/application/editor/recoverFinalSourceConflict';
 
-const EDITOR_TABS = [{ id: 'prompt', label: 'Prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
+const EDITOR_TABS = [
+  { id: 'local', label: 'Local tools', description: 'No AI, no credits: tune light, color and detail in your browser, compare before/after and download a PNG.' },
+  { id: 'prompt', label: 'Prompt', description: 'Describe what you want to change, preview the result, then decide whether to save it.' },
+  { id: 'creative', label: 'Creative Studio', description: 'Explore visual ideas and mood boards. This section plans ideas; it does not edit your photo.' },
+  { id: 'recipes', label: 'Recipes', description: 'Choose a ready-made editing recipe and adapt it to your image.' },
+  { id: 'agent', label: 'AI Agent', description: 'Build a controlled sequence of editing steps and review the result.' },
+  { id: 'fashion', label: 'Fashion', description: 'Organize garments and wardrobe assets.' },
+  { id: 'outfits', label: 'Outfits', description: 'Arrange outfits and explore available try-on operations.' },
+];
 
 function disposePendingPreview(pending) {
   const url = pending?.result?.preview_url;
@@ -135,7 +144,6 @@ export default function Editor() {
   const [committing, setCommitting] = useState(false);
   const [editTab, setEditTab] = useState('prompt');
   const [activeRecipe, setActiveRecipe] = useState(null);
-  const [hiddenObjectIds, setHiddenObjectIds] = useState(() => new Set());
   const [lastAction, setLastAction] = useState(null);
   const pendingResultRef = useRef(null);
   pendingResultRef.current = pendingResult;
@@ -158,8 +166,13 @@ export default function Editor() {
   });
   const [driftWarning, setDriftWarning] = useState(null);
   const [selection, setSelection] = useState(null);
+  const [hiddenObjectIds, setHiddenObjectIds] = useState(() => new Set());
   const [brushSize, setBrushSize] = useState(24);
   const [brushHardness, setBrushHardness] = useState(75);
+  const [brushOpacity, setBrushOpacity] = useState(100);
+  const [maskOverlayVisible, setMaskOverlayVisible] = useState(true);
+  const [maskOverlayColor, setMaskOverlayColor] = useState('teal');
+  const [maskOverlayOpacity, setMaskOverlayOpacity] = useState(45);
   const [selectionMorphologyRadius, setSelectionMorphologyRadius] = useState(2);
   const [polygonComposition, setPolygonComposition] = useState('REPLACE');
   const [isolatingBackground, setIsolatingBackground] = useState(false);
@@ -182,6 +195,7 @@ export default function Editor() {
   const [resizing, setResizing] = useState(false);
   const [orthogonalTransformingMode, setOrthogonalTransformingMode] = useState(null);
   const selectionServiceRef = useRef(null);
+  const finishingMaskRef = useRef(false);
   const strokeRef = useRef([]);
   const cropAnchorRef = useRef(null);
   const maskedExposureInFlightRef = useRef(false);
@@ -215,6 +229,7 @@ export default function Editor() {
     || Boolean(pendingResult);
 
   useEffect(() => () => disposePendingPreview(pendingResultRef.current), []);
+  useEffect(() => { setHiddenObjectIds(new Set()); }, [project?.id]);
   useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); setHiddenObjectIds(new Set()); }, [project?.current_image_artifact_id]);
   useEffect(() => {
     if (!selection) return undefined;
@@ -287,7 +302,16 @@ export default function Editor() {
     selectionServiceRef.current = service;
     setSelection(service.start({ imageArtifactId, width: project.width, height: project.height }));
   };
-  const updateSelection = (action) => { const value = action(selectionServiceRef.current); if (value) setSelection(value); };
+  const updateSelection = (action) => {
+    const service = selectionServiceRef.current;
+    if (!service) return;
+    try {
+      const value = action(service);
+      if (value) { setSelection(value); setAiError(null); }
+    } catch (cause) {
+      setAiError(cause?.message || 'Mask refinement could not be applied. Your selection has not been saved.');
+    }
+  };
   const selectionShapeHandlePointer = (handle, phase, point, view) => {
     const service = selectionServiceRef.current;
     if (!service || (selection?.mode !== 'RECTANGLE' && selection?.mode !== 'ELLIPSE')) return;
@@ -326,15 +350,27 @@ export default function Editor() {
     else if (phase === 'move') strokeRef.current.push(point);
     else if (phase === 'up' && strokeRef.current.length) {
       strokeRef.current.push(point);
-      setSelection(service.brush({ points: strokeRef.current, radius: brushSize, hardness: brushHardness / 100, view }));
+      setSelection(service.brush({ points: strokeRef.current, radius: brushSize, hardness: brushHardness / 100, opacity: brushOpacity / 100, view }));
       strokeRef.current = [];
     } else if (phase === 'cancel') strokeRef.current = [];
   };
   const finishSelection = async () => {
-    const artifact = await selectionServiceRef.current.done();
-    const object = { id: `selection-${artifact.id}`, label: 'Smart selection', selected: true, mask_artifact_id: artifact.id, box: { x: 0, y: 0, w: 1, h: 1 } };
-    await saveObjects([...(objects || []).map((item) => ({ ...item, selected: false })), object]);
-    selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null);
+    const service = selectionServiceRef.current;
+    if (!service || finishingMaskRef.current) return;
+    finishingMaskRef.current = true;
+    setAiError(null);
+    try {
+      const artifact = await service.done();
+      const object = { id: `selection-${artifact.id}`, label: 'Smart selection', selected: true, mask_artifact_id: artifact.id, box: { x: 0, y: 0, w: 1, h: 1 } };
+      await saveObjects([...(objects || []).map((item) => ({ ...item, selected: false })), object]);
+      if (selectionServiceRef.current === service) {
+        service.cancel(); selectionServiceRef.current = null; setSelection(null);
+      }
+    } catch (cause) {
+      setAiError(cause?.message || 'Could not save the mask. Your selection remains available for retry.');
+    } finally {
+      finishingMaskRef.current = false;
+    }
   };
 
   const startCrop = () => {
@@ -892,13 +928,24 @@ export default function Editor() {
     if (pending?.kind === 'BOUNDED_AGENT') boundedAgent.dismiss();
   };
 
+  const toggleHiddenObject = (id) => setHiddenObjectIds((previous) => {
+    const next = new Set(previous);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+
+  // Integration of #1000 with the #1003 canvas-first toolbar. The "View image"
+  // link remains a separate action; only explicit Download saves Core bytes.
   const handleDownload = async () => {
-    if(!project?.current_image_url || downloading)return;
+    if(!project?.id || !project.current_image_url || !project.current_image_artifact_id ||
+       downloading || editorBusy || committing || pendingResult ||
+       cropInteractionActive || resizeInteractionActive)return;
     setDownloading(true);
     setAiError(null);
     try{
-      // Core delivery URLs expire after five minutes; refresh the signed
-      // URL without silently exporting a photo changed by another session.
+      // Core signed URLs expire. Refresh the same Project/source from Core
+      // before fetching bytes; never export a new image under a stale label.
       const fresh=await projectService.get(project.id);
       if(!fresh?.current_image_url ||
          fresh.current_image_artifact_id!==project.current_image_artifact_id)
@@ -909,7 +956,9 @@ export default function Editor() {
       });
     }catch(error){
       setAiError(error?.message || 'Core export failed');
-    }finally{setDownloading(false);}
+    }finally{
+      setDownloading(false);
+    }
   };
 
   const handleRename = async () => {
@@ -930,16 +979,23 @@ export default function Editor() {
   }
 
   return (
-    <AdaptiveLayout className="max-w-3xl">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1 min-w-0">
-          <Link to="/" className="p-2 -ml-2 rounded-lg hover:bg-accent transition-colors"><ArrowLeft className="w-5 h-5" /></Link>
-          <h1 className="font-medium truncate">{project.name}</h1>
-          <button onClick={handleRename} className="p-1.5 rounded-lg hover:bg-accent transition-colors text-muted-foreground" aria-label="Rename project">
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
+    <AdaptiveLayout className="max-w-6xl">
+      <header className="space-y-4 rounded-3xl border border-border/70 bg-card p-4 shadow-sm sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1.5">
+            <Link to="/" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-primary">
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" /> All projects
+            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="max-w-full truncate text-2xl font-semibold tracking-tight">{project.name}</h1>
+              <button type="button" onClick={handleRename} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground" aria-label="Rename project">
+                <Pencil className="h-4 w-4" aria-hidden="true" /> Rename
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">Photo editor · changes are saved only after you accept a preview</p>
+          </div>
         </div>
-        <AdaptiveToolbar>
+        <AdaptiveToolbar className="border-t border-border/70 pt-3">
           <HistoryControls
             canUndo={canUndo} canRedo={canRedo} disabled={editorBusy || cropInteractionActive || resizeInteractionActive || Boolean(pendingResult)}
             onUndo={undo} onRedo={redo} onRestore={restoreOriginal}
@@ -950,7 +1006,7 @@ export default function Editor() {
             onRestore={restoreVersion}
             disabled={editorBusy || cropInteractionActive || resizeInteractionActive || Boolean(pendingResult)}
           />
-          <Button
+          {SUPER_RESOLUTION_PRODUCTION_AVAILABLE && <Button
             variant="ghost"
             size="sm"
             onClick={() => upscaleImage()}
@@ -960,18 +1016,20 @@ export default function Editor() {
           >
             {upscaling ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Maximize2 className="w-4 h-4 mr-1.5" />}
             {SUPER_RESOLUTION_PRODUCTION_AVAILABLE ? 'Upscale x4' : 'Upscale x4 · Candidate'}
+          </Button>}
+          <a href={project.current_image_url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm font-medium text-foreground hover:bg-accent" aria-label="View full-size image in a new tab">
+            <ExternalLink className="h-4 w-4" aria-hidden="true" /> View image
+          </a>
+          <Button type="button" variant="outline" size="sm"
+            onClick={handleDownload}
+            disabled={downloading || editorBusy || committing || Boolean(pendingResult) || cropInteractionActive || resizeInteractionActive || !project.current_image_artifact_id}
+            aria-label="Download current Core image">
+            {downloading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" /> :
+              <Download className="mr-1.5 h-4 w-4" aria-hidden="true" />}
+            Download
           </Button>
-          <button type="button" onClick={handleDownload}
-            disabled={downloading || committing || Boolean(pendingResult)}
-            className="p-2 rounded-lg hover:bg-accent transition-colors disabled:opacity-50"
-            aria-label="Download">
-            {downloading ? <Loader2 className="w-5 h-5 animate-spin" /> :
-              <Download className="w-5 h-5" />}
-          </button>
         </AdaptiveToolbar>
-      </div>
-
-      <AdaptivePanel title="Workspace"><WorkspaceBar projectId={project.id} /></AdaptivePanel>
+      </header>
 
       <ErrorBanner message={aiError} onRetry={lastAction} />
 
@@ -989,32 +1047,53 @@ export default function Editor() {
         />
       )}
 
-      <AdaptivePanel title="Job Center"><JobQueuePanel /></AdaptivePanel>
-
       <GenerationProgress />
 
       <SegmentationProgress />
 
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(19rem,23rem)]">
+        <section className="min-w-0 space-y-3 rounded-3xl border border-border/70 bg-card p-3 shadow-sm sm:p-4" aria-label="Image canvas">
+          <div className="flex items-center justify-between gap-3 px-1">
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-semibold"><ImageIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Your image</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Select an object on the photo, or use a tool to edit the whole image.</p>
+            </div>
+            {project.width && project.height && <span className="shrink-0 rounded-lg bg-muted px-2 py-1 text-xs tabular-nums text-muted-foreground">{project.width} × {project.height}px</span>}
+          </div>
       <ImageCanvas
         imageUrl={project.current_image_url}
-        projectId={project.id} sourceArtifactId={project.current_image_artifact_id}
-        imageWidth={project.width} imageHeight={project.height}
-        hiddenObjectIds={hiddenObjectIds}
+        projectId={project.id}
+        sourceArtifactId={project.current_image_artifact_id}
+        imageWidth={project.width}
+        imageHeight={project.height}
         objects={objects}
         selectedId={selected?.id}
-        onSelect={(obj) => selectObject(obj.id)}
+        hiddenObjectIds={hiddenObjectIds}
+        onSelect={(obj) => selectObject(obj?.id ?? null)}
         busy={editorBusy}
         onUndo={undo}
         onRedo={redo}
         selection={selection}
         onSelectionPointer={selectionPointer}
+        maskOverlayVisible={maskOverlayVisible}
+        maskOverlayColor={maskOverlayColor}
+        maskOverlayOpacity={maskOverlayOpacity}
+        brushSize={brushSize}
         onShapeHandlePointer={selectionShapeHandlePointer}
         crop={cropRect ? { ...cropRect, sourceWidth: project.width, sourceHeight: project.height } : null}
         cropSource={cropInteractionActive ? { sourceWidth: project.width, sourceHeight: project.height } : null}
         onCropPointer={cropPointer}
       />
-
-      <CropToolbar
+        </section>
+        <aside className="min-w-0 space-y-3 xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:overscroll-contain xl:pr-2" aria-label="Editing controls">
+      {!pendingResult && <section className="space-y-3 rounded-2xl border border-border/60 bg-card/40 p-3" aria-label="Image tools">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Tools</p>
+          <h2 className="mt-1 text-lg font-semibold">Choose an edit</h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">Crop, resize or select a part of the image. Each edit can be previewed before saving.</p>
+        </div>
+        <div className={cropInteractionActive || resizeInteractionActive ? 'space-y-3' : 'flex flex-wrap items-start gap-3'}>
+        {!selection && !resizeInteractionActive && <CropToolbar
         active={cropInteractionActive}
         draft={cropDraft}
         valid={Boolean(cropRect)}
@@ -1025,9 +1104,8 @@ export default function Editor() {
         onChange={setCropDraft}
         onApply={() => applyCrop()}
         onCancel={() => { cropAnchorRef.current = null; setCropDraft(null); }}
-      />
-
-      <ResizeToolbar
+      />}
+      {!selection && !cropInteractionActive && <ResizeToolbar
         active={resizeInteractionActive}
         draft={resizeDraft}
         valid={Boolean(resizeTarget)}
@@ -1040,17 +1118,27 @@ export default function Editor() {
         onFieldChange={updateResizeField}
         onApply={() => applyResize()}
         onCancel={() => { setResizeDraft(null); setResizeAspectLocked(true); }}
-      />
-
+      />}
+        </div>
+        {!selection && !cropInteractionActive && !resizeInteractionActive && <details className="rounded-lg border border-border/60 p-2">
+          <summary className="cursor-pointer select-none text-sm text-muted-foreground">Rotate or flip</summary>
+          <div className="pt-3">
       <OrthogonalTransformToolbar
         busy={Boolean(orthogonalTransformingMode)}
         activeMode={orthogonalTransformingMode}
         disabled={!project.current_image_artifact_id || editorBusy || committing || Boolean(selection) || Boolean(pendingResult) || cropInteractionActive || resizeInteractionActive}
         onApply={(mode) => applyOrthogonalTransform(mode)}
       />
+          </div>
+        </details>}
 
-      <SelectionToolbar
-        selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} brushHardness={brushHardness} onBrushHardness={setBrushHardness} onStart={startSelection}
+        {!cropInteractionActive && !resizeInteractionActive && <SelectionToolbar
+        selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} brushHardness={brushHardness} onBrushHardness={setBrushHardness}
+        brushOpacity={brushOpacity} onBrushOpacity={setBrushOpacity}
+        maskOverlayVisible={maskOverlayVisible} onMaskOverlayVisible={setMaskOverlayVisible}
+        maskOverlayColor={maskOverlayColor} onMaskOverlayColor={setMaskOverlayColor}
+        maskOverlayOpacity={maskOverlayOpacity} onMaskOverlayOpacity={setMaskOverlayOpacity}
+        onStart={startSelection} hasSelectedMask={Boolean(selected?.mask_artifact_id)}
         morphologyRadius={selectionMorphologyRadius} onMorphologyRadius={setSelectionMorphologyRadius}
         polygonComposition={polygonComposition} onPolygonComposition={setPolygonComposition}
         onApplyPolygon={() => updateSelection((service) => selection.mode === 'LASSO' ? service.applyLasso(polygonComposition) : service.applyPolygon(polygonComposition))}
@@ -1058,7 +1146,7 @@ export default function Editor() {
         onApplyShape={() => updateSelection((service) => service.applyShape(polygonComposition))}
         onClearShape={() => updateSelection((service) => service.clearShape())}
         onNudgeShape={(deltaX, deltaY) => updateSelection((service) => service.nudgeShape(deltaX, deltaY))}
-        startDisabled={cropInteractionActive || resizeInteractionActive || editorBusy || Boolean(pendingResult)}
+        startDisabled={cropInteractionActive || resizeInteractionActive || editorBusy || Boolean(pendingResult) || !project.current_image_artifact_id}
         onMode={(mode) => updateSelection((service) => service.setMode(mode))}
         onUndo={() => updateSelection((service) => service.undo())}
         onRedo={() => updateSelection((service) => service.redo())}
@@ -1101,41 +1189,26 @@ export default function Editor() {
           && !pendingResult && !tryOnActive && !agentActive && !applying && !committing && !isolatingBackground && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
         applyingLevels={applyingMaskedLevels}
         onApplyLevels={() => applyMaskedLevels()}
-      />
+      />}
+      </section>}
+        <AutoSceneMasksPanel
+          project={project}
+          disabled={editorBusy || committing || Boolean(pendingResult) || Boolean(selection) || cropInteractionActive || resizeInteractionActive}
+          onComplete={reload}
+          onManualSelect={startSelection}
+        />
+        {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && (
+          <AdaptivePanel title="Masks & objects">
+            <ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj?.id ?? null)} hidden={hiddenObjectIds} onToggleHidden={toggleHiddenObject} />
+          </AdaptivePanel>
+        )}
+        </aside>
+      </div>
 
-      <PipelineStatusBar width={project.width} height={project.height} />
 
-      <CreditsBar estimate={!pendingResult && plan?.status === 'ready' ? (plan.credits?.credits ?? 0) : 0} />
-
-      <AdaptivePanel title="Scene Memory"><SceneMemoryPanel project={project} /></AdaptivePanel>
-      <AutoSceneMasksPanel
-        project={project}
-        disabled={editorBusy || committing || Boolean(pendingResult) ||
-          Boolean(selection) || cropInteractionActive || resizeInteractionActive}
-        onComplete={reload}
-        onManualSelect={startSelection}
-      />
-
-      <EditorStatusBar
-        objectCount={objects.length}
-        selectionCount={objects.filter((o) => o.selected).length}
-        selectionMode="single"
-        maskedCount={objects.filter((o) => o.mask_artifact_id).length}
-        segmentationStatus={objects.length ? 'completed' : 'idle'}
-        cacheStatus="empty"
-      />
-
-      {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} onVisibilityChange={setHiddenObjectIds} /></AdaptivePanel>}
 
       {objects.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && (
-        <p className="text-[11px] text-muted-foreground text-center">
-          После открытия фотографии BERS проверяет доступность автоматического анализа.
-          Пока семантическая модель не подключена, можно выделить область вручную —
-          редактор не создаёт фиктивные маски.
-          <span className="block text-[10px]" lang="en">
-            Automatic object detection is not available in this version.
-          </span>
-        </p>
+        <p className="text-[11px] text-muted-foreground text-center">Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.</p>
       )}
 
       {pendingResult ? (
@@ -1168,7 +1241,9 @@ export default function Editor() {
           )}
           <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={(next) => { if (!tryOnActive && !agentActive) setEditTab(next); }} />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">Loading panel…</div>}>
-          {editTab === 'creative' ? (
+          {editTab === 'local' ? (
+            <LocalAdjustmentsPanel key={project.current_image_artifact_id || project.id} imageUrl={project.current_image_url} projectName={project.name} />
+          ) : editTab === 'creative' ? (
             <CreativeStudioPanel project={project} objects={objects} disabled={editorBusy} />
           ) : editTab === 'outfits' ? (
             <div className="space-y-3">
@@ -1229,6 +1304,25 @@ export default function Editor() {
           </Suspense>
         </>
       )}
+
+      <details className="rounded-2xl border border-border/60 p-3 text-sm" aria-label="Additional editor tools and status">
+        <summary className="cursor-pointer select-none font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">More tools and activity</summary>
+        <div className="mt-3 space-y-4">
+          <AdaptivePanel title="Workspace"><WorkspaceBar projectId={project.id} /></AdaptivePanel>
+          <AdaptivePanel title="Job Center"><JobQueuePanel /></AdaptivePanel>
+          <PipelineStatusBar width={project.width} height={project.height} />
+          <CreditsBar estimate={!pendingResult && plan?.status === 'ready' ? (plan.credits?.credits ?? 0) : 0} />
+          <AdaptivePanel title="Scene Memory"><SceneMemoryPanel project={project} /></AdaptivePanel>
+          <EditorStatusBar
+            objectCount={objects.length}
+            selectionCount={objects.filter((o) => o.selected).length}
+            selectionMode="single"
+            maskedCount={objects.filter((o) => o.mask_url).length}
+            segmentationStatus={objects.length ? 'completed' : 'idle'}
+            cacheStatus="empty"
+          />
+        </div>
+      </details>
     </AdaptiveLayout>
   );
 }

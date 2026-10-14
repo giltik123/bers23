@@ -84,6 +84,11 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, o
 
   return (
     <section className="border border-border/60 rounded-2xl p-3 space-y-3" aria-label="Review pending image before accepting">
+      <header className="mb-3">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">Almost there</p>
+        <h2 className="mt-1 text-xl font-semibold">Review your edit</h2>
+        <p role="status" className="text-sm text-muted-foreground">Preview ready — not saved yet. Compare both images, then choose Accept to keep the change or Discard to leave your original untouched.</p>
+      </header>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex rounded-lg border border-border overflow-hidden text-xs" role="group" aria-label="Image comparison mode">
           <button type="button" aria-pressed={mode === 'before'} onClick={() => setView('before')}

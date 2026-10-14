@@ -199,7 +199,7 @@ try {
   assert.equal(Number(definition.target_width), target.width);
   assert.equal(Number(definition.target_height), target.height);
 
-  await page.getByLabel('Project').selectOption(projectId);
+  await page.getByRole('combobox', { name: /^Project/ }).selectOption(projectId);
   await page.evaluate(() => { window.__c3cDropNextStart = true; });
   await page.getByRole('button', { name: 'Run' }).click();
   await page.getByRole('alert').filter({ hasText: 'C3c injected start response ambiguity' }).waitFor({ state: 'visible', timeout: 15_000 });
@@ -242,7 +242,7 @@ try {
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('heading', { name: 'Automation Studio' }).waitFor({ state: 'visible', timeout: 15_000 });
-  await page.getByLabel('Project').selectOption(projectId);
+  await page.getByRole('combobox', { name: /^Project/ }).selectOption(projectId);
   const resume = page.getByRole('button', { name: 'Resume latest' });
   await assertEventually(async () => !(await resume.isDisabled()), 'Resume latest must recover persisted invocation pointer');
   await resume.click();
@@ -274,12 +274,14 @@ try {
   const jobPage = await browserContext.newPage();
   attachDiagnostics(jobPage);
   await jobPage.goto(`${frontendOrigin}/editor?id=${encodeURIComponent(projectId)}`, { waitUntil: 'domcontentloaded' });
+  await jobPage.getByText('More tools and activity', { exact: true }).click();
   const serverExecutions = jobPage.locator('[data-job-center-canonical-executions]');
   await serverExecutions.waitFor({ state: 'visible', timeout: 20_000 });
   await assertJobCenterTopology(serverExecutions, topology);
 
   const executionRequestsBeforeReload = diagnostics.executionRunRequests.length;
   await jobPage.reload({ waitUntil: 'domcontentloaded' });
+  await jobPage.getByText('More tools and activity', { exact: true }).click();
   const reloadedExecutions = jobPage.locator('[data-job-center-canonical-executions]');
   await reloadedExecutions.waitFor({ state: 'visible', timeout: 20_000 });
   await assertJobCenterTopology(reloadedExecutions, topology);

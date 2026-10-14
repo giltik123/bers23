@@ -5,6 +5,7 @@ on:
       - 'src/application/editor/downloadCanonicalImage.js'
       - 'src/pages/Editor.jsx'
       - 'tests/editor-canonical-download.test.mjs'
+      - 'tests/editor-ux-download-integration.test.mjs'
       - '.github/workflows/editor-canonical-download.yml'
 permissions:
   contents: read
@@ -25,7 +26,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Real PNG bytes and actual download gesture admission
-        run: node --test tests/editor-canonical-download.test.mjs
+        run: node --test tests/editor-canonical-download.test.mjs tests/editor-ux-download-integration.test.mjs
       - name: Typecheck and compile Editor
         run: |
           npm run typecheck
