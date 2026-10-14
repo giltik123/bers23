@@ -38,6 +38,7 @@ import ErrorBanner from '@/components/editor/ErrorBanner';
 import PlanPreview from '@/components/editor/PlanPreview';
 import { aiPlanner } from '@/lib/planner/aiPlanner';
 import ObjectPanel from '@/components/editor/ObjectPanel';
+import AutoSceneMasksPanel from '@/components/editor/AutoSceneMasksPanel';
 import EditorStatusBar from '@/components/editor/EditorStatusBar';
 import SegmentationProgress from '@/components/editor/SegmentationProgress';
 import PipelineStatusBar from '@/components/editor/PipelineStatusBar';
@@ -230,6 +231,7 @@ export default function Editor() {
   useEffect(() => () => disposePendingPreview(pendingResultRef.current), []);
   useEffect(() => { setHiddenObjectIds(new Set()); }, [project?.id]);
   useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); }, [project?.current_image_artifact_id]);
+  useEffect(() => { setHiddenObjectIds(new Set()); }, [project?.current_image_artifact_id]);
   useEffect(() => {
     if (!selection) return undefined;
     const handleSelectionHistoryShortcut = (event) => {
@@ -1061,6 +1063,10 @@ export default function Editor() {
           </div>
       <ImageCanvas
         imageUrl={project.current_image_url}
+        projectId={project.id}
+        sourceArtifactId={project.current_image_artifact_id}
+        imageWidth={project.width}
+        imageHeight={project.height}
         objects={objects}
         selectedId={selected?.id}
         hiddenObjectIds={hiddenObjectIds}
@@ -1186,6 +1192,12 @@ export default function Editor() {
         onApplyLevels={() => applyMaskedLevels()}
       />}
       </section>}
+        <AutoSceneMasksPanel
+          project={project}
+          disabled={editorBusy || committing || Boolean(pendingResult) || Boolean(selection) || cropInteractionActive || resizeInteractionActive}
+          onComplete={reload}
+          onManualSelect={startSelection}
+        />
         {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && (
           <AdaptivePanel title="Masks & objects">
             <ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj?.id ?? null)} hidden={hiddenObjectIds} onToggleHidden={toggleHiddenObject} />

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { performanceMonitor } from '@/lib/performance/performanceMonitor';
+import CanonicalMaskPreview from '@/components/editor/CanonicalMaskPreview';
 import { useAdaptiveGestures } from '@/components/adaptive/AdaptiveGestures';
 import { usePlatformProfile } from '@/lib/platform/PlatformManager';
 import { adaptiveRenderer } from '@/lib/platform/AdaptiveRenderer';
@@ -123,12 +124,13 @@ function CropOverlay({ crop }) {
   );
 }
 
-export default function ImageCanvas({ imageUrl, objects, selectedId, hiddenObjectIds = new Set(), onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, onShapeHandlePointer, crop, cropSource, onCropPointer, maskOverlayVisible = true, maskOverlayColor = 'teal', maskOverlayOpacity = 45, brushSize = 24 }) {
+export default function ImageCanvas({ imageUrl, projectId, sourceArtifactId, imageWidth, imageHeight, objects, selectedId, hiddenObjectIds = new Set(), onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, onShapeHandlePointer, crop, cropSource, onCropPointer, maskOverlayVisible = true, maskOverlayColor = 'teal', maskOverlayOpacity = 45, brushSize = 24 }) {
   const gestures = useAdaptiveGestures({ onSwipeLeft: onRedo, onSwipeRight: onUndo });
   const renderer = adaptiveRenderer(usePlatformProfile());
   const drawing = useRef(false);
   const [brushCursor, setBrushCursor] = useState(null);
   const interactive = Boolean(selection || cropSource);
+  const selectedMaskId=objects.find(obj=>obj.id===selectedId && !hiddenObjectIds.has(obj.id))?.mask_artifact_id;
   const brushActive = Boolean(selection && (selection.mode === 'BRUSH_ADD' || selection.mode === 'BRUSH_SUBTRACT'));
   const pointer = (phase) => (event) => {
     if (!interactive) return;
@@ -154,6 +156,13 @@ export default function ImageCanvas({ imageUrl, objects, selectedId, hiddenObjec
     <div className={`relative rounded-2xl overflow-hidden bg-muted select-none ${interactive ? 'touch-none' : ''}`} {...(!interactive ? gestures.handlers : {})} onPointerDown={pointer('down')} onPointerMove={pointer('move')} onPointerUp={pointer('up')} onPointerCancel={pointer('cancel')} onPointerLeave={() => setBrushCursor(null)}>
       <div className="relative" style={gestures.style}>
       <img src={imageUrl} alt="Project" decoding={renderer.decoding} fetchPriority="high" style={{ imageRendering: renderer.imageRendering }} onLoad={(event) => { if (event.currentTarget.naturalWidth * event.currentTarget.naturalHeight > 2000000) performanceMonitor.markLargeDecode(); }} className="w-full h-auto block" draggable={false} />
+      {!interactive && maskOverlayVisible && selectedMaskId && projectId && sourceArtifactId && (
+        <CanonicalMaskPreview
+          key={`${sourceArtifactId}:${selectedMaskId}`}
+          projectId={projectId} sourceArtifactId={sourceArtifactId}
+          maskArtifactId={selectedMaskId} width={imageWidth} height={imageHeight}
+        />
+      )}
       {maskOverlayVisible && <SelectionOverlay selection={selection} overlayColor={maskOverlayColor} overlayOpacity={maskOverlayOpacity} />}
       {brushActive && brushCursor && (
         <div

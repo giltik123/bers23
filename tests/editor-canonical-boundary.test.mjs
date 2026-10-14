@@ -557,3 +557,24 @@ test('zero-object projects expose canonical whole-image Prompt without an unback
   assert.match(resolver, /if \(intent\?\.scope === 'whole_image'\)/);
   assert.match(resolver, /strategy: 'whole_image', needsClarification: false/);
 });
+
+
+test('canonical Scene Mask Editor integrates with accessible UX and Core-owned review/download',async()=>{
+  const [editor,canvas,objects,panel]=await Promise.all([
+    readFile('src/pages/Editor.jsx','utf8'),
+    readFile('src/components/editor/ImageCanvas.jsx','utf8'),
+    readFile('src/components/editor/ObjectPanel.jsx','utf8'),
+    readFile('src/components/editor/AutoSceneMasksPanel.jsx','utf8'),
+  ]);
+  assert.match(editor,/<AutoSceneMasksPanel[\s\S]*?project=\{project\}/);
+  assert.match(editor,/onComplete=\{reload\}/);
+  assert.match(editor,/sourceArtifactId=\{project\.current_image_artifact_id\}/);
+  assert.match(editor,/candidateOperation=\{pendingResult\.kind\}/);
+  assert.match(editor,/onClick=\{handleDownload\}/);
+  assert.match(editor,/<ObjectPanel[\s\S]*?onToggleHidden=\{toggleHiddenObject\}/);
+  assert.match(canvas,/<CanonicalMaskPreview[\s\S]*?projectId=\{projectId\} sourceArtifactId=\{sourceArtifactId\}/);
+  assert.match(canvas,/maskArtifactId=\{selectedMaskId\}/);
+  assert.match(canvas,/maskOverlayVisible && selectedMaskId/);
+  assert.match(objects,/aria-label=\{obj\.selected \? 'Deselect '/);
+  assert.match(panel,/const CLOUD_SAM3_UI_ADMITTED=false/);
+});
