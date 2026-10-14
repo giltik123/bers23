@@ -247,7 +247,7 @@ try {
   // the same workflow, execute only the Core-issued Resize action and reach SUCCESS.
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'visible', timeout: 25_000 });
-  await waitImage(page, 'after', target.width, target.height);
+  await waitImage(page, 'Unaccepted edited image', target.width, target.height);
   assert.deepEqual(await readProjectState(projectId), baseline, 'recovered terminal Preview must still be non-mutating');
 
   const firstTerminalResponses = await page.evaluate(() => window.__r3kAgentResponses.filter(item => item.state === 'SUCCESS'));
@@ -294,7 +294,7 @@ try {
   const resultPostsBeforeTerminalReload = diagnostics.agentRequests.filter(entry => entry.method === 'POST' && /\/result$/.test(entry.path)).length;
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
-  const recoveredImage = await waitImage(page, 'after', target.width, target.height);
+  const recoveredImage = await waitImage(page, 'Unaccepted edited image', target.width, target.height);
   const recoveredImageSrc = await recoveredImage.evaluate(element => element.src);
   const recoveredImageUrl = new URL(recoveredImageSrc);
   assert.equal(recoveredImageUrl.origin, coreOrigin, 'recovered terminal Preview must be delivered by Core');
