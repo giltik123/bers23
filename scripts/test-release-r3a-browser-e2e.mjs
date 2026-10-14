@@ -147,7 +147,26 @@ try {
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/', { timeout: 15_000 });
   authenticated = true;
-  await page.getByRole('heading', { name: 'Projects' }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
+
+  // Browser UX acceptance: every top-level destination is named, and mobile navigation is discoverable.
+  const desktopNavigation = page.getByRole('navigation', { name: 'Main navigation' });
+  const projectsNav = desktopNavigation.getByRole('link', { name: 'Projects', exact: true });
+  await projectsNav.waitFor({ state: 'visible', timeout: 10_000 });
+  assert.equal(await projectsNav.getAttribute('aria-current'), 'page', 'the current Projects section must be identifiable');
+  await page.getByRole('button', { name: /^Notifications/ }).waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByRole('button', { name: /Switch to (dark|light) appearance/ }).waitFor({ state: 'visible', timeout: 10_000 });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const openMobileMenu = page.getByRole('button', { name: 'Open navigation menu' });
+  await openMobileMenu.waitFor({ state: 'visible', timeout: 10_000 });
+  await openMobileMenu.click();
+  const mobileNavigation = page.getByRole('navigation', { name: 'Mobile navigation' });
+  await mobileNavigation.getByRole('link', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+  assert.equal(await page.getByRole('button', { name: 'Close navigation menu' }).getAttribute('aria-expanded'), 'true');
+  await page.getByRole('button', { name: 'Close navigation menu' }).click();
+  await page.setViewportSize({ width: 1280, height: 720 });
+
 
   const input = page.locator('input[type="file"]');
   await input.setInputFiles({ name: 'release-r3a-source.png', mimeType: 'image/png', buffer: sourcePng });

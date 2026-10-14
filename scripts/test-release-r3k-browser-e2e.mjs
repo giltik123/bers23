@@ -182,7 +182,7 @@ try {
   await page.locator('#password').fill(password);
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/', { timeout: 15_000 });
-  await page.getByRole('heading', { name: 'Projects' }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
 
   await page.locator('input[type="file"]').setInputFiles({ name: 'release-r3k-source.png', mimeType: 'image/png', buffer: sourcePng });
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/editor' && Boolean(url.searchParams.get('id')), { timeout: 20_000 });
@@ -246,7 +246,7 @@ try {
   // the same workflow, execute only the Core-issued Resize action and reach SUCCESS.
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'visible', timeout: 25_000 });
-  await waitImage(page, 'after', target.width, target.height);
+  await waitImage(page, 'Unaccepted edited image', target.width, target.height);
   assert.deepEqual(await readProjectState(projectId), baseline, 'recovered terminal Preview must still be non-mutating');
 
   const firstTerminalResponses = await page.evaluate(() => window.__r3kAgentResponses.filter(item => item.state === 'SUCCESS'));
@@ -275,6 +275,7 @@ try {
     ['WORKFLOW_STEP', 'SUCCEEDED'],
   ].sort());
 
+  await page.getByText('More tools and activity', { exact: true }).click();
   const serverExecutions = page.locator('[data-job-center-canonical-executions]');
   await serverExecutions.waitFor({ state: 'visible', timeout: 15_000 });
   await serverExecutions.getByRole('button', { name: 'Refresh', exact: true }).click();
@@ -293,7 +294,7 @@ try {
   const resultPostsBeforeTerminalReload = diagnostics.agentRequests.filter(entry => entry.method === 'POST' && /\/result$/.test(entry.path)).length;
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
-  const recoveredImage = await waitImage(page, 'after', target.width, target.height);
+  const recoveredImage = await waitImage(page, 'Unaccepted edited image', target.width, target.height);
   const recoveredImageSrc = await recoveredImage.evaluate(element => element.src);
   const recoveredImageUrl = new URL(recoveredImageSrc);
   assert.equal(recoveredImageUrl.origin, coreOrigin, 'recovered terminal Preview must be delivered by Core');

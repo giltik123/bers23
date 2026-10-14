@@ -170,7 +170,7 @@ try {
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/', { timeout: 15_000 });
   authenticated = true;
-  await page.getByRole('heading', { name: 'Projects' }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
 
   const input = page.locator('input[type="file"]');
   await input.setInputFiles({ name: 'release-r3b-source.png', mimeType: 'image/png', buffer: sourcePng });
@@ -214,6 +214,10 @@ try {
   assert.deepEqual(diagnostics.unexpectedResponses, []);
 
   // R3b: deterministic local Rotate -> Preview -> Accept -> Undo -> Redo.
+  // The streamlined Editor keeps Rotate/Flip behind an explicit disclosure.
+  const rotateToggle = page.getByText('Rotate or flip', { exact: true });
+  const rotateAction = page.getByRole('button', { name: 'Rotate 90° clockwise', exact: true });
+  if (!(await rotateAction.isVisible())) await rotateToggle.click();
   const rotate = page.getByRole('button', { name: 'Rotate 90° clockwise', exact: true });
   await rotate.waitFor({ state: 'visible', timeout: 10_000 });
   assert.equal(await rotate.isEnabled(), true, 'Rotate 90° clockwise must be available for a zero-object whole image');
@@ -222,10 +226,26 @@ try {
     return response.request().method() === 'POST'
       && url?.origin === coreOrigin
       && /^\/api\/core\/local-execution\/orthogonal-transform\/[^/]+\/result$/.test(url.pathname);
-  }, { timeout: 20_000 });
+  }, { timeout: 20_000 }).then(response => ({ response }), error => ({ error }));
+  // Attach a rejection handler immediately: Playwright's wait can time out
+  // during click(), before control reaches the later await expression.
   await rotate.click();
 
-  const resultResponse = await resultResponsePromise;
+  const resultOutcome = await resultResponsePromise;
+  if (resultOutcome.error) {
+    // Preserve the fail-closed Core result gate; attach browser diagnostics to
+    // distinguish missing local execution from a changed endpoint or UI error.
+    const alerts = await page.locator('[role="alert"]').allTextContents().catch(() => []);
+    throw new Error('R3b Core-verified rotate result never arrived: ' + JSON.stringify({
+      alerts,
+      localExecutionRequests: diagnostics.localExecutionRequests.slice(-12),
+      requestFailures: diagnostics.requestFailures.slice(-8),
+      unexpectedResponses: diagnostics.unexpectedResponses.slice(-8),
+      consoleErrors: diagnostics.consoleErrors.slice(-8),
+      pageErrors: diagnostics.pageErrors.slice(-8),
+    }), { cause: resultOutcome.error });
+  }
+  const resultResponse = resultOutcome.response;
   assert.equal(resultResponse.status(), 200, 'Core must accept and verify the deterministic orthogonal-transform result');
   const coreResult = await resultResponse.json();
   assert.equal(coreResult.status, 'SUCCESS', 'Core result must be terminal SUCCESS before Preview is admitted');
@@ -235,7 +255,7 @@ try {
 
   const accept = page.getByRole('button', { name: 'Accept', exact: true });
   await accept.waitFor({ state: 'visible', timeout: 20_000 });
-  const previewImage = await loadedImageEvidence(page, 'after', 8, 12, 20_000);
+  const previewImage = await loadedImageEvidence(page, 'Unaccepted edited image', 8, 12, 20_000);
   diagnostics.deterministicEdit.previewImage = previewImage;
   assertLocalVerifiedPreview(previewImage, [8, 12], 'orthogonal-transform preview');
 
@@ -318,14 +338,31 @@ try {
   const r3qLocalStart = diagnostics.localExecutionRequests.length;
   const r3qMutationStart = diagnostics.projectMutations.length;
   const r3qConsoleStart = diagnostics.consoleErrors.length;
+  // Undo/Redo may remount or collapse the disclosure in the redesigned Editor.
+  // Re-open the real Rotate controls before demanding the second Core result.
+  if (!(await rotate.isVisible())) await rotateToggle.click();
+  await rotate.waitFor({ state: 'visible', timeout: 10_000 });
+  assert.equal(await rotate.isEnabled(), true, 'R3q second rotation must be available after Redo');
   const r3qResultResponsePromise = page.waitForResponse(response => {
     const url = safeUrl(response.url());
     return response.request().method() === 'POST'
       && url?.origin === coreOrigin
       && /^\/api\/core\/local-execution\/orthogonal-transform\/[^/]+\/result$/.test(url.pathname);
-  }, { timeout: 20_000 });
+  }, { timeout: 20_000 }).then(response => ({ response }), error => ({ error }));
   await rotate.click();
-  const r3qResultResponse = await r3qResultResponsePromise;
+  const r3qOutcome = await r3qResultResponsePromise;
+  if (r3qOutcome.error) {
+    const alerts = await page.locator('[role="alert"]').allTextContents().catch(() => []);
+    throw new Error('R3q second Core-verified rotate result never arrived: ' + JSON.stringify({
+      alerts,
+      localExecutionRequests: diagnostics.localExecutionRequests.slice(-12),
+      requestFailures: diagnostics.requestFailures.slice(-8),
+      unexpectedResponses: diagnostics.unexpectedResponses.slice(-8),
+      consoleErrors: diagnostics.consoleErrors.slice(-8),
+      pageErrors: diagnostics.pageErrors.slice(-8),
+    }), { cause: r3qOutcome.error });
+  }
+  const r3qResultResponse = r3qOutcome.response;
   assert.equal(r3qResultResponse.status(), 200, 'R3q local result must be Core-verified before fault injection');
   const r3qCoreResult = await r3qResultResponse.json();
   assert.equal(r3qCoreResult.status, 'SUCCESS');
@@ -333,7 +370,7 @@ try {
 
   const r3qAccept = page.getByRole('button', { name: 'Accept', exact: true });
   await r3qAccept.waitFor({ state: 'visible', timeout: 20_000 });
-  const r3qPreviewImage = await loadedImageEvidence(page, 'after', 12, 8, 20_000);
+  const r3qPreviewImage = await loadedImageEvidence(page, 'Unaccepted edited image', 12, 8, 20_000);
   assertLocalVerifiedPreview(r3qPreviewImage, [12, 8], 'R3q side-effect-fault Preview');
   assert.deepEqual(await readProjectState(projectId), redoState, 'R3q Preview must remain non-mutating before Accept');
 
@@ -361,9 +398,19 @@ try {
     return response.request().method() === 'POST'
       && url?.origin === coreOrigin
       && url.pathname === `/api/core/projects/${projectId}/accept-final`;
-  }, { timeout: 20_000 });
+  }, { timeout: 20_000 }).then(response => ({ response }), error => ({ error }));
   await r3qAccept.click();
-  const r3qAcceptResponse = await r3qAcceptResponsePromise;
+  const r3qAcceptOutcome = await r3qAcceptResponsePromise;
+  if (r3qAcceptOutcome.error) {
+    throw new Error('R3q canonical Project Accept response never arrived: ' + JSON.stringify({
+      projectMutations: diagnostics.projectMutations.slice(-8),
+      requestFailures: diagnostics.requestFailures.slice(-8),
+      unexpectedResponses: diagnostics.unexpectedResponses.slice(-8),
+      consoleErrors: diagnostics.consoleErrors.slice(-8),
+      pageErrors: diagnostics.pageErrors.slice(-8),
+    }), { cause: r3qAcceptOutcome.error });
+  }
+  const r3qAcceptResponse = r3qAcceptOutcome.response;
   assert.equal(r3qAcceptResponse.status(), 200, 'canonical Project Accept must succeed before the optional side-effect failure');
   await r3qAccept.waitFor({ state: 'detached', timeout: 20_000 });
   const r3qAcceptedImage = await loadedImageEvidence(page, 'Project', 12, 8, 20_000);

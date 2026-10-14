@@ -24,7 +24,7 @@ test('Editor navigation is capability-based rather than gated by detected object
   assert.match(modes, /onChange=\{\(next\) => \{\s*if \(!tryOnActive && !agentActive\) setEditTab\(next\);\s*\}\}/);
   assert.doesNotMatch(modes, /objects\.length === 0 \? \([\s\S]*<AdaptiveNavigation/,
     'zero-object projects must not be routed around the main navigation');
-  assert.match(modes, /editTab === 'fashion'[\s\S]*<FashionPanel voiceQuery=\{voiceWardrobeQuery\} \/>/);
+  assert.match(modes, /editTab === 'fashion'[\s\S]*<FashionPanel \/>/);
   assert.match(modes, /editTab === 'outfits'[\s\S]*<OutfitPanel \/>/);
   assert.match(modes, /editTab === 'creative'[\s\S]*<CreativeStudioPanel/);
   assert.match(modes, /editTab === 'agent'[\s\S]*<AgentPanel/);

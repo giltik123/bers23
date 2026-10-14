@@ -1,0 +1,40 @@
+name: Fashion parser routing inert R&D proof
+on:
+  pull_request:
+    paths:
+      - 'scripts/fashion_vton_parser_policy.py'
+      - 'tests/test_fashion_vton_parser_policy.py'
+      - 'docs/fashion-parser-route-isolation-rnd.md'
+      - '.github/workflows/fashion-parser-route-isolation-rnd.yml'
+permissions:
+  contents: read
+jobs:
+  offline-route-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact PR SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fail-closed parser route policy (CPU only)
+        run: python -m unittest discover -s tests -p 'test_fashion_vton_parser_policy.py' -v
+      - name: Ensure policy never imports model, provider or Core bindings
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+          path=Path('scripts/fashion_vton_parser_policy.py')
+          tree=ast.parse(path.read_text())
+          accepted={'dataclasses','typing'}
+          for node in ast.walk(tree):
+              if isinstance(node,ast.Import):
+                  assert all(item.name.split('.')[0] in accepted for item in node.names)
+              elif isinstance(node,ast.ImportFrom):
+                  assert node.module and node.module.split('.')[0] in accepted, node.module
+          print('Offline parser-policy isolation: PASS')
+          PY

@@ -138,7 +138,7 @@ try {
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/', { timeout: 15_000 });
   authenticated = true;
-  await page.getByRole('heading', { name: 'Projects' }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
 
   const input = page.locator('input[type="file"]');
   await input.setInputFiles({ name: 'release-r3c-source.png', mimeType: 'image/png', buffer: sourcePng });
@@ -186,7 +186,7 @@ try {
   await discard.click();
   await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'detached', timeout: 10_000 });
   await page.getByRole('button', { name: 'Discard', exact: true }).waitFor({ state: 'detached', timeout: 10_000 });
-  assert.equal(await page.getByRole('img', { name: 'after', exact: true }).count(), 0, 'Discard must remove the pending preview from the Editor');
+  assert.equal(await page.getByRole('img', { name: 'Unaccepted edited image', exact: true }).count(), 0, 'Discard must remove the pending preview from the Editor');
   const discardImage = await loadedImageEvidence(page, 'Project', 8, 12, 20_000);
   assertSignedCoreImage(discardImage, [8, 12], 'Project image after Discard');
   const discardAfter = await readProjectState(projectId);
@@ -334,7 +334,7 @@ try {
   await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
   assert.equal(await page.getByRole('button', { name: 'Retry', exact: true }).count(), 0, 'stale recovery must disarm Retry');
   assert.equal(await page.getByRole('button', { name: 'Discard', exact: true }).count(), 0, 'stale recovery must clear the pending result');
-  assert.equal(await page.getByRole('img', { name: 'after', exact: true }).count(), 0, 'stale preview must be removed after conflict recovery');
+  assert.equal(await page.getByRole('img', { name: 'Unaccepted edited image', exact: true }).count(), 0, 'stale preview must be removed after conflict recovery');
   const recoveredImage = await loadedImageEvidence(page, 'Project', 12, 8, 20_000);
   assertSignedCoreImage(recoveredImage, [12, 8], 'tab A canonical Project after stale FINAL recovery');
   const recoveredState = await readProjectState(projectId);
@@ -454,6 +454,10 @@ async function runVerifiedRotate(page, expectedWidth, expectedHeight, label) {
       && url?.origin === coreOrigin
       && /^\/api\/core\/local-execution\/orthogonal-transform\/[^/]+\/result$/.test(url.pathname);
   }, { timeout: 20_000 });
+  // The streamlined Editor keeps Rotate/Flip behind an explicit disclosure.
+  const rotateToggle = page.getByText('Rotate or flip', { exact: true });
+  const rotateAction = page.getByRole('button', { name: 'Rotate 90° clockwise', exact: true });
+  if (!(await rotateAction.isVisible())) await rotateToggle.click();
   const rotate = page.getByRole('button', { name: 'Rotate 90° clockwise', exact: true });
   await rotate.waitFor({ state: 'visible', timeout: 10_000 });
   assert.equal(await rotate.isEnabled(), true, `${label}: Rotate must be enabled`);
@@ -466,7 +470,7 @@ async function runVerifiedRotate(page, expectedWidth, expectedHeight, label) {
   assert.equal(typeof coreResult.artifactId === 'string' && coreResult.artifactId.length > 0, true, `${label}: canonical FINAL artifact identity is required`);
   const accept = page.getByRole('button', { name: 'Accept', exact: true });
   await accept.waitFor({ state: 'visible', timeout: 20_000 });
-  const previewImage = await loadedImageEvidence(page, 'after', expectedWidth, expectedHeight, 20_000);
+  const previewImage = await loadedImageEvidence(page, 'Unaccepted edited image', expectedWidth, expectedHeight, 20_000);
   assertLocalVerifiedPreview(previewImage, [expectedWidth, expectedHeight], label);
   const calls = diagnostics.localExecutionRequests.slice(localStart);
   assert.equal(calls.length, 4, `${label}: deterministic Rotate must perform exactly prepare/inputs/image-upload/result`);

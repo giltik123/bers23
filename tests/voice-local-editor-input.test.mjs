@@ -254,3 +254,23 @@ test('denied or unverified local speech installation cannot proceed to recording
     SpeechRecognitionCtor:NoInstall,
   }),error=>error.code==='LOCAL_ASR_INSTALL_UNSUPPORTED');
 });
+
+
+test('voice integration preserves canonical Core download, Scene MASK and accept ownership',async()=>{
+  const [editor,voicePort,voiceUi]=await Promise.all([
+    readFile('src/pages/Editor.jsx','utf8'),
+    readFile('src/application/voice/createLocalVoiceSession.js','utf8'),
+    readFile('src/components/editor/VoiceInputPanel.jsx','utf8'),
+  ]);
+  assert.match(editor,/<VoiceInputPanel/);
+  assert.match(editor,/onVoiceIntent=\{handleVoiceIntent\}/);
+  assert.match(editor,/confirmedSourceArtifactId:confirmedSource\?\.sourceArtifactId/);
+  assert.match(editor,/hasPendingResult:Boolean\(pendingResult\)/);
+  assert.match(editor,/candidateOperation=\{pendingResult\.kind\}/);
+  assert.match(editor,/<AutoSceneMasksPanel/);
+  assert.match(editor,/downloadCanonicalImage\(\{/);
+  assert.match(voicePort,/processLocally:true/);
+  assert.doesNotMatch(voicePort,/webkitSpeechRecognition/);
+  assert.match(voiceUi,/onClick=\{confirm\}/);
+  assert.doesNotMatch(voiceUi,/coreClient|applyEdit\(|pushEdit\(|runGenerative/);
+});

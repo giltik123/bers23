@@ -167,7 +167,7 @@ try {
   await page.locator('#password').fill(password);
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/', { timeout: 15_000 });
-  await page.getByRole('heading', { name: 'Projects' }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
 
   await page.locator('input[type="file"]').setInputFiles({
     name: 'release-r3j-project.png',
@@ -453,7 +453,7 @@ try {
   assert.equal(previewBody.artifactId, resultBBody.artifactId);
   assert.deepEqual(executionTryOnRequests(), executionBeforeRecover, 'read-only Recover must not repeat prepare/continue/pixel execution/result');
 
-  const recoveredAfter = await waitImage(page, 'after', 120, 160, 20_000);
+  const recoveredAfter = await waitImage(page, 'Unaccepted edited image', 120, 160, 20_000);
   const recoveredSrc = new URL(await recoveredAfter.evaluate(element => element.src));
   assert.equal(recoveredSrc.origin, coreOrigin, 'recovered Try-On preview must render from Core in split-origin release composition');
   assert.match(recoveredSrc.pathname, /^\/api\/core\/artifacts\/results\/[^/]+$/);
@@ -474,7 +474,7 @@ try {
   const resultCBody = await resultC.json();
   assert.equal(resultCBody.status, 'FINAL_READY');
 
-  const cAfter = await waitImage(page, 'after', 120, 160, 20_000);
+  const cAfter = await waitImage(page, 'Unaccepted edited image', 120, 160, 20_000);
   const cAfterSrc = await cAfter.evaluate(element => element.src);
   assert.match(cAfterSrc, /^blob:/, 'fresh local deterministic Retry preview must remain Editor-owned blob data');
   const cWarp = await readPhaseTicket(clientRequestC, 'garment-warp');
@@ -519,7 +519,30 @@ try {
   const reloadedImage = await waitImage(page, 'Project', 120, 160, 20_000);
   assert.equal(new URL(await reloadedImage.evaluate(element => element.src)).origin, coreOrigin);
   const reloadedProject = await readProjectState(projectId);
-  assert.deepEqual(reloadedProject, acceptedProject, 'accepted Try-On FINAL must survive full Editor reload');
+  // Scene Masks research automatically discovers local color regions when an
+  // Editor is reopened. Those separate Core MASK Objects are not a second
+  // Try-On Accept or a change to the accepted image/history.
+  const { objects: reloadedSceneObjects, ...reloadedImageState } = reloadedProject.project;
+  const { objects: acceptedSceneObjects, ...acceptedImageState } = acceptedProject.project;
+  assert.deepEqual(acceptedSceneObjects, [], 'Try-On Accept must not itself synthesize Scene MASK Objects');
+  assert.deepEqual(reloadedImageState, acceptedImageState, 'Scene analysis must preserve accepted FINAL and image geometry');
+  assert.deepEqual(reloadedProject.cursor, acceptedProject.cursor, 'Scene analysis cannot move the accepted history cursor');
+  assert.deepEqual(reloadedProject.history, acceptedProject.history, 'Scene analysis cannot rewrite accepted Try-On history');
+  // If local segmentation completed on reload, all resulting Objects must
+  // be explicit, unreviewed classical regions bound to the accepted FINAL.
+  assert.ok(Array.isArray(reloadedSceneObjects));
+  for (const object of reloadedSceneObjects) {
+    assert.equal(object.metadata?.segmentation, 'AUTO');
+    assert.equal(object.metadata?.modelId, 'bers-classical-cv');
+    assert.equal(object.metadata?.modelVersion, 'color-connected-components-v1');
+    assert.equal(object.metadata?.maskState, 'CORE_PERSISTED_UNREVIEWED');
+    assert.ok(['BACKGROUND','OTHER_OBJECT'].includes(object.group));
+    assert.equal(object.category, object.group);
+    assert.match(object.mask_artifact_id, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    assert.match(object.metadata.sourceArtifactId, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    const sourceToken = JSON.parse(Buffer.from(object.metadata.sourceArtifactId.split('.')[0], 'base64url').toString('utf8'));
+    assert.equal(sourceToken.storageId, cFinal.storage_id, 'automatic MASK must reference precisely the accepted FINAL source');
+  }
 
   assert.equal(providerCalls, 0, 'canonical deterministic Try-On must never reach provider boundary');
   assert.deepEqual(diagnostics.creativeRequests, []);

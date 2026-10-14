@@ -1,0 +1,30 @@
+name: Isolated Editor compare and grouped Undo research
+on:
+  pull_request:
+    paths:
+      - 'src/lib/local-editor/localCompare.js'
+      - 'src/lib/local-editor/localHistory.js'
+      - 'tests/local-compare.test.mjs'
+      - 'tests/local-history.test.mjs'
+      - '.github/workflows/editor-compare-undo-isolation-rnd.yml'
+      - 'docs/editor-compare-undo-isolation-rnd.md'
+permissions:
+  contents: read
+jobs:
+  pure-compare-undo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify exact PR commit
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+      - name: Byte-exact alpha compare and grouped undo acceptance
+        run: node --test tests/local-compare.test.mjs tests/local-history.test.mjs
+      - name: Diff hygiene
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"

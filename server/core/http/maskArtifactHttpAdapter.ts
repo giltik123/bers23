@@ -13,13 +13,39 @@ type MaskArtifactAuth = Readonly<{ verify: (authorization: string | undefined) =
 export function createMaskArtifactHttpAdapter(input: Readonly<{ artifacts: ArtifactAuthority; auth: MaskArtifactAuth; config: CoreServerConfig }>) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const url = new URL(request.url ?? '/', 'http://core.invalid');
-    if (url.pathname !== PATH) return false;
+    const maskFetch = url.pathname.match(/^\/api\/core\/artifacts\/masks\/([^/]+)$/);
+    if (url.pathname !== PATH && !maskFetch) return false;
     const correlationId = header(request, 'x-correlation-id')?.slice(0, 128) || globalThis.crypto.randomUUID();
     response.setHeader('X-Correlation-Id', correlationId);
     try {
       applyCors(request, response, input.config);
       if (request.method === 'OPTIONS') { send(response, 204, undefined); return true; }
-      if (request.method !== 'POST') throw httpError(404, 'not_found', 'Route not found');
+      if (maskFetch && request.method === 'GET') {
+        const principal = await input.auth.verify(requestAuthorization(request, input.config));
+        const projectId = url.searchParams.get('projectId')?.trim() ?? '';
+        const sourceArtifactId = url.searchParams.get('sourceImageArtifactId')?.trim() ?? '';
+        if (!projectId || !sourceArtifactId)
+          throw httpError(400,'invalid_mask_source','Canonical image and Project are required');
+        const scope = authenticatedProjectScope(principal,projectId);
+        let claim;
+        try { claim = input.artifacts.external.resolveStoredMask(decodeURIComponent(maskFetch[1]),scope); }
+        catch { throw httpError(404,'mask_not_found','Canonical MASK is unavailable'); }
+        const stored = await input.artifacts.masks.load(claim.storageId,scope);
+        if (!stored || !stored.sourceImageStorageId)
+          throw httpError(404,'mask_not_found','Source-bound MASK is unavailable');
+        const source = await resolveSourceImage(input.artifacts,sourceArtifactId,scope);
+        if (!source || source.storageId !== stored.sourceImageStorageId ||
+            source.width !== stored.width || source.height !== stored.height)
+          throw httpError(409,'mask_source_mismatch','MASK does not belong to the requested photo');
+        response.statusCode = 200;
+        response.setHeader('Content-Type','image/png');
+        response.setHeader('Content-Length',stored.png.byteLength);
+        response.setHeader('Cache-Control','private, no-store');
+        response.setHeader('X-Content-Type-Options','nosniff');
+        response.end(Buffer.from(stored.png));
+        return true;
+      }
+      if (request.method !== 'POST' || maskFetch) throw httpError(404, 'not_found', 'Route not found');
       assertBrowserMutationAllowed(request, input.config);
       if (mediaType(request) !== 'application/octet-stream') throw httpError(415, 'unsupported_media_type', 'Content-Type must be application/octet-stream');
       const principal = await input.auth.verify(requestAuthorization(request, input.config));
@@ -89,7 +115,7 @@ function applyCors(request: IncomingMessage, response: ServerResponse, config: C
   const origin = header(request, 'origin'); if (!origin) return;
   if (!config.allowedWebOrigins.includes(origin)) throw httpError(403, 'origin_denied', 'Origin is not allowed');
   response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Access-Control-Allow-Credentials', 'true'); response.setHeader('Vary', 'Origin');
-  response.setHeader('Access-Control-Allow-Headers', `Content-Type, X-Correlation-Id, ${BROWSER_CSRF_HEADER}`); response.setHeader('Access-Control-Expose-Headers', `X-Correlation-Id, ${BROWSER_CSRF_HEADER}`); response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', `Content-Type, X-Correlation-Id, ${BROWSER_CSRF_HEADER}`); response.setHeader('Access-Control-Expose-Headers', `X-Correlation-Id, ${BROWSER_CSRF_HEADER}`); response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 }
 function mediaType(request: IncomingMessage): string { return String(request.headers['content-type'] ?? '').split(';', 1)[0].trim().toLowerCase(); }
 function header(request: IncomingMessage, name: string): string | undefined { const value = request.headers[name.toLowerCase()]; return Array.isArray(value) ? value[0] : value; }

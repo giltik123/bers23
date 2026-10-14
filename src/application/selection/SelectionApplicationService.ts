@@ -151,7 +151,37 @@ export class SelectionApplicationService {
     try { const result = await this.segmentation.segment({ requestId, imageArtifactId: d.imageArtifactId, analysis, points: d.points, privacyMode: input.privacyMode }); if (this.#draft !== d) return undefined; if (d.requestId !== requestId) return this.snapshot(); const candidate = [...result.candidates].filter(c => c.width === analysis.analysisWidth && c.height === analysis.analysisHeight && c.alpha.length === c.width * c.height).sort((a,b) => b.score-a.score)[0]; if (!candidate) throw new Error('Segmentation returned no valid mask'); this.commit(d, upscale(candidate.alpha, candidate.width, candidate.height, d.width, d.height), 'SEGMENTATION'); d.canonicalArtifactId = result.canonicalArtifactId; d.refinementParentArtifactId = result.canonicalArtifactId; d.quality = assessMask(d.alpha, d.width, d.height, candidate.score); d.state = 'SELECTED'; this.telemetry({ selectionMethod: 'SMART_SELECT', executionTarget: result.target, modelId: result.modelId, modelVersion: result.modelVersion, analysisResolution: [analysis.analysisWidth, analysis.analysisHeight], originalResolution: [d.width,d.height], selectionLatency: this.now()-start, modelLatency: result.latencyMs, refinementLatency: 0, maskCoverage: d.quality.coverage, manualCorrections: d.manualCorrections, undoCount: d.undoCount, peakEstimatedMemory: estimateMemory(analysis, 35_000_000) }); return this.snapshot(); }
     catch (error) { if (this.#draft !== d) return undefined; if (d.requestId !== requestId) return this.snapshot(); d.canonicalArtifactId = undefined; d.refinementParentArtifactId = undefined; d.state = 'LOCAL_UNAVAILABLE'; d.warning = `${error instanceof Error ? error.message : 'Local selection unavailable'}. Manual brush remains available.`; return this.snapshot(); }
   }
-  brush(stroke: BrushStroke): SelectionDraftSnapshot { const d=this.required(); if (!stroke.points.length || stroke.radius<=0 || stroke.hardness<0 || stroke.hardness>1) throw new Error('Invalid brush stroke'); const alpha=new Uint8Array(d.alpha), subtract=d.mode==='BRUSH_SUBTRACT'; for (const p of stroke.points) paint(alpha,d.width,d.height,displayToOriginal(p,stroke.view),stroke.radius/originalScale(stroke.view),stroke.hardness,subtract); this.commit(d,alpha,subtract?'MANUAL_SUBTRACT':'MANUAL_ADD'); d.canonicalArtifactId=undefined; d.manualCorrections++; d.state='REFINING'; d.quality=assessMask(alpha,d.width,d.height,d.quality?.confidence??1); return this.snapshot(); }
+  brush(stroke: BrushStroke): SelectionDraftSnapshot {
+    const d=this.required();
+    const opacity=stroke.opacity ?? 1;
+    if (!stroke.points.length || stroke.radius<=0 || stroke.hardness<0 || stroke.hardness>1 || !Number.isFinite(opacity) || opacity<0 || opacity>1) throw new Error('Invalid brush stroke');
+
+    const alpha=new Uint8Array(d.alpha), subtract=d.mode==='BRUSH_SUBTRACT';
+    if (opacity===1) {
+      // Preserve the existing byte-exact full-opacity brush behavior.
+      for (const p of stroke.points) paint(alpha,d.width,d.height,displayToOriginal(p,stroke.view),stroke.radius/originalScale(stroke.view),stroke.hardness,subtract);
+    } else if (opacity>0) {
+      // One stroke has one bounded opacity envelope: densely sampled pointer paths
+      // must not accidentally make a 25% brush paint at 100% in the same stroke.
+      const coverage=new Uint8Array(alpha.length);
+      for (const p of stroke.points) paint(coverage,d.width,d.height,displayToOriginal(p,stroke.view),stroke.radius/originalScale(stroke.view),stroke.hardness,false);
+      for (let i=0;i<alpha.length;i++) {
+        const strength=coverage[i];
+        if (!strength) continue;
+        const base=alpha[i];
+        alpha[i]=subtract
+          ? Math.max(0,base-Math.round(strength*opacity))
+          : Math.min(255,base+Math.round((Math.max(base,strength)-base)*opacity));
+      }
+    }
+
+    this.commit(d,alpha,subtract?'MANUAL_SUBTRACT':'MANUAL_ADD');
+    d.canonicalArtifactId=undefined;
+    d.manualCorrections++;
+    d.state='REFINING';
+    d.quality=assessMask(alpha,d.width,d.height,d.quality?.confidence??1);
+    return this.snapshot();
+  }
   clear() { const d=this.required(); this.commit(d,new Uint8Array(d.alpha.length),'USER'); d.canonicalArtifactId=undefined; d.state='NOTHING_SELECTED'; return this.snapshot(); }
   grow(radius: number): SelectionDraftSnapshot { return this.morphology('GROW', radius); }
   shrink(radius: number): SelectionDraftSnapshot { return this.morphology('SHRINK', radius); }
@@ -455,4 +485,14 @@ function extremePass(input: Uint8Array, output: Uint8Array, width: number, heigh
 }
 function upscale(a:Uint8Array,sw:number,sh:number,dw:number,dh:number){const out=new Uint8Array(dw*dh);for(let y=0;y<dh;y++)for(let x=0;x<dw;x++)out[y*dw+x]=a[Math.min(sh-1,Math.floor(y*sh/dh))*sw+Math.min(sw-1,Math.floor(x*sw/dw))];return out}
 function originalScale(v:BrushStroke['view']){return Math.min((v.displayWidth/(v.devicePixelRatio??1))/v.originalWidth,(v.displayHeight/(v.devicePixelRatio??1))/v.originalHeight)*(v.zoom??1)}
-function paint(a:Uint8Array,w:number,h:number,p:{x:number;y:number},r:number,hard:number,sub:boolean){const minX=Math.max(0,Math.floor(p.x-r)),maxX=Math.min(w-1,Math.ceil(p.x+r)),minY=Math.max(0,Math.floor(p.y-r)),maxY=Math.min(h-1,Math.ceil(p.y+r));for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){const d=Math.hypot(x-p.x,y-p.y);if(d>r)continue;const strength=d<=r*hard?255:Math.round(255*(1-(d-r*hard)/Math.max(.001,r*(1-hard))));const i=y*w+x;a[i]=sub?Math.max(0,a[i]-strength):Math.max(a[i],strength)}}
+function paint(a:Uint8Array,w:number,h:number,p:{x:number;y:number},r:number,hard:number,sub:boolean){
+  const minX=Math.max(0,Math.floor(p.x-r)),maxX=Math.min(w-1,Math.ceil(p.x+r));
+  const minY=Math.max(0,Math.floor(p.y-r)),maxY=Math.min(h-1,Math.ceil(p.y+r));
+  for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){
+    const d=Math.hypot(x-p.x,y-p.y);
+    if(d>r)continue;
+    const strength=d<=r*hard?255:Math.round(255*(1-(d-r*hard)/Math.max(.001,r*(1-hard))));
+    const i=y*w+x;
+    a[i]=sub?Math.max(0,a[i]-strength):Math.max(a[i],strength);
+  }
+}

@@ -10,10 +10,10 @@ export default function ProjectActionsMenu({ project, onRename, onToggleFavorite
       <DropdownMenuTrigger asChild>
         <button
           onClick={(e) => e.preventDefault()}
-          className="p-2 rounded-lg bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity"
-          aria-label="Project actions"
+          className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-slate-950/75 px-3 text-xs font-medium text-white shadow-sm backdrop-blur hover:bg-slate-950"
+          aria-label="Project options"
         >
-          <MoreVertical className="w-4 h-4" />
+          <MoreVertical className="h-4 w-4" aria-hidden="true" /> Options
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
