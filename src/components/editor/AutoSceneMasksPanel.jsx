@@ -4,6 +4,8 @@ import { SCENE_GROUPS, SCENE_LABELS, sceneSourceKey, supportsClassicalSceneGeome
 import { createCanonicalAutoSceneMaskRunner } from '@/application/scene/createCanonicalAutoSceneMaskRunner';
 import { Button } from '@/components/ui/button';
 
+// This is a UI affordance guard only; Core independently denies unadmitted cloud provenance.
+const CLOUD_SAM3_UI_ADMITTED=false;
 const CLOUD_TARGETS=Object.freeze([
   ['face','Лицо'],['shirt','Рубашка'],['jacket','Куртка'],
   ['pants','Брюки'],['dress','Платье'],['shoes','Обувь'],
@@ -141,14 +143,14 @@ export default function AutoSceneMasksPanel({
             value={selectedCloudTarget}
             onChange={event=>setSelectedCloudTarget(event.target.value)}
             className="rounded-md border bg-background p-1"
-            disabled={disabled||running}>
+            disabled={disabled||running||!CLOUD_SAM3_UI_ADMITTED}>
             {CLOUD_TARGETS.map(([key,label])=>
               <option key={key} value={key}>{label}</option>)}
           </select>
         </label>
         <Button type="button" variant="outline" size="sm"
-          disabled={disabled || running || !sourceKey}
-          title="Один платный API-вызов только для выбранного типа объекта"
+          disabled={disabled || running || !sourceKey || !CLOUD_SAM3_UI_ADMITTED}
+          title="Облачная SAM3 недоступна: происхождение масок не допущено в Core"
           onClick={()=>{
             if(!window.confirm('Отправить фото в SAM3 для одного выбранного объекта? Это один облачный API-вызов.'))return;
             setRequested(prev=>({
@@ -158,7 +160,7 @@ export default function AutoSceneMasksPanel({
               promptKey:selectedCloudTarget,
             }));
           }}>
-          SAM3 · 1 запрос
+          SAM3 · недоступно
         </Button>
         <Button type="button" variant="outline" size="sm"
           disabled={disabled||!sourceKey||typeof onManualSelect!=='function'}

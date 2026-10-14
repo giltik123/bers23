@@ -171,3 +171,11 @@ test('Editor mounts a source-bound status panel, not a legacy detection/syntheti
   assert.match(store,/current_image_storage_id=\$\$?\{/);
   assert.match(store,/project_source_conflict/);
 });
+
+test('SAM3 cloud UI stays disabled until Core admits durable producer provenance', async () => {
+  const panel=await readFile('src/components/editor/AutoSceneMasksPanel.jsx','utf8');
+  assert.match(panel,/const CLOUD_SAM3_UI_ADMITTED=false/);
+  assert.match(panel,/disabled=\{disabled \|\| running \|\| !sourceKey \|\| !CLOUD_SAM3_UI_ADMITTED\}/);
+  assert.match(panel,/disabled=\{disabled\|\|running\|\|!CLOUD_SAM3_UI_ADMITTED\}/);
+  assert.match(panel,/SAM3 · недоступно/);
+});
