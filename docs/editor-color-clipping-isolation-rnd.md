@@ -3,7 +3,7 @@
 Source: six source/test files originally copied from Draft #988 at exact SHA
 `4adca122ea52d561cf6ba7a25b4d8e8a5d4de2cd`.
 **Four files remain byte-identical**. The Delta-E implementation and its
-test now contain a narrow independently audited **bug fix**, described below.
+test now contain a narrow regression-tested **bug fix**, described below.
 
 - `EditorColorDifferenceRND.ts`: deterministic bounded CIEDE2000 (Delta-E)
   diagnostic using assumed common sRGB/D65 RGBA8 images, optional R8
@@ -30,7 +30,9 @@ test now contain a narrow independently audited **bug fix**, described below.
   conservatively returns the observed sampled maximum, not 100;
   it remains an *upper bound on sampled observations*, not a claim
   about every pixel or perceptual acceptability. The standalone source
-  #988 was **not** modified by this fix.
+  #988 was **subsequently updated in its own Draft branch** with the same
+  source and test correction (see #988 at `57825155d10934c270ef435d07743ab3d9bf2c25`);
+  #988 is still blocked by separate canonical-download integration CI.
 - The workflow asserts exact pull-request head SHA and runs all three
   test suites, typecheck, build and diff hygiene. Pre-fix 77/77
   success at `84d9d03` is historical, not evidence for the new SHA.
@@ -51,5 +53,7 @@ save/revision/authorization, human owner acceptance or production integration.
 Large Editor Drafts #988/#995/#1003/#1009/#997/#998 remain blocked and
 issue #365 release gates are unchanged.
 
-Keep this PR **Draft** pending terminal exact-head CI and independent review.
-A standalone passing algorithm test is not a basis for product admission.
+Only merge this isolated research artifact after its exact-head CI completes
+and the repository's review/branch protections are satisfied. A review or
+research merge is not approval to import these algorithms into Editor/Core,
+or to change any release gates.
