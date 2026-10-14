@@ -42,7 +42,7 @@ The fixture manifest must be available through a direct public HTTPS URL and hav
 }
 ```
 
-Every URL must be direct HTTPS, non-local/private, and every fetched image must match its declared SHA-256 and decode as JPEG, PNG or WebP.
+Every URL must use direct HTTPS with a DNS hostname (IP literals, including public IPs and bracketed IPv6, are rejected, as are local/internal aliases). Redirects are rejected, and streamed bytes are capped even without an honest Content-Length. Every fetched image must match its SHA-256 and identify as JPEG, PNG or WebP. A DNS hostname check alone cannot prevent DNS rebinding; evidence hosts must be trusted.
 
 Use only release fixtures that may lawfully be used for this purpose. Do not use private end-user photos merely to satisfy the release gate.
 
@@ -64,6 +64,7 @@ The review artifact must be available through a direct public HTTPS URL:
       "fixtureRightsRef": "<consent/license/source record>",
       "garmentPreservation": "PASS",
       "logoPatternPreservation": "PASS",
+      "reviewedOutputSha256": "<exact fixture.samples[0].result.sha256>",
       "observedFailureModes": [
         "<reviewed limitation, or an empty array if none were observed>"
       ],
@@ -76,7 +77,7 @@ The review artifact must be available through a direct public HTTPS URL:
 
 `logoPatternPreservation` may be `NOT_APPLICABLE` when the garment genuinely contains no logo/pattern to review. A failed garment or logo/pattern preservation review cannot produce accepted v1 evidence.
 
-Latency and peak memory must come from the actual reviewed execution, not estimates.
+Latency and peak memory must come from the actual reviewed execution, not estimates. `latencyMs` must be a finite JSON number, never null, a numeric string or a boolean. Each `reviewedOutputSha256` must be the exact 64-character lowercase SHA-256 of that sample's `result` bytes in the fixture manifest. Missing or mismatched review hashes fail closed: the reviewer cannot attest to one output while the release verifier checks another. The published `review-draft.json` already contains these output identities; the owner must personally inspect the images and record a decision rather than mechanically converting every `PENDING_OWNER_REVIEW` to `PASS`.
 
 ## Running the evidence workflow
 
@@ -84,6 +85,8 @@ Dispatch **BERS v1 Fashion real-image quality evidence** on the exact candidate 
 
 - `fixture_manifest_url`;
 - `review_artifact_url`.
+
+The owner-only dispatch bridge resolves the evidence branch to one immutable Git commit SHA and reads both fixture/review JSON files from that single snapshot. It dispatches raw fixture/review URLs pinned to the same evidence commit, not a mutable branch ref, so changing the evidence branch while the workflow runs cannot substitute a different owner decision. The candidate SHA is bound separately to the exact `main` code commit.
 
 The workflow checks out the exact dispatched SHA, downloads and verifies all referenced image bytes, checks the review, computes fixture/review digests, derives p50/p95 latency and peak memory, and uploads:
 
