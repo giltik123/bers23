@@ -57,7 +57,7 @@ test('Editor quality zoom is closed set, and pan cannot escape image limits', ()
 });
 
 test('Quality UI retains Core-owned explicit Accept, Discard, Retry and never executes provider or artifact authority', async () => {
-  const source=await readFile('src/components/editor/ResultCompare.jsx','utf8');
+  const source=await readFile('src/components/editor/QualityInspectorRND.jsx','utf8');
   assert.match(source, /onClick=\{onAccept\}/);
   assert.match(source, /onClick=\{onDiscard\}/);
   assert.match(source, /onClick=\{onRetry\}/);
@@ -69,12 +69,12 @@ test('Quality UI retains Core-owned explicit Accept, Discard, Retry and never ex
   assert.match(source, /onKeyDown=\{handleKeys\}/);
   assert.match(source, /'Viewing does not change the Project or image bytes'|Viewing does not change the Project or image bytes/);
   for (const forbidden of ['coreClient','persistFinal','issueStoredFinal','executeWorkflow','walletBalance','billingEngine','creditsWallet','fetch(', 'localStorage.', 'sessionStorage.']) {
-    assert.equal(source.includes(forbidden),false,`ResultCompare cannot assume authority: ${forbidden}`);
+    assert.equal(source.includes(forbidden),false,`QualityInspectorRND cannot assume authority: ${forbidden}`);
   }
 });
 
 test('Image comparison clips After on the RIGHT while Before remains on the LEFT',async()=>{
-  const source=await readFile('src/components/editor/ResultCompare.jsx','utf8');
+  const source=await readFile('src/components/editor/QualityInspectorRND.jsx','utf8');
   assert.match(source,/const afterClipLeft = mode === 'before' \? 100 : mode === 'after' \? 0 : split/);
   assert.match(source,/clipPath: `inset\(0 0 0 \$\{afterClipLeft\}%\)`/);
   assert.match(source,/style=\{transform\}/);

@@ -184,7 +184,7 @@ try {
   await waitForEnabled(apply, 'Apply crop after local failure');
 
   assert.equal(await page.getByRole('button', { name: 'Accept', exact: true }).count(), 0, 'local failure must not manufacture an Acceptable Preview');
-  assert.equal(await page.getByRole('img', { name: 'after', exact: true }).count(), 0, 'local failure must not manufacture a Preview image');
+  assert.equal(await page.getByRole('img', { name: 'Unaccepted edited image', exact: true }).count(), 0, 'local failure must not manufacture a Preview image');
   assert.equal(await projectImage.evaluate(element => element.src), initialProjectImageSrc, 'local failure must keep the Project image source unchanged');
 
   const failed = await readProjectState(projectId);

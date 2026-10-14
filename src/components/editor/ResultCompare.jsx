@@ -1,197 +1,172 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Check, Trash2, RotateCcw, Loader2, ZoomIn, ZoomOut, Scan } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Check, Trash2, RotateCcw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  clampComparisonSplit,
-  clampInspectorPan,
-  isComparableGeometry,
-  nextInspectorZoom,
-} from './qualityInspectorGeometry';
+import { useAdaptiveGestures } from '@/components/adaptive/AdaptiveGestures';
+import { canCompareOperationAligned, canComparePixelsAligned, nativeInspectionCanvasSize } from './compareGeometryPolicy';
 
-// Quality Inspector never modifies image bytes or grants FINAL/Project authority.
-// Accept/Discard/Retry are the existing explicit Editor callbacks.
-export default function ResultCompare({ beforeUrl, result, onAccept, onDiscard, onRetry, busy }) {
-  const afterUrl = result?.preview_url || result?.image_url;
-  const [mode, setMode] = useState('after');
-  const [split, setSplit] = useState(50);
+// A read-only inspector for an unaccepted candidate. The Core-owned Accept,
+// Discard, and Retry callbacks remain the ONLY controls changing Project state.
+// Split view is admitted only after both images have identical real geometry;
+// cropping/rotation/failed image delivery must never masquerade as aligned pixels.
+export default function ResultCompare({ beforeUrl, result, candidateOperation, onAccept, onDiscard, onRetry, busy }) {
+  const [view, setView] = useState('after');
+  const [splitPosition, setSplitPosition] = useState(50);
   const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [beforeSize, setBeforeSize] = useState(null);
-  const [afterSize, setAfterSize] = useState(null);
-  const [imageErrors, setImageErrors] = useState({ before: false, after: false });
-  const pointer = useRef(null);
-  const beforeImageRef = useRef(null);
-  const afterImageRef = useRef(null);
-  const sameGeometry = isComparableGeometry(beforeSize, afterSize);
+  const [geometry, setGeometry] = useState('loading');
+  const [naturalSizes, setNaturalSizes] = useState({ before: null, after: null });
+  const afterUrl = result?.preview_url || result?.image_url || '';
+  const gestures = useAdaptiveGestures({
+    onSwipeLeft: () => setView('after'),
+    onSwipeRight: () => setView('before'),
+  });
 
   useEffect(() => {
-    setMode('after');
-    setSplit(50);
+    setGeometry('loading');
+    setNaturalSizes({ before: null, after: null });
+    setView('after');
     setZoom(1);
-    setPan({ x: 0, y: 0 });
-    setBeforeSize(null);
-    setAfterSize(null);
-    setImageErrors({ before: false, after: false });
-    pointer.current = null;
-    // Data URLs and cached images may finish before the effect resets sizes.
-    // Re-read intrinsic dimensions so Split does not remain disabled after load.
-    const before = beforeImageRef.current;
-    const after = afterImageRef.current;
-    if (before?.complete && before.naturalWidth > 0) {
-      setBeforeSize({ width: before.naturalWidth, height: before.naturalHeight });
+    setSplitPosition(50);
+    if (!beforeUrl || !afterUrl) {
+      setGeometry('unavailable');
+      return undefined;
     }
-    if (after?.complete && after.naturalWidth > 0) {
-      setAfterSize({ width: after.naturalWidth, height: after.naturalHeight });
-    }
+    let alive = true;
+    let beforeSize = null;
+    let afterSize = null;
+    const before = new Image();
+    const after = new Image();
+    const resolve = () => {
+      if (!alive || !beforeSize || !afterSize) return;
+      setGeometry(
+        canComparePixelsAligned(beforeSize, afterSize)
+          ? 'aligned' : 'different',
+      );
+    };
+    before.onload = () => {
+      beforeSize = { width: before.naturalWidth, height: before.naturalHeight };
+      if (alive) setNaturalSizes((current) => ({ ...current, before: beforeSize }));
+      resolve();
+    };
+    after.onload = () => {
+      afterSize = { width: after.naturalWidth, height: after.naturalHeight };
+      if (alive) setNaturalSizes((current) => ({ ...current, after: afterSize }));
+      resolve();
+    };
+    const unavailable = () => { if (alive) setGeometry('unavailable'); };
+    before.onerror = unavailable;
+    after.onerror = unavailable;
+    before.src = beforeUrl;
+    after.src = afterUrl;
+    return () => {
+      alive = false;
+      before.onload = null;
+      after.onload = null;
+      before.onerror = null;
+      after.onerror = null;
+      before.src = '';
+      after.src = '';
+    };
   }, [beforeUrl, afterUrl]);
 
-  useEffect(() => {
-    if (mode === 'split' && !sameGeometry) setMode('after');
-  }, [sameGeometry, mode]);
-
-  const changeZoom = (direction) => {
-    const next = nextInspectorZoom(zoom, direction);
-    setZoom(next);
-    setPan((current) => clampInspectorPan(current, next));
-  };
-  const resetView = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-    setSplit(50);
-  };
-  const pointerDown = (event) => {
-    if (event.button !== 0 || pointer.current) return;
-    pointer.current = { id: event.pointerId, x: event.clientX, y: event.clientY, startX: event.clientX };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-  const pointerMove = (event) => {
-    const previous = pointer.current;
-    if (!previous || previous.id !== event.pointerId) return;
-    if (zoom > 1) {
-      const bounds = event.currentTarget.getBoundingClientRect();
-      if (bounds.width > 0 && bounds.height > 0) {
-        const dx = 100 * (event.clientX - previous.x) / bounds.width;
-        const dy = 100 * (event.clientY - previous.y) / bounds.height;
-        setPan((current) => clampInspectorPan({ x: current.x + dx, y: current.y + dy }, zoom));
-      }
-    }
-    pointer.current = { ...previous, x: event.clientX, y: event.clientY };
-  };
-  const pointerUp = (event) => {
-    const previous = pointer.current;
-    if (!previous || previous.id !== event.pointerId) return;
-    if (zoom === 1 && mode !== 'split') {
-      const delta = event.clientX - previous.startX;
-      if (Math.abs(delta) > 72) setMode(delta < 0 ? 'after' : 'before');
-    }
-    pointer.current = null;
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
-    }
-  };
-  const pointerCancel = (event) => {
-    if (pointer.current?.id === event.pointerId) pointer.current = null;
-  };
-  const handleKeys = (event) => {
-    if (zoom === 1) return;
-    const movement = { ArrowLeft: [-10, 0], ArrowRight: [10, 0], ArrowUp: [0, -10], ArrowDown: [0, 10] }[event.key];
-    if (!movement) return;
-    event.preventDefault();
-    setPan((current) => clampInspectorPan({ x: current.x + movement[0], y: current.y + movement[1] }, zoom));
-  };
-
-  // Transform applied to both layers identically. Comparison split clips the
-  // After layer at viewport coordinates, not independent image positions.
-  const transform = { transform: `translate(${pan.x}%, ${pan.y}%) scale(${zoom})`, transformOrigin: 'center', userSelect: 'none' };
-  const afterClipLeft = mode === 'before' ? 100 : mode === 'after' ? 0 : split;
-  const metadata = [
-    typeof result?.provider === 'string' && result.provider.trim() ? result.provider.trim() : null,
-    Number.isFinite(result?.credits_used) && result.credits_used >= 0 ? `${result.credits_used} credits` : null,
-    Number.isFinite(result?.generation_time_ms) && result.generation_time_ms > 0
-      ? `${(result.generation_time_ms / 1000).toFixed(1)} s` : null,
-  ].filter(Boolean).join(' · ');
+  const splitAllowed = geometry === 'aligned' && canCompareOperationAligned(candidateOperation);
+  const mode = view === 'split' && !splitAllowed ? 'after' : view;
+  // At 100%, one decoded source pixel occupies one CSS pixel (200%=2 CSS px).
+  // A fixed-height object-contain container would otherwise pretend to be 100%
+  // while silently reducing detail on tall/large photographs.
+  const naturalSize = mode === 'before' ? naturalSizes.before : naturalSizes.after;
+  const inspectedCanvas = nativeInspectionCanvasSize(naturalSize, zoom)
+    || { width: '100%', height: 340 };
+  const executionLabel = result?.provider || 'Local / Core preview';
+  const creditLabel = Number.isFinite(result?.credits_used) && result.credits_used > 0
+    ? ` · ${result.credits_used} credits` : '';
+  const durationLabel = Number.isFinite(result?.generation_time_ms) && result.generation_time_ms > 0
+    ? ` · ${(result.generation_time_ms / 1000).toFixed(1)}s` : '';
 
   return (
-    <section aria-label="Result quality inspector" className="border border-border/60 rounded-2xl p-3 space-y-3" data-testid="result-quality-inspector">
+    <section className="border border-border/60 rounded-2xl p-3 space-y-3" aria-label="Review pending image before accepting">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex rounded-lg border border-border overflow-hidden text-xs" role="group" aria-label="Compare modes">
-          {['before', 'after', 'split'].map((value) => (
-            <button key={value} type="button" onClick={() => setMode(value)}
-              aria-pressed={mode === value}
-              disabled={value === 'split' && !sameGeometry}
-              className={`px-3 py-2 min-h-9 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40 ${mode === value ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>
-              {value === 'split' ? 'Split view' : value === 'before' ? 'Before' : 'After'}
-            </button>
-          ))}
+        <div className="flex rounded-lg border border-border overflow-hidden text-xs" role="group" aria-label="Image comparison mode">
+          <button type="button" aria-pressed={mode === 'before'} onClick={() => setView('before')}
+            className={`px-3 py-1.5 ${mode === 'before' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>Before</button>
+          <button type="button" aria-pressed={mode === 'after'} onClick={() => setView('after')}
+            className={`px-3 py-1.5 ${mode === 'after' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>After</button>
+          <button type="button" aria-pressed={mode === 'split'} disabled={!splitAllowed} onClick={() => setView('split')}
+            className={`px-3 py-1.5 disabled:opacity-40 ${mode === 'split' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>Split</button>
         </div>
-        <div className="flex items-center gap-1" role="group" aria-label="Synchronized image zoom">
-          <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => changeZoom('out')}
-            disabled={zoom === 1} className="rounded-md p-2 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-            <ZoomOut className="h-4 w-4" />
-          </button>
-          <span className="text-xs text-muted-foreground tabular-nums w-8 text-center" aria-label={`Preview zoom ${zoom} times fit`}>{zoom}×</span>
-          <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => changeZoom('in')}
-            disabled={zoom === 4} className="rounded-md p-2 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-            <ZoomIn className="h-4 w-4" />
-          </button>
-          <button type="button" aria-label="Reset image view" title="Reset view" onClick={resetView}
-            className="rounded-md p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-            <Scan className="h-4 w-4" />
-          </button>
-        </div>
+        <span className="text-[11px] text-muted-foreground">
+          {executionLabel}{creditLabel}{durationLabel}
+        </span>
       </div>
 
-      {metadata && <p className="text-[11px] text-muted-foreground" aria-label="Provided execution metadata">{metadata}</p>}
-      <div
-        data-testid="quality-compare-viewport"
-        role="region" tabIndex={0} aria-label="Before and after image inspection. Drag to pan when zoomed. Use arrow keys to pan."
-        className={`relative isolate w-full h-[min(65vw,420px)] min-h-[260px] max-h-[520px] rounded-xl overflow-hidden bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${zoom > 1 ? 'touch-none cursor-grab' : 'touch-pan-y'}`}
-        onPointerDown={pointerDown} onPointerMove={pointerMove}
-        onPointerUp={pointerUp} onPointerCancel={pointerCancel}
-        onKeyDown={handleKeys}
-      >
-        {beforeUrl && <img ref={beforeImageRef} src={beforeUrl} alt="before" draggable={false}
-          onLoad={(event) => setBeforeSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
-          onError={() => { setBeforeSize(null); setImageErrors((s) => ({ ...s, before: true })); }}
-          className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-          style={transform} />}
-        {afterUrl && <div className="absolute inset-0 pointer-events-none" style={{ clipPath: `inset(0 0 0 ${afterClipLeft}%)` }}>
-          <img ref={afterImageRef} src={afterUrl} alt="after" draggable={false}
-            onLoad={(event) => setAfterSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
-            onError={() => { setAfterSize(null); setImageErrors((s) => ({ ...s, after: true })); }}
-            className="absolute inset-0 w-full h-full object-contain" style={transform} />
-        </div>}
-        {mode === 'split' && sameGeometry && <>
-          <div aria-hidden="true" className="absolute inset-y-0 w-[2px] bg-white shadow-md pointer-events-none"
-            style={{ left: `${split}%` }} />
-          <span aria-hidden="true" className="absolute top-2 left-2 rounded bg-black/70 px-2 py-1 text-xs text-white">Before</span>
-          <span aria-hidden="true" className="absolute top-2 right-2 rounded bg-black/70 px-2 py-1 text-xs text-white">After</span>
-        </>}
-        {(imageErrors.before || imageErrors.after || !beforeUrl || !afterUrl) && (
-          <p role="alert" className="absolute inset-x-3 bottom-3 rounded bg-destructive/95 p-2 text-sm text-destructive-foreground">
-            Preview image unavailable. The source or result could not be loaded.
-          </p>
+      {(naturalSizes.before || naturalSizes.after) && (
+        <p className="text-xs text-muted-foreground" role="status">
+          Source: {naturalSizes.before ? `${naturalSizes.before.width}×${naturalSizes.before.height}` : 'unavailable'}
+          {' → '}
+          Candidate: {naturalSizes.after ? `${naturalSizes.after.width}×${naturalSizes.after.height}` : 'unavailable'} pixels
+        </p>
+      )}
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2">
+          <label htmlFor="editor-preview-zoom">Inspection zoom</label>
+          <select id="editor-preview-zoom" aria-label="Inspection zoom" value={zoom} disabled={!naturalSize}
+            onChange={(event) => setZoom(Number(event.target.value))}
+            className="rounded-md border border-border bg-background px-2 py-1">
+            <option value={1}>100%</option>
+            <option value={2}>200%</option>
+          </select>
+        </div>
+        {mode === 'split' && (
+          <label className="flex flex-1 items-center gap-2 min-w-[160px] max-w-xs">
+            Split boundary
+            <input aria-label="Split boundary" type="range" min="0" max="100" step="1"
+              value={splitPosition} onChange={(event) => setSplitPosition(Number(event.target.value))}
+              className="flex-1 accent-primary" />
+            <span className="tabular-nums">{splitPosition}%</span>
+          </label>
         )}
       </div>
 
-      {mode === 'split' && sameGeometry && (
-        <label className="block text-xs text-muted-foreground" htmlFor="result-compare-split">
-          Comparison position: {split}% from left
-          <input id="result-compare-split" type="range" aria-label="Comparison split position"
-            className="block w-full mt-2 accent-primary" min="0" max="100" step="1"
-            value={split} onChange={(event) => setSplit(clampComparisonSplit(Number(event.target.value)))} />
-        </label>
-      )}
-      {!sameGeometry && beforeSize && afterSize && (
+      {geometry === 'aligned' && !canCompareOperationAligned(candidateOperation) && (
         <p role="status" className="text-xs text-muted-foreground">
-          Split view requires identical image dimensions. Use Before / After for this result.
+          This operation may change image registration. Split inspection is disabled; review Before and After separately.
         </p>
       )}
+      {geometry === 'different' && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Images have different pixel dimensions. Split comparison is disabled to avoid false alignment.
+        </p>
+      )}
+      {geometry === 'unavailable' && (
+        <p role="status" className="text-xs text-muted-foreground">
+          One image cannot be measured. Before and After remain available when its preview loads.
+        </p>
+      )}
+
+      <div className="overflow-auto rounded-xl bg-muted max-h-[420px]" {...gestures.handlers}>
+        <div className="relative" style={inspectedCanvas}>
+          {mode === 'split' ? (
+            <>
+              <img src={afterUrl} alt="Edited image, right side of split" draggable={false}
+                className="absolute inset-0 h-full w-full object-fill" />
+              <img src={beforeUrl} alt="Original image, left side of split" draggable={false}
+                className="absolute inset-0 h-full w-full object-fill"
+                style={{ clipPath: `inset(0 ${100 - splitPosition}% 0 0)` }} />
+              <div aria-hidden="true" className="absolute top-0 bottom-0 w-px bg-primary pointer-events-none"
+                style={{ left: `${splitPosition}%` }} />
+            </>
+          ) : (
+            <img src={mode === 'before' ? beforeUrl : afterUrl}
+              alt={mode === 'before' ? 'Original image' : 'Unaccepted edited image'}
+              draggable={false} className="h-full w-full object-fill" />
+          )}
+        </div>
+      </div>
+
       <p className="text-[11px] text-muted-foreground">
-        {zoom}× relative to fitted preview (not actual-size pixels). Viewing does not change the Project or image bytes.
+        Zoom uses actual decoded image dimensions (one CSS pixel per source pixel at 100%). This remains a visual preview, not a pixel-level quality certificate. Accept alone commits to Project history.
       </p>
-      <div className="flex gap-2">
-        <Button onClick={onAccept} disabled={busy} className="flex-1">
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={onAccept} disabled={busy} className="flex-1 min-w-[100px]">
           {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />} Accept
         </Button>
         <Button variant="outline" onClick={onRetry} disabled={busy} className="rounded-xl">

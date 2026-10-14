@@ -13,6 +13,7 @@ import {
   GARMENT_TEXTURE_COMPOSITE_TRANSPARENT_SAMPLE_RGB_POLICY,
   GARMENT_TEXTURE_COMPOSITE_WRAP_MODE,
   compositeSourceOverSrgbRgba8,
+  compositeGarmentWithForegroundOcclusionRgba8,
   garmentEdgeFeatherRgba8,
   garmentTextureCompositeRgba8,
   garmentTextureMapRgba8,
@@ -157,6 +158,72 @@ test('gamma-encoded sRGB source-over uses deterministic integer premultiply/unpr
   assert.deepEqual([...compositeSourceOverSrgbRgba8(destination, hidden, 1, 1)], [...destination]);
   assert.deepEqual([...compositeSourceOverSrgbRgba8(hidden, source, 1, 1)], [...source]);
   assert.deepEqual([...compositeSourceOverSrgbRgba8(hidden, hidden, 1, 1)], [0, 0, 0, 0]);
+});
+
+test('foreground occlusion keeps front arm pixels, preserves visible garment colors, and blends fractional matte deterministically', () => {
+  const project = new Uint8ClampedArray([
+    10, 20, 30, 255, 40, 50, 60, 255, 70, 80, 90, 255,
+  ]);
+  const garment = new Uint8ClampedArray([
+    200, 100, 50, 255, 200, 100, 50, 255, 200, 100, 50, 255,
+  ]);
+  const coverage = new Uint8Array([0, 255, 128]);
+  const projectCopy = [...project];
+  const garmentCopy = [...garment];
+  const matteCopy = [...coverage];
+  const first = compositeGarmentWithForegroundOcclusionRgba8(project, garment, coverage, 3, 1);
+  assert.deepEqual([...first], [
+    200, 100, 50, 255,
+    40, 50, 60, 255,
+    135, 90, 70, 255,
+  ]);
+  assert.deepEqual([...compositeGarmentWithForegroundOcclusionRgba8(project, garment, coverage, 3, 1)], [...first]);
+  assert.deepEqual([...project], projectCopy);
+  assert.deepEqual([...garment], garmentCopy);
+  assert.deepEqual([...coverage], matteCopy);
+});
+
+test('empty foreground matte agrees byte-for-byte with existing source-over law; full matte restores exact Project source', () => {
+  const project = new Uint8Array([
+    1, 2, 3, 0,
+    10, 30, 200, 255,
+    10, 20, 30, 180,
+  ]);
+  const garment = new Uint8ClampedArray([
+    100, 90, 80, 250,
+    240, 7, 8, 128,
+    255, 0, 0, 255,
+  ]);
+  const noOcclusion = compositeGarmentWithForegroundOcclusionRgba8(
+    project, garment, new Uint8Array(3), 3, 1,
+  );
+  assert.deepEqual([...noOcclusion], [...compositeSourceOverSrgbRgba8(project, garment, 3, 1)]);
+  const fullyOccluded = compositeGarmentWithForegroundOcclusionRgba8(
+    project, garment, new Uint8ClampedArray([255, 255, 255]), 3, 1,
+  );
+  assert.deepEqual([...fullyOccluded], [...project]);
+});
+
+test('foreground occlusion fails closed on untrusted matte types, size, and RGBA geometry', () => {
+  const project = new Uint8ClampedArray(2 * 2 * 4);
+  const garment = new Uint8ClampedArray(2 * 2 * 4);
+  const valid = new Uint8Array(4);
+  assert.throws(
+    () => compositeGarmentWithForegroundOcclusionRgba8(project, garment, new Uint8Array(3), 2, 2),
+    /matte length must equal Project pixel count/,
+  );
+  assert.throws(
+    () => compositeGarmentWithForegroundOcclusionRgba8(project, garment, [0, 0, 0, 0] as any, 2, 2),
+    /matte must be one-byte Uint8 coverage/,
+  );
+  assert.throws(
+    () => compositeGarmentWithForegroundOcclusionRgba8(project, garment.subarray(0, 12), valid, 2, 2),
+    /garment layer RGBA length is invalid/,
+  );
+  assert.throws(
+    () => compositeGarmentWithForegroundOcclusionRgba8(project, garment, valid, 0, 2),
+    /width must be an exact integer/,
+  );
 });
 
 test('composed law texture-maps the exact Garment source view before the existing topology warp', () => {

@@ -1,3 +1,9 @@
+## 2026-10-14 protected-main integration boundary
+
+The experimental zoom/pan/split Quality Inspector from this research branch is preserved as `src/components/editor/QualityInspectorRND.jsx` with its original Node and real-Chromium tests, **not** used to overwrite the currently accepted `src/components/editor/ResultCompare.jsx`. The protected Editor's read-only compare semantics, explicit Core Accept/Discard/Retry callbacks, and #988 operation/geometry alignment restrictions remain unchanged. This research interface has NO authenticated Core FINAL write path or automatic production route. A future UX integration needs separate review of both implementations and preservation of source-bound mask/Project state. Local Quality Lab is gated behind `import.meta.env.DEV` plus explicit `VITE_BERS_EDITOR_PRO_LAB=true`; no paid, cloud or model route is enabled. Source license, real photo quality and release approval remain blocked.
+
+---
+
 # BERS Professional Local Pixel Engine — real image quality recovery
 
 **2026-10-10. Status: new, isolated R&D quality candidate, NOT production Photoshop parity or an authorized BERS Core tool.** Product owner rejected the visual quality of the existing displayed examples and instructed the team to raise local editing to a professional standard. This PR **starts fixing the pixel operations themselves**, not merely collecting more metrics.
