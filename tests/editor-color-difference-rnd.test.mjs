@@ -88,3 +88,14 @@ test('malformed inputs, alpha/mask mismatch and huge geometry fail closed',()=>{
   assert.throws(()=>inspectEditorColorDifferenceRgba8(rgba,rgba,8192,8192),/geometry/u);
   assert.throws(()=>inspectEditorColorDifferenceRgba8(rgba,Uint16Array.from([1,2]),1,1),/RGBA8/u);
 });
+
+test('high chroma Delta-E overflow cannot report a smaller p95 upper bound',()=>{
+  const source=Uint8Array.from([0,255,0,255]); // saturated green
+  const result=Uint8Array.from([255,0,255,255]); // saturated magenta
+  const report=inspectEditorColorDifferenceRgba8(source,result,1,1);
+  assert.equal(report.evaluatedOpaquePositions,1);
+  assert.ok(report.maximumDeltaE2000>100,'sRGB can exceed Delta-E 100');
+  assert.ok(report.p95DeltaE2000UpperBound>=report.maximumDeltaE2000,
+    'single-pixel p95 upper bound must contain the observed color difference');
+  assert.equal(report.qualityApproved,false);
+});
