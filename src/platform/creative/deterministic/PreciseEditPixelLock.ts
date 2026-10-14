@@ -1,0 +1,249 @@
+/**
+ * Research-only precise edit compositing inspired by a *behavior*, not copied
+ * Ideogram code or weights. Does not change Core authority or offer inference.
+ * Pixels outside a reviewed binary edit matte are source-byte-exact.
+ */
+export function composePreciseEditRgba8(
+  source: Uint8Array | Uint8ClampedArray,
+  candidate: Uint8Array | Uint8ClampedArray,
+  matte: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+): Uint8ClampedArray {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+      width < 1 || height < 1 || width > 16_384 || height > 16_384 ||
+      width * height > 24_000_000) {
+    throw new Error('Invalid bounded image geometry');
+  }
+  const pixels = width * height;
+  if (!(source instanceof Uint8Array || source instanceof Uint8ClampedArray) ||
+      !(candidate instanceof Uint8Array || candidate instanceof Uint8ClampedArray) ||
+      !(matte instanceof Uint8Array || matte instanceof Uint8ClampedArray) ||
+      source.byteLength !== pixels * 4 || candidate.byteLength !== pixels * 4 ||
+      matte.byteLength !== pixels) {
+    throw new Error('Exact RGBA8 image and R8 matte byte lengths required');
+  }
+  // Validate the whole matte before writing to the result: no partial editing
+  // or silently introducing alpha fringes from ambiguous soft masks.
+  for (let i = 0; i < pixels; i += 1) {
+    if (matte[i] !== 0 && matte[i] !== 255) {
+      throw new Error('Precise edit requires a strictly binary reviewed matte');
+    }
+  }
+  const output = new Uint8ClampedArray(source);
+  for (let i = 0; i < pixels; i += 1) {
+    if (matte[i] === 255) {
+      const offset = i * 4;
+      output.set(candidate.subarray(offset, offset + 4), offset);
+    }
+  }
+  return output;
+}
+
+
+/**
+ * High-resolution, source-registered local edit preview. The candidate is
+ * cropped to the specified exact integer ROI; the original frame is never
+ * resampled, even if the candidate was produced by a separate local model.
+ *
+ * R&D only: caller-provided rectangles/mattes convey NO Core/Project authority.
+ * Callers must independently bind both to a current Project image SHA and
+ * verify tenant ownership before this could be considered for production.
+ */
+export type PreciseEditPatchRect = Readonly<{
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}>;
+
+export function composePreciseEditPatchRgba8(
+  source: Uint8Array | Uint8ClampedArray,
+  sourceWidth: number,
+  sourceHeight: number,
+  candidatePatch: Uint8Array | Uint8ClampedArray,
+  mattePatch: Uint8Array | Uint8ClampedArray,
+  rect: PreciseEditPatchRect,
+): Uint8ClampedArray {
+  if (!Number.isSafeInteger(sourceWidth) || !Number.isSafeInteger(sourceHeight) ||
+      sourceWidth < 1 || sourceHeight < 1 ||
+      sourceWidth > 16_384 || sourceHeight > 16_384 ||
+      sourceWidth * sourceHeight > 24_000_000) {
+    throw new Error('Precise edit source geometry is invalid');
+  }
+  if (!(source instanceof Uint8Array || source instanceof Uint8ClampedArray) ||
+      source.byteLength !== sourceWidth * sourceHeight * 4) {
+    throw new Error('Precise edit source RGBA byte length is invalid');
+  }
+  if (!rect || typeof rect !== 'object' ||
+      !Number.isSafeInteger(rect.left) || !Number.isSafeInteger(rect.top) ||
+      !Number.isSafeInteger(rect.width) || !Number.isSafeInteger(rect.height) ||
+      rect.left < 0 || rect.top < 0 || rect.width < 1 || rect.height < 1 ||
+      rect.left + rect.width > sourceWidth || rect.top + rect.height > sourceHeight ||
+      rect.width * rect.height > 4_194_304) {
+    throw new Error('Precise edit patch geometry must be a bounded in-frame rectangle');
+  }
+  const patchPixels = rect.width * rect.height;
+  if (!(candidatePatch instanceof Uint8Array || candidatePatch instanceof Uint8ClampedArray) ||
+      !(mattePatch instanceof Uint8Array || mattePatch instanceof Uint8ClampedArray) ||
+      candidatePatch.byteLength !== patchPixels * 4 ||
+      mattePatch.byteLength !== patchPixels) {
+    throw new Error('Precise edit patch requires exact RGBA8 pixels and R8 matte lengths');
+  }
+  // Fail before allocating/copying the output on any invalid matte byte.
+  for (let index = 0; index < patchPixels; index += 1) {
+    if (mattePatch[index] !== 0 && mattePatch[index] !== 255) {
+      throw new Error('Precise edit patch matte must be strictly binary');
+    }
+  }
+
+  const result = new Uint8ClampedArray(source);
+  for (let row = 0; row < rect.height; row += 1) {
+    for (let column = 0; column < rect.width; column += 1) {
+      const patchIndex = row * rect.width + column;
+      if (mattePatch[patchIndex] === 0) continue;
+      const patchOffset = patchIndex * 4;
+      const destinationOffset = ((rect.top + row) * sourceWidth + rect.left + column) * 4;
+      result.set(candidatePatch.subarray(patchOffset, patchOffset + 4), destinationOffset);
+    }
+  }
+  return result;
+}
+
+
+/**
+ * Independent byte-for-byte postcondition for candidate previews, including
+ * ones generated by a model rather than this compositor. Reject any changed
+ * source channel outside the allowed binary matte; preserve source alpha and
+ * hidden RGB. An integrity PASS is NOT a semantic/photorealism quality PASS.
+ */
+export function verifyPreciseEditPixelIntegrityRgba8(
+  source: Uint8Array | Uint8ClampedArray,
+  result: Uint8Array | Uint8ClampedArray,
+  matte: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+): Readonly<{
+  allowedPixelCount: number;
+  changedAllowedPixelCount: number;
+  protectedPixelCount: number;
+  changedProtectedPixelCount: 0;
+}> {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+      width < 1 || height < 1 || width > 16_384 || height > 16_384 ||
+      width * height > 24_000_000) {
+    throw new Error('Precise edit integrity geometry is invalid');
+  }
+  const pixels = width * height;
+  if (!(source instanceof Uint8Array || source instanceof Uint8ClampedArray) ||
+      !(result instanceof Uint8Array || result instanceof Uint8ClampedArray) ||
+      !(matte instanceof Uint8Array || matte instanceof Uint8ClampedArray) ||
+      source.byteLength !== pixels * 4 ||
+      result.byteLength !== pixels * 4 ||
+      matte.byteLength !== pixels) {
+    throw new Error('Precise edit integrity requires exact RGBA8/R8 byte lengths');
+  }
+  let allowedPixelCount = 0;
+  let changedAllowedPixelCount = 0;
+  for (let pixel = 0; pixel < pixels; pixel += 1) {
+    const coverage = matte[pixel];
+    if (coverage !== 0 && coverage !== 255) {
+      throw new Error('Precise edit integrity requires strictly binary edit matte');
+    }
+    const index = pixel * 4;
+    const changed = source[index] !== result[index] ||
+      source[index + 1] !== result[index + 1] ||
+      source[index + 2] !== result[index + 2] ||
+      source[index + 3] !== result[index + 3];
+    if (coverage === 0 && changed) {
+      throw new Error(`Precise edit leaked outside authorized matte at pixel ${pixel}`);
+    }
+    if (coverage === 255) {
+      allowedPixelCount += 1;
+      if (changed) changedAllowedPixelCount += 1;
+    }
+  }
+  return Object.freeze({
+    allowedPixelCount,
+    changedAllowedPixelCount,
+    protectedPixelCount: pixels - allowedPixelCount,
+    changedProtectedPixelCount: 0 as const,
+  });
+}
+
+
+/**
+ * Optional inward-only, alpha-correct edit seam for high-resolution local
+ * previews. Coverage is generated from the validated binary matte, never from
+ * untrusted free-form floating point values. Source bytes outside the edit
+ * remain exact; interior candidate pixels beyond radius are copied exactly.
+ *
+ * Manhattan-distance falloff is deterministic, capped at 16 pixels and linear
+ * in the full-frame pixel count. This changes pixels only INSIDE the mask.
+ * It is independent R&D, not an admitted F4/F5 Core pixel operation.
+ */
+export function composePreciseEditFeatheredRgba8(
+  source: Uint8Array | Uint8ClampedArray,
+  candidate: Uint8Array | Uint8ClampedArray,
+  matte: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  radius: number,
+): Uint8ClampedArray {
+  if (!Number.isSafeInteger(radius) || radius < 0 || radius > 16) {
+    throw new Error('Precise edit feather radius must be an integer from 0 to 16');
+  }
+  // This preflights all buffer lengths, geometry and matte bytes.
+  const result = composePreciseEditRgba8(source, candidate, matte, width, height);
+  if (radius === 0) return result;
+  const pixels = width * height;
+  const maxDistance = radius + 1;
+  const distance = new Uint8Array(pixels);
+  for (let pixel = 0; pixel < pixels; pixel += 1) {
+    distance[pixel] = matte[pixel] === 0 ? 0 : maxDistance;
+  }
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = y * width + x;
+      if (distance[i] === 0) continue;
+      let d = distance[i];
+      if (x === 0 || y === 0) d = Math.min(d, 1);
+      if (x > 0) d = Math.min(d, distance[i - 1] + 1);
+      if (y > 0) d = Math.min(d, distance[i - width] + 1);
+      distance[i] = Math.min(d, maxDistance);
+    }
+  }
+  for (let y = height - 1; y >= 0; y -= 1) {
+    for (let x = width - 1; x >= 0; x -= 1) {
+      const i = y * width + x;
+      if (distance[i] === 0) continue;
+      let d = distance[i];
+      if (x === width - 1 || y === height - 1) d = Math.min(d, 1);
+      if (x + 1 < width) d = Math.min(d, distance[i + 1] + 1);
+      if (y + 1 < height) d = Math.min(d, distance[i + width] + 1);
+      distance[i] = Math.min(d, maxDistance);
+    }
+  }
+  for (let pixel = 0; pixel < pixels; pixel += 1) {
+    const d = distance[pixel];
+    if (d === 0 || d > radius) continue;
+    const coverage = Math.floor((255 * (2 * d - 1) + radius) / (2 * radius));
+    const offset = pixel * 4;
+    const srcAlpha = source[offset + 3];
+    const candidateAlpha = candidate[offset + 3];
+    const srcWeight = 255 - coverage;
+    const alphaNumerator = srcAlpha * srcWeight + candidateAlpha * coverage;
+    result[offset + 3] = Math.floor((alphaNumerator + 127) / 255);
+    if (alphaNumerator === 0) {
+      // Both samples are transparent; never expose fabricated hidden RGB.
+      result.set(source.subarray(offset, offset + 3), offset);
+      continue;
+    }
+    for (let channel = 0; channel < 3; channel += 1) {
+      const numerator = source[offset + channel] * srcAlpha * srcWeight +
+        candidate[offset + channel] * candidateAlpha * coverage;
+      result[offset + channel] = Math.floor((numerator + Math.floor(alphaNumerator / 2)) / alphaNumerator);
+    }
+  }
+  return result;
+}
