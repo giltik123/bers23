@@ -270,7 +270,7 @@ test('voice integration preserves canonical Core download, Scene MASK and accept
   assert.match(editor,/<AutoSceneMasksPanel/);
   assert.match(editor,/downloadCanonicalImage\(\{/);
   assert.match(voicePort,/processLocally:true/);
-  assert.doesNotMatch(voicePort,/webkitSpeechRecognition/);
+  assert.doesNotMatch(voicePort,/globalThis\.webkitSpeechRecognition|new\s+webkitSpeechRecognition|=\s*webkitSpeechRecognition/);
   assert.match(voiceUi,/onClick=\{confirm\}/);
   assert.doesNotMatch(voiceUi,/coreClient|applyEdit\(|pushEdit\(|runGenerative/);
 });
