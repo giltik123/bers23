@@ -158,5 +158,9 @@ test('Editor uses file-download handler rather than a navigation to an image tab
   const editor=await readFile('src/pages/Editor.jsx','utf8');
   assert.match(editor,/downloadCanonicalImage\(/);
   assert.match(editor,/onClick=\{handleDownload\}/);
-  assert.doesNotMatch(editor,/<a href=\{project\.current_image_url\} target="_blank"/);
+  // A separate View image link is legitimate. The Download action must
+  // remain an explicit click-to-save Core Blob, not a disguised new tab.
+  assert.match(editor, /aria-label="View full-size image in a new tab"/);
+  assert.match(editor, /aria-label="Download current Core image"/);
+  assert.doesNotMatch(editor, /<a[^>]*aria-label="Download"[^>]*>/u);
 });
