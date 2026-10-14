@@ -3,18 +3,64 @@ import { Check, Trash2, RotateCcw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAdaptiveGestures } from '@/components/adaptive/AdaptiveGestures';
 import { canCompareOperationAligned, canComparePixelsAligned, nativeInspectionCanvasSize } from './compareGeometryPolicy';
+import { reviewCandidateIdentity, canAcceptReviewedCandidate } from '@/application/editor/ai-first/resultReviewGate';
+
+const FASHION_REVIEW = Object.freeze([
+  ['fit', 'Одежда сидит по телу, плечам и талии естественно'],
+  ['occlusion', 'Руки, волосы и контуры тела правильно перекрывают ткань'],
+  ['texture', 'Ткань, принт, швы и логотипы без заметных искажений'],
+  ['identity', 'Лицо, освещение и фон остались естественными'],
+]);
+const EMPTY_REVIEW = Object.freeze({ fit: false, occlusion: false, texture: false, identity: false });
 
 // A read-only inspector for an unaccepted candidate. The Core-owned Accept,
 // Discard, and Retry callbacks remain the ONLY controls changing Project state.
 // Split view is admitted only after both images have identical real geometry;
 // cropping/rotation/failed image delivery must never masquerade as aligned pixels.
-export default function ResultCompare({ beforeUrl, result, candidateOperation, onAccept, onDiscard, onRetry, busy }) {
+export default function ResultCompare({ beforeUrl, result, candidateOperation, kind = null, editScope = null, onAccept, onDiscard, onRetry, busy }) {
   const [view, setView] = useState('after');
   const [splitPosition, setSplitPosition] = useState(50);
   const [zoom, setZoom] = useState(1);
   const [geometry, setGeometry] = useState('loading');
   const [naturalSizes, setNaturalSizes] = useState({ before: null, after: null });
   const afterUrl = result?.preview_url || result?.image_url || '';
+  const [fashionReview, setFashionReview] = useState(EMPTY_REVIEW);
+  const [scopedReview, setScopedReview] = useState(false);
+  const [acknowledgedIdentity, setAcknowledgedIdentity] = useState(null);
+  const [loaded, setLoaded] = useState({ before: null, after: null });
+  const [failed, setFailed] = useState({ before: null, after: null });
+  const fashion = kind === 'FASHION_TRYON';
+  const scopedGeneration = kind === 'AI_SCOPED_GENERATION';
+  const allFashionAccepted = !fashion || Object.values(fashionReview).every(Boolean);
+  const identity = reviewCandidateIdentity({
+    beforeUrl, afterUrl, finalArtifactId: result?.finalArtifactId,
+    executionId: result?.executionId, kind, scope: editScope,
+  });
+  const needsHumanReview = scopedGeneration || fashion;
+  const reviewImagesReady = loaded.before === identity && loaded.after === identity
+    && failed.before !== identity && failed.after !== identity;
+  const markLoaded = role => {
+    setLoaded(previous => ({ ...previous, [role]: identity }));
+    setFailed(previous => ({ ...previous, [role]: null }));
+  };
+  const markFailed = role => {
+    setFailed(previous => ({ ...previous, [role]: identity }));
+    setLoaded(previous => ({ ...previous, [role]: null }));
+  };
+  const reviewBlocked = needsHumanReview && !canAcceptReviewedCandidate({
+    identity, acknowledgedIdentity,
+    afterLoadedIdentity: loaded.after, beforeLoadedIdentity: loaded.before,
+    afterErrorIdentity: failed.after, beforeErrorIdentity: failed.before,
+    requiresBefore: scopedGeneration || fashion,
+    requiresReview: needsHumanReview,
+    reviewComplete: scopedGeneration ? scopedReview : allFashionAccepted,
+    busy,
+  });
+  useEffect(() => {
+    setFashionReview(EMPTY_REVIEW);
+    setScopedReview(false);
+    setAcknowledgedIdentity(identity);
+  }, [identity]);
   const gestures = useAdaptiveGestures({
     onSwipeLeft: () => setView('after'),
     onSwipeRight: () => setView('before'),
@@ -152,8 +198,10 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, o
           {mode === 'split' ? (
             <>
               <img src={afterUrl} alt="Edited image, right side of split" draggable={false}
+                onLoad={()=>markLoaded('after')} onError={()=>markFailed('after')}
                 className="absolute inset-0 h-full w-full object-fill" />
               <img src={beforeUrl} alt="Original image, left side of split" draggable={false}
+                onLoad={()=>markLoaded('before')} onError={()=>markFailed('before')}
                 className="absolute inset-0 h-full w-full object-fill"
                 style={{ clipPath: `inset(0 ${100 - splitPosition}% 0 0)` }} />
               <div aria-hidden="true" className="absolute top-0 bottom-0 w-px bg-primary pointer-events-none"
@@ -161,6 +209,8 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, o
             </>
           ) : (
             <img src={mode === 'before' ? beforeUrl : afterUrl}
+              onLoad={()=>markLoaded(mode === 'before' ? 'before' : 'after')}
+              onError={()=>markFailed(mode === 'before' ? 'before' : 'after')}
               alt={mode === 'before' ? 'Original image' : 'Unaccepted edited image'}
               draggable={false} className="h-full w-full object-fill" />
           )}
@@ -170,8 +220,34 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, o
       <p className="text-[11px] text-muted-foreground">
         Zoom uses actual decoded image dimensions (one CSS pixel per source pixel at 100%). This remains a visual preview, not a pixel-level quality certificate. Accept alone commits to Project history.
       </p>
+      {(failed.before === identity || failed.after === identity) && needsHumanReview && (
+        <p role="alert" className="text-sm text-destructive">Не удалось загрузить изображение для проверки. Принятие заблокировано.</p>
+      )}
+      {needsHumanReview && !reviewImagesReady && (
+        <p role="status" className="text-xs text-muted-foreground">Перед принятием просмотрите «Before» и «After»; необходимо загрузить обе версии текущего результата.</p>
+      )}
+      {scopedGeneration && (
+        <label className="flex gap-2 text-sm rounded-xl border p-3" aria-label="Ручная проверка ИИ">
+          <input type="checkbox" disabled={busy || !reviewImagesReady}
+            checked={scopedReview} onChange={event=>setScopedReview(event.target.checked)}/>
+          <span>{editScope==='MASKED' ? 'Я сравнил изображение и проверил, что вне выбранной Core-маски ничего не изменилось.' : 'Я просмотрел изображение и проверил лицо, руки, объекты, текст и свет.'} Это ручная оценка, не сертификат качества.</span>
+        </label>
+      )}
+      {fashion && (
+        <section className="rounded-xl border p-3 space-y-2" aria-label="Ручная оценка реализма Fashion">
+          <p className="font-medium text-sm">Принятие примерки требует вашей проверки посадки и перекрытий.</p>
+          {FASHION_REVIEW.map(([key,label])=>(
+            <label key={key} className="flex gap-2 items-start text-sm">
+              <input type="checkbox" disabled={busy || !reviewImagesReady}
+                checked={fashionReview[key]}
+                onChange={event=>setFashionReview(previous=>({...previous,[key]:event.target.checked}))}/>
+              <span>{label}</span>
+            </label>
+          ))}
+        </section>
+      )}
       <div className="flex flex-wrap gap-2">
-        <Button onClick={onAccept} disabled={busy} className="flex-1 min-w-[100px]">
+        <Button onClick={onAccept} disabled={busy || reviewBlocked} className="flex-1 min-w-[100px]">
           {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />} Accept
         </Button>
         <Button variant="outline" onClick={onRetry} disabled={busy} className="rounded-xl">

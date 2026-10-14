@@ -27,7 +27,13 @@ export class CanonicalArtifactHydrator {
     for (const id of maskIds) {
       const claim = this.authority.external.resolveStoredMask(id, scope); const stored = await this.authority.masks.load(claim.storageId, scope);
       if (!stored) throw new Error('Canonical MASK is unavailable');
-      if (stored.sourceImageStorageId && (!sourceStorageId || stored.sourceImageStorageId !== sourceStorageId)) throw new Error('Canonical MASK source lineage does not match the input image');
+      // A same-sized MASK is NOT evidence of belonging to this source.
+      // Old unlineaged MASK records may still exist for migration/inspection,
+      // but must never drive a controlled provider edit.
+      if (!sourceStorageId || !stored.sourceImageStorageId)
+        throw new Error('Canonical MASK source lineage is required for controlled editing; re-save the selection on the current image');
+      if (stored.sourceImageStorageId !== sourceStorageId)
+        throw new Error('Canonical MASK source lineage does not match the input image');
       const decoded = await decodeMask(stored.png);
       if (decoded.width !== stored.width || decoded.height !== stored.height || decoded.width !== original.width || decoded.height !== original.height) throw new Error('Canonical MASK dimensions must match ORIGINAL');
       artifacts.push({ id, kind: 'mask', value: { width: decoded.width, height: decoded.height, alpha: decoded.alpha, source: 'USER', coordinateSpace: 'ORIGINAL' }, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: 'MASK', image: { width: decoded.width, height: decoded.height, format: 'ALPHA8', orientation: 1, colorSpace: 'gray', alpha: true }, metadata: Object.freeze({ sha256: createHash('sha256').update(decoded.alpha).digest('hex'), sourceImageStorageId: stored.sourceImageStorageId, parentMaskStorageId: stored.parentMaskStorageId, producerOperation: stored.producerOperation }) });

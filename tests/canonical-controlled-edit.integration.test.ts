@@ -37,6 +37,54 @@ async function execute(f: ReturnType<typeof fixture>, body: ExecuteInput) {
 }
 const body = (suffix: string, preserveMode: 'STRICT' | 'BALANCED' | 'CREATIVE' = 'STRICT'): ExecuteInput => ({ clientRequestId: `controlled-${suffix}`, projectId: scope.projectId, artifactId: 'original', maskArtifactIds: ['mask'], selectedObjectIds: ['selected-object'], intent: 'replace selected object locally', preserveMode, budget: { credits: 1 } });
 
+test('legacy HTTP Core refuses ambiguous multi-MASK/selection instructions', async () => {
+  for (const selection of [
+    { selectedObjectIds: ['selected-a','selected-b'], maskArtifactIds: ['mask','mask-2'] },
+    { selectedObjectIds: ['selected-a','selected-b'], maskArtifactIds: ['mask'] },
+    { selectedObjectIds: ['selected-a'], maskArtifactIds: ['mask','mask'] },
+  ]) {
+    const f = fixture({
+      original: artifact('original','ORIGINAL',rgba(4,4)),
+      mask: artifact('mask','MASK',maskValue(4,4,{x:1,y:1,width:2,height:2})),
+    });
+    const core = createCreativeCore(f.dependencies);
+    await assert.rejects(
+      () => core.execute(
+        { tenantId:scope.tenantId, userId:scope.userId },
+        { ...body('multi-mask'), ...selection },
+      ),
+      (error: any) => error?.status === 400 && /exactly one object and one MASK/.test(error?.message),
+    );
+    assert.deepEqual(f.billing, []);
+    assert.deepEqual(f.providerRequests, []);
+  }
+});
+
+test('legacy HTTP Core rejects incomplete object/mask pairs before provider and Billing', async () => {
+  for (const [selectedObjectIds, maskArtifactIds] of [
+    [['entry-selected'], []],
+    [[], ['mask']],
+  ] as const) {
+    const f = fixture({
+      original: artifact('original', 'ORIGINAL', rgba(4, 4)),
+      mask: artifact('mask', 'MASK', maskValue(4, 4, { x: 1, y: 1, width: 2, height: 2 })),
+    });
+    const core = createCreativeCore(f.dependencies);
+    const intent = {
+      ...body('no-implicit-global'),
+      selectedObjectIds,
+      maskArtifactIds,
+    };
+    await assert.rejects(
+      () => core.execute({ tenantId: scope.tenantId, userId: scope.userId }, intent),
+      (error: any) => error?.status === 400 && /both selected objects and canonical MASK/.test(error?.message),
+    );
+    assert.deepEqual(f.billing, []);
+    assert.deepEqual(f.providerRequests, []);
+    assert.equal(f.outcome(), undefined);
+  }
+});
+
 test('HTTP canonical controlled edit routes selection, sends only ROI, records lineage, composites and commits once', async () => {
   const original = artifact('original', 'ORIGINAL', rgba(6000, 4000), { width: 6000, height: 4000, format: 'raw', orientation: 1 }); const selection = artifact('mask', 'MASK', maskValue(6000, 4000, { x: 2400, y: 1200, width: 1200, height: 1600 })); const f = fixture({ original, mask: selection }); const result = await execute(f, body('vertical'));
   assert.equal(result.response.status, 202); assert.equal(result.outcome?.status, 'SUCCESS'); assert.deepEqual(f.billing, ['reserve', 'commit']); assert.equal(f.providerRequests.length, 1); assert.equal(f.providerRequests[0].operationType, 'CONTROLLED_LOCAL_EDIT'); const providerInput = f.providerRequests[0].artifacts.find(item => item.metadata?.artifactRole === 'ROI_INPUT')?.value as PixelImage; assert.ok(providerInput.width >= 1200 && providerInput.width < 2000); assert.ok(providerInput.height >= 1600 && providerInput.height < 2400); assert.notDeepEqual([providerInput.width, providerInput.height], [6000, 4000]);

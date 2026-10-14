@@ -111,7 +111,11 @@ test('login to Projects to Editor critical path has no generic legacy API depend
   assert.doesNotMatch(critical, /\/config\/public|\/data\/|\/assets|\/commands\//);
   assert.doesNotMatch(critical, /coreClient\.entities|coreClient\.functions\.invoke|UploadFile/);
   assert.match(projectService, /coreClient\.projects/);
-  assert.match(editor, /inputArtifactId:\s*project\.current_image_artifact_id/);
+  // New scoped AI Studio commands bind a reviewed source; legacy requests
+  // still fall back to the current canonical Project source.
+  assert.match(editor, /inputArtifactId:\s*guardedScope\?\.sourceArtifactId\s*\?\?\s*project\.current_image_artifact_id/);
+  assert.match(editor, /expectedSourceArtifactId:\s*aiScope\.expectedSourceArtifactId/);
+  assert.match(editor, /bindGenerativeScope\(/);
 });
 
 test('creative client uses explicit Core endpoint and preserves public error fields', async () => {
