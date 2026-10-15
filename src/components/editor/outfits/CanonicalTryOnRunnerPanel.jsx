@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { coreClient } from '@/api/coreClient';
@@ -17,6 +17,7 @@ const IDLE_HOST = Object.freeze({ active: false, busy: false, disposed: false, h
 export default function CanonicalTryOnRunnerPanel({
   project,
   voiceQuery = null,
+  outfitRevision = 0,
   state = null,
   busy = false,
   disabled = false,
@@ -37,28 +38,40 @@ export default function CanonicalTryOnRunnerPanel({
   const [selectedEntryId, setSelectedEntryId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const loadRequestRef = useRef(0);
 
   const hostActive = Boolean(state?.host?.active);
   const lockedSelection = hostActive ? state?.selection : null;
 
   const load = useCallback(async () => {
+    // A changed Outfit revision must refresh the chooser, but never replace
+    // an admitted/in-flight Core Try-On selection.
     if (hostActive || busy) return;
+    const request = ++loadRequestRef.current;
     setLoading(true);
     setError('');
     try {
       const snapshot = await model.load();
-      setOutfits(snapshot.outfits.filter((outfit) => outfit.status === 'ACTIVE' && outfit.entries.length > 0));
+      if (request !== loadRequestRef.current) return;
+      const selectable = snapshot.outfits.filter((outfit) => outfit.status === 'ACTIVE' && outfit.entries.length > 0);
+      setOutfits(selectable);
       setGarments(snapshot.garments);
-      setSelectedOutfitId((current) => snapshot.outfits.some((outfit) => outfit.id === current) ? current : '');
+      // An archived or emptied Outfit must never remain a hidden select value.
+      setSelectedOutfitId((current) => selectable.some((outfit) => outfit.id === current) ? current : '');
       setSelectedEntryId('');
     } catch (cause) {
-      setError(cause?.message || 'Canonical Outfits could not be loaded for Try-On.');
+      if (request === loadRequestRef.current) {
+        setError(cause?.message || 'Canonical Outfits could not be loaded for Try-On.');
+      }
     } finally {
-      setLoading(false);
+      if (request === loadRequestRef.current) setLoading(false);
     }
   }, [busy, hostActive, model]);
 
-  useEffect(() => { void load(); }, [model]); // deliberate read-only initial load; never runs Try-On
+  useEffect(() => {
+    void load(); // read-only refresh; never starts Try-On execution
+    return () => { loadRequestRef.current += 1; };
+  }, [load, outfitRevision]);
 
   const selectedOutfit = lockedSelection?.outfit
     || outfits.find((outfit) => outfit.id === selectedOutfitId)
@@ -231,7 +244,7 @@ export default function CanonicalTryOnRunnerPanel({
           result={result}
           host={host}
           busy={busy}
-          disabled={disabled}
+          disabled={disabled || loading}
           onInspect={() => action('inspect')}
           onRun={() => action('run')}
           onResume={() => action('resume')}

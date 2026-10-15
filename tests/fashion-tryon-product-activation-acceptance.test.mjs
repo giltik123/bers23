@@ -37,7 +37,7 @@ test('READY is required for Run and no render/effect can advance execution', asy
   assert.match(controls, /Check readiness/);
   assert.match(runner, /Selection alone never starts execution/);
   const effectStart = runner.indexOf('useEffect(() => {');
-  const effectEnd = runner.indexOf('}, [model]);', effectStart);
+  const effectEnd = runner.indexOf('}, [load, outfitRevision]);', effectStart);
   assert.ok(effectStart >= 0 && effectEnd > effectStart, 'read-only Outfit load effect must remain explicit');
   const loadEffect = runner.slice(effectStart, effectEnd);
   assert.match(loadEffect, /void load\(\)/);

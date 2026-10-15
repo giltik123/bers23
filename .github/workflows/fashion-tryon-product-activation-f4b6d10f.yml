@@ -65,6 +65,7 @@ jobs:
             tests/fashion-tryon-product-controls.test.mjs \
             tests/fashion-tryon-editor-final-handoff.test.mjs \
             tests/fashion-tryon-editor-wiring.test.mjs \
+            tests/fashion-tryon-live-outfit-refresh.test.mjs \
             tests/fashion-tryon-product-cutover-policy.test.mjs
 
       - name: Typecheck and build browser plus production Core
