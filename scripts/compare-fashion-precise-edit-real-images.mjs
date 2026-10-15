@@ -5,6 +5,8 @@ import process from 'node:process';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
+import { maskAndCheckTorso } from './fashion-real-photo-overlay-footprint.mjs';
+export { maskAndCheckTorso } from './fashion-real-photo-overlay-footprint.mjs';
 
 import {
   composePreciseEditFeatheredRgba8,
@@ -42,29 +44,6 @@ export function torsoBounds(corners, width, height) {
   };
 }
 
-export function maskAndCheckTorso(source, baseline, width, height, bounds) {
-  const mask = new Uint8Array(width*height);
-  let baselineChanged = 0;
-  let outsideTorso = 0;
-  for(let y=0;y<height;y+=1) {
-    for(let x=0;x<width;x+=1) {
-      const pixel=y*width+x, offset=pixel*4;
-      const changed = source[offset] !== baseline[offset] ||
-        source[offset+1] !== baseline[offset+1] ||
-        source[offset+2] !== baseline[offset+2] ||
-        source[offset+3] !== baseline[offset+3];
-      if (!changed) continue;
-      baselineChanged += 1;
-      if (x<bounds.left || x>bounds.right || y<bounds.top || y>bounds.bottom) {
-        outsideTorso += 1;
-      } else {
-        mask[pixel]=255;
-      }
-    }
-  }
-  return { mask, baselineChanged, outsideTorso };
-}
-
 async function main() {
   const captureDir = path.resolve(process.argv[2] ?? '.test-cache/fashion-real-image-quality');
   const fixturePath = path.resolve(process.argv[3] ?? 'config/v1-fashion-real-image-fixtures.json');
@@ -94,7 +73,7 @@ async function main() {
     const source = await decodePng(sourceBytes, fixtures.preprocessing.project.width);
     const candidate = await decodePng(candidateBytes, source.width, source.height);
     const bounds=torsoBounds(projects.get(sample.projectId).torsoQ16Normalized,source.width,source.height);
-    const {mask,baselineChanged,outsideTorso}=maskAndCheckTorso(
+    const {mask,baselineChanged,outsideTorso,overlayFootprint}=maskAndCheckTorso(
       source.data,candidate.data,source.width,source.height,bounds,
     );
     if(outsideTorso !== 0 || baselineChanged === 0) {
@@ -134,6 +113,7 @@ async function main() {
       id:sample.id, originalOutputSha256:sample.outputSha256,
       refinedOutputSha256:sha256(refinedPng), comparisonPngSha256:sha256(visual),
       baselineChangedPixelCount:baselineChanged, baselineChangedOutsideTorsoPixelCount:outsideTorso,
+      overlayFootprint,
       refinedDifferentFromBaselinePixelCount:differingFromBaseline,
       protectedPixelCount:audit.protectedPixelCount,
       changedProtectedPixelCount:audit.changedProtectedPixelCount,
