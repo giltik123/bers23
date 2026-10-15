@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { performance } from 'node:perf_hooks';
 import sharp from 'sharp';
-import { alphaBoundedGarmentFitRND } from './fashion-alpha-outline-fit-rnd.mjs';
+import { alphaBoundedGarmentFitRND, sourceHasIntrinsicGarmentAlphaRND } from './fashion-alpha-outline-fit-rnd.mjs';
 
 import {
   GARMENT_TEXTURE_COMPOSITE_ALPHA_POLICY,
@@ -111,6 +111,20 @@ async function decodeProject(bytes, width) {
 }
 
 async function decodeGarment(bytes, width, height) {
+  // Source-alpha evidence must be measured BEFORE fit:'contain' introduces
+  // synthetic transparent padding. Opaque JPEGs are not alpha-masked garments.
+  const metadata = await sharp(bytes).metadata();
+  let sourceHasIntrinsicTransparency = false;
+  if (metadata.hasAlpha === true) {
+    const { data: unpadded, info: unpaddedInfo } = await sharp(bytes).rotate().resize(width, height, {
+      fit: 'inside',
+      withoutEnlargement: false,
+    }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    sourceHasIntrinsicTransparency = sourceHasIntrinsicGarmentAlphaRND({
+      rgba: unpadded, width: unpaddedInfo.width, height: unpaddedInfo.height,
+      encodedHasAlphaChannel: metadata.hasAlpha,
+    });
+  }
   const pipeline = sharp(bytes).rotate().resize(width, height, {
     fit: 'contain',
     position: 'centre',
@@ -119,7 +133,7 @@ async function decodeGarment(bytes, width, height) {
   }).ensureAlpha();
   const { data, info } = await pipeline.raw().toBuffer({ resolveWithObject: true });
   if (info.width !== width || info.height !== height || info.channels !== 4) throw new Error('Garment preprocess geometry mismatch');
-  return { rgba: new Uint8ClampedArray(data), width: info.width, height: info.height };
+  return { rgba: new Uint8ClampedArray(data), width: info.width, height: info.height, sourceHasIntrinsicTransparency };
 }
 
 function warpSpec(project, torso) {
@@ -256,6 +270,7 @@ async function main() {
           projectWidth: project.width,
           projectHeight: project.height,
           torsoQ16Normalized: projectFixture.torsoQ16Normalized,
+          sourceHasIntrinsicTransparency: garment.sourceHasIntrinsicTransparency,
         });
         if (proposal.status === 'CANDIDATE') {
           const startedAt = performance.now();
