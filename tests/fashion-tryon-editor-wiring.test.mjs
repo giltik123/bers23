@@ -72,7 +72,7 @@ test('runner locks to the admitted Outfit, source artifact and beforeUrl and nev
   assert.match(runner, /!hostActive && \(/);
   assert.match(runner, /Selection alone never starts execution/);
   const effectStart = runner.indexOf('useEffect(() => {');
-  const effectEnd = runner.indexOf('}, [model]);', effectStart);
+  const effectEnd = runner.indexOf('}, [load, outfitRevision]);', effectStart);
   assert.ok(effectStart >= 0 && effectEnd > effectStart, 'read-only Outfit load effect must remain explicit');
   const loadEffect = runner.slice(effectStart, effectEnd);
   assert.match(loadEffect, /void load\(\)/);
