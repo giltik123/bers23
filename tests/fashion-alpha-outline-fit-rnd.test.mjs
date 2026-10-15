@@ -49,6 +49,15 @@ test('synthetic padding is never mistaken for source garment segmentation', () =
   assert.equal(sourceHasIntrinsicGarmentAlphaRND({
     rgba: fixture(16, 16, [0, 0, 15, 15]), width: 16, height: 16, encodedHasAlphaChannel: true,
   }), false, 'an all-opaque PNG carries no usable source silhouette');
+  const interiorHole = fixture(16, 16, [0, 0, 15, 15]);
+  interiorHole[(8 * 16 + 8) * 4 + 3] = 0;
+  assert.equal(sourceHasIntrinsicGarmentAlphaRND({
+    rgba: interiorHole, width: 16, height: 16, encodedHasAlphaChannel: true,
+  }), false, 'alpha holes inside an opaque product photograph are not cutout background evidence');
+  assert.equal(sourceHasIntrinsicGarmentAlphaRND({
+    rgba: new Uint8ClampedArray(16 * 16 * 4),
+    width: 16, height: 16, encodedHasAlphaChannel: true,
+  }), false, 'an all-transparent source cannot represent a garment');
   assert.throws(() => sourceHasIntrinsicGarmentAlphaRND({
     rgba: new Uint8Array(1), width: 16, height: 16, encodedHasAlphaChannel: true,
   }), /bounded unpadded RGBA8/);
