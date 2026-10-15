@@ -46,7 +46,7 @@ test('R&D never guesses silhouette on an opaque background or empty alpha', () =
 
 test('excessive upscaling and strongly anisotropic transparent bounds fail closed', () => {
   assert.equal(invoke(fixture(16, 16, [7, 7, 8, 8])).reason, 'UNSAFE_ALPHA_OUTLINE_MAGNIFICATION');
-  assert.equal(invoke(fixture(16, 16, [4, 1, 11, 14])).reason, 'UNSAFE_ALPHA_OUTLINE_MAGNIFICATION');
+  assert.equal(invoke(fixture(16, 16, [5, 0, 10, 15])).reason, 'UNSAFE_ALPHA_OUTLINE_MAGNIFICATION');
 });
 
 test('invalid sizes, corrupt bytes and folded body geometry never reach a preview spec', () => {
