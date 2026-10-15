@@ -50,8 +50,17 @@ export function sourceHasIntrinsicGarmentAlphaRND({ rgba, width, height, encoded
       rgba.byteLength !== width * height * 4) {
     throw new TypeError('Intrinsic garment alpha input must be bounded unpadded RGBA8');
   }
+  // Holes/translucent logos inside an otherwise opaque clothing photograph
+  // are not evidence that its *outer background* was cut out. Require at
+  // least two transparent original corners and some visible garment pixels.
+  const cornerAlphaOffsets = [
+    3, (width - 1) * 4 + 3,
+    ((height - 1) * width) * 4 + 3,
+    (height * width - 1) * 4 + 3,
+  ];
+  if (cornerAlphaOffsets.filter(i => rgba[i] < ALPHA_VISIBLE_AT_LEAST).length < 2) return false;
   for (let i = 3; i < rgba.byteLength; i += 4) {
-    if (rgba[i] < ALPHA_VISIBLE_AT_LEAST) return true;
+    if (rgba[i] >= ALPHA_VISIBLE_AT_LEAST) return true;
   }
   return false;
 }
