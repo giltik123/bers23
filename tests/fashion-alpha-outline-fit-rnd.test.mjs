@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { alphaBoundedGarmentFitRND } from '../scripts/fashion-alpha-outline-fit-rnd.mjs';
+import { alphaBoundedGarmentFitRND, sourceHasIntrinsicGarmentAlphaRND } from '../scripts/fashion-alpha-outline-fit-rnd.mjs';
 
 const torso = [[0.2, 0.2], [0.8, 0.2], [0.75, 0.9], [0.25, 0.9]];
 function fixture(width = 16, height = 16, box = [4, 4, 11, 11], alpha = 255) {
@@ -17,10 +17,10 @@ function fixture(width = 16, height = 16, box = [4, 4, 11, 11], alpha = 255) {
   }
   return rgba;
 }
-function invoke(garmentRgba, width = 16, height = 16, frame = torso) {
+function invoke(garmentRgba, width = 16, height = 16, frame = torso, sourceHasIntrinsicTransparency = true) {
   return alphaBoundedGarmentFitRND({
     garmentRgba, garmentWidth: width, garmentHeight: height,
-    projectWidth: 64, projectHeight: 96, torsoQ16Normalized: frame,
+    projectWidth: 64, projectHeight: 96, torsoQ16Normalized: frame, sourceHasIntrinsicTransparency,
   });
 }
 
@@ -35,6 +35,23 @@ test('visible inset alpha garment fills the authorized torso frame instead of sh
   assert.equal(result.evidence.visiblePixels, 64);
   assert.ok(result.evidence.scaleX > 2);
   assert.ok(Object.isFrozen(result.spec));
+});
+
+test('synthetic padding is never mistaken for source garment segmentation', () => {
+  const paddedOpaqueImage = fixture();
+  assert.equal(sourceHasIntrinsicGarmentAlphaRND({
+    rgba: paddedOpaqueImage, width: 16, height: 16, encodedHasAlphaChannel: false,
+  }), false, 'an opaque JPEG may become padded later but did not contain source alpha');
+  assert.equal(invoke(paddedOpaqueImage, 16, 16, torso, false).reason, 'INTRINSIC_SOURCE_ALPHA_REQUIRED');
+  assert.equal(sourceHasIntrinsicGarmentAlphaRND({
+    rgba: paddedOpaqueImage, width: 16, height: 16, encodedHasAlphaChannel: true,
+  }), true);
+  assert.equal(sourceHasIntrinsicGarmentAlphaRND({
+    rgba: fixture(16, 16, [0, 0, 15, 15]), width: 16, height: 16, encodedHasAlphaChannel: true,
+  }), false, 'an all-opaque PNG carries no usable source silhouette');
+  assert.throws(() => sourceHasIntrinsicGarmentAlphaRND({
+    rgba: new Uint8Array(1), width: 16, height: 16, encodedHasAlphaChannel: true,
+  }), /bounded unpadded RGBA8/);
 });
 
 test('R&D never guesses silhouette on an opaque background or empty alpha', () => {
@@ -61,6 +78,9 @@ test('comparison is opt-in and cannot replace immutable v1 quality evidence or C
   const capture = await readFile('scripts/capture-fashion-real-image-quality.mjs', 'utf8');
   const research = await readFile('scripts/fashion-alpha-outline-fit-rnd.mjs', 'utf8');
   assert.match(capture, /--compare-alpha-fit/);
+  assert.match(capture, /metadata.hasAlpha === true/);
+  assert.match(capture, /fit: 'inside'/);
+  assert.match(capture, /sourceHasIntrinsicTransparency: garment.sourceHasIntrinsicTransparency/);
   assert.match(capture, /if \(args\.compareAlphaFit\)/);
   assert.match(capture, /research-alpha-fit/);
   assert.match(capture, /changesCanonicalQualityEvidence: false/);
