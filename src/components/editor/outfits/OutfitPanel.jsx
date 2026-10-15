@@ -53,12 +53,12 @@ export default function OutfitPanel({ onCanonicalChange }) {
     ));
   }, []);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async ({ announce = true } = {}) => {
     setBusy('load');
     setError('');
     try {
       applySnapshot(await model.load());
-      onCanonicalChange?.();
+      if (announce) onCanonicalChange?.();
     } catch (cause) {
       setError(cause?.message || 'Outfits could not be loaded.');
     } finally {
@@ -73,7 +73,7 @@ export default function OutfitPanel({ onCanonicalChange }) {
     } catch { /* keep the originating mutation error */ }
   }, [applySnapshot, model, onCanonicalChange]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { void reload({ announce: false }); }, [reload]);
 
   const selected = outfits.find((item) => item.id === selectedId) || null;
   const garmentById = useMemo(() => new Map(garments.map((item) => [item.garmentId, item])), [garments]);
@@ -158,7 +158,7 @@ export default function OutfitPanel({ onCanonicalChange }) {
         <p className="text-xs font-medium flex items-center gap-1.5">
           <Layers className="w-3.5 h-3.5 text-primary" /> Outfits
         </p>
-        <Button variant="ghost" size="sm" className="h-8" onClick={reload} disabled={Boolean(busy)}>
+        <Button variant="ghost" size="sm" className="h-8" onClick={() => reload()} disabled={Boolean(busy)}>
           <RefreshCw className={`h-3.5 w-3.5 ${busy === 'load' ? 'animate-spin' : ''}`} />
           <span className="sr-only">Reload outfits</span>
         </Button>
