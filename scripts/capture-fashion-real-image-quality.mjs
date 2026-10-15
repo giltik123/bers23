@@ -305,7 +305,7 @@ async function main() {
       samples: researchComparisons,
     };
     await writeFile(path.join(outDir, 'research-alpha-fit', 'comparison.json'),
-      JSON.stringify(report, null, 2) + '\\n');
+      JSON.stringify(report, null, 2) + '\n');
   }
 
   const fixtureIdentity = {
