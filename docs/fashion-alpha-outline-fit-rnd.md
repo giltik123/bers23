@@ -20,7 +20,13 @@ model, no generated pixels outside the garment input, no automatic human
 segmentation, no other Core authority.
 
 This is an optional **research comparison**, not a silent replacement of the
-established F4b mesh/texture execution law. It rejects invalid dimensions,
+established F4b mesh/texture execution law. The capture checks the original encoded image metadata and scans an **unpadded**
+source preview for real transparent pixels before the contain-resize step.
+JPEGs with synthetic transparent letterboxing are explicitly skipped.
+An RGBA PNG with an entirely opaque alpha channel is also skipped; this is
+source-level R&D transparency evidence, not a trusted Core garment matte.
+
+It rejects invalid dimensions,
 folded/mirrored target frames, empty/degenerate alpha, no cropped alpha margin,
 per-axis magnification above 4x and anisotropic scaling beyond 2x.
 These are conservative research bounds, **not** proven human-fit thresholds.
