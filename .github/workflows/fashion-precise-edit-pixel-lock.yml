@@ -6,6 +6,8 @@ on:
       - 'tests/precise-edit-pixel-lock.test.mjs'
       - 'docs/fashion-ideogram45-precise-edit-research.md'
       - 'scripts/compare-fashion-precise-edit-real-images.mjs'
+      - 'scripts/fashion-real-photo-overlay-footprint.mjs'
+      - 'tests/fashion-real-photo-overlay-footprint.test.mjs'
       - 'tests/precise-edit-real-image-comparison.test.mjs'
       - '.github/workflows/fashion-precise-edit-pixel-lock.yml'
 permissions:
@@ -42,7 +44,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Test independent torso leakage detection
-        run: node --experimental-strip-types --test tests/precise-edit-real-image-comparison.test.mjs
+        run: node --experimental-strip-types --test tests/precise-edit-real-image-comparison.test.mjs tests/fashion-real-photo-overlay-footprint.test.mjs
       - name: Build trusted deterministic real-photo capture harness
         run: |
           mkdir -p .test-cache/fashion-real-image-build
@@ -69,6 +71,9 @@ jobs:
           assert.equal(evidence.productionAuthorityGranted,false);
           assert.ok(evidence.records.every(r=>r.changedProtectedPixelCount===0));
           assert.ok(evidence.records.every(r=>r.baselineChangedOutsideTorsoPixelCount===0));
+          assert.ok(evidence.records.every(r=>r.overlayFootprint.torsoPixels>0));
+          assert.ok(evidence.records.every(r=>r.overlayFootprint.changedTorsoPixels===r.baselineChangedPixelCount));
+          assert.ok(evidence.records.every(r=>r.overlayFootprint.changedTorsoFraction>=0 && r.overlayFootprint.changedTorsoFraction<=1));
           assert.ok(evidence.records.some(r=>r.refinedDifferentFromBaselinePixelCount>0));
           NODE
       - name: Upload real-photo side-by-side comparison (not quality acceptance)
