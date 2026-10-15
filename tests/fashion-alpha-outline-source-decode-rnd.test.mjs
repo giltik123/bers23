@@ -32,7 +32,7 @@ async function containGarment(imageBytes) {
 }
 
 async function encodedImage({ withCutout, output }) {
-  const width = 8, height = 16;
+  const width = 12, height = 16;
   const rgba = Buffer.alloc(width * height * 4, 0);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const i = (y * width + x) * 4;
