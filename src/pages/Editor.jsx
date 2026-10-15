@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useState, useMemo, useRef, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Loader2, ExternalLink, Download, Pencil, Maximize2, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -149,6 +149,8 @@ export default function Editor() {
   const [pendingResult, setPendingResult] = useState(null);
   const [committing, setCommitting] = useState(false);
   const [editTab, setEditTab] = useState('ai');
+  const [outfitRevision, setOutfitRevision] = useState(0);
+  const notifyOutfitChange = useCallback(() => setOutfitRevision((current) => current + 1), []);
   const [voiceWardrobeQuery,setVoiceWardrobeQuery]=useState(null);
   const [voiceTryOnQuery,setVoiceTryOnQuery]=useState(null);
   const [voiceAgentProposal,setVoiceAgentProposal]=useState(null);
@@ -1415,6 +1417,7 @@ export default function Editor() {
             <div className="space-y-3">
               <CanonicalTryOnRunnerPanel
                 project={project}
+                outfitRevision={outfitRevision}
                 voiceQuery={voiceTryOnQuery}
                 state={tryOn.state}
                 busy={tryOn.busy}
@@ -1426,7 +1429,7 @@ export default function Editor() {
                 onAbandon={abandonTryOn}
                 onClose={closeTryOn}
               />
-              {!tryOn.state.host.active && <OutfitPanel />}
+              {!tryOn.state.host.active && <OutfitPanel onCanonicalChange={notifyOutfitChange} />}
             </div>
           ) : editTab === 'fashion' ? (
             <FashionPanel voiceQuery={voiceWardrobeQuery} />
