@@ -6,6 +6,7 @@ on:
       - 'scripts/fashion-alpha-outline-fit-rnd.mjs'
       - 'scripts/capture-fashion-real-image-quality.mjs'
       - 'tests/fashion-alpha-outline-fit-rnd.test.mjs'
+      - 'tests/fashion-alpha-outline-source-decode-rnd.test.mjs'
       - 'tests/fashion-alpha-outline-fit-pixels-rnd.test.ts'
       - 'docs/fashion-alpha-outline-fit-rnd.md'
       - '.github/workflows/fashion-alpha-outline-fit-rnd.yml'
@@ -31,7 +32,7 @@ jobs:
         run: npm ci
       - name: Prove transparent silhouette scale correction and fail-closed R&D boundary
         run: |
-          node --test tests/fashion-alpha-outline-fit-rnd.test.mjs
+          node --test tests/fashion-alpha-outline-fit-rnd.test.mjs tests/fashion-alpha-outline-source-decode-rnd.test.mjs
           mkdir -p .test-cache/fashion-alpha-fit
           npx esbuild tests/fashion-alpha-outline-fit-pixels-rnd.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
