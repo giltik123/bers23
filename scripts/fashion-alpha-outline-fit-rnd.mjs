@@ -1,0 +1,122 @@
+/**
+ * R&D ONLY: use the actual transparent garment silhouette bounds as the source
+ * rectangle for a deterministic mesh-preview comparison.
+ *
+ * Historical baseline maps the entire padded garment image into the torso.
+ * If a shirt occupies just the middle 50% of a transparent image, the rendered
+ * shirt occupies only half of the intended torso width. This candidate maps
+ * that bounded visible rectangle instead, without mutating managed assets.
+ *
+ * Alpha is accepted only as an explicit transparency signal. Opaque JPEGs or
+ * flat-lay photos with background are never "segmented" by color heuristics.
+ * Output is a preview candidate, NOT a Core ticket/FINAL or a quality approval.
+ */
+const Q16 = 65536;
+const MAX_DIMENSION = 4096;
+const MAX_PIXELS = 8_388_608;
+const ALPHA_VISIBLE_AT_LEAST = 16;
+const MAX_AXIS_MAGNIFICATION = 4;
+const MAX_RELATIVE_ANISOTROPY = 2;
+
+function reject(reason) {
+  return Object.freeze({ status: 'SKIPPED', reason, authority: 'RESEARCH_ONLY' });
+}
+
+function q16(normalized) {
+  return Math.floor(normalized * Q16 + 0.5);
+}
+
+function area2(a, b, c) {
+  return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+}
+
+/**
+ * Return one safely bounded preview spec or an explicit SKIPPED explanation.
+ * Never infer a garment outline from RGB, guess poses, access a provider, or
+ * produce release evidence with an automatic PASS.
+ */
+export function alphaBoundedGarmentFitRND({
+  garmentRgba, garmentWidth, garmentHeight,
+  projectWidth, projectHeight, torsoQ16Normalized,
+}) {
+  for (const [value, name] of [
+    [garmentWidth, 'garmentWidth'], [garmentHeight, 'garmentHeight'],
+    [projectWidth, 'projectWidth'], [projectHeight, 'projectHeight'],
+  ]) {
+    if (!Number.isSafeInteger(value) || value < 2 || value > MAX_DIMENSION) {
+      throw new TypeError(`${name} must be a supported integer dimension`);
+    }
+  }
+  if (garmentWidth * garmentHeight > MAX_PIXELS || projectWidth * projectHeight > MAX_PIXELS) {
+    throw new TypeError('Fashion fit preview exceeds the bounded pixel budget');
+  }
+  if (!(garmentRgba instanceof Uint8Array) && !(garmentRgba instanceof Uint8ClampedArray)) {
+    throw new TypeError('Garment source must be RGBA8');
+  }
+  if (garmentRgba.byteLength !== garmentWidth * garmentHeight * 4) {
+    throw new TypeError('Garment source RGBA length does not match its dimensions');
+  }
+  if (!Array.isArray(torsoQ16Normalized) || torsoQ16Normalized.length !== 4 ||
+      torsoQ16Normalized.some(point => !Array.isArray(point) || point.length !== 2 ||
+        point.some(n => typeof n !== 'number' || !Number.isFinite(n) || n < 0 || n > 1))) {
+    throw new TypeError('Torso frame requires four in-bounds normalized corners');
+  }
+  const destinationPointsQ16 = torsoQ16Normalized.map(([x, y]) => [q16(x), q16(y)]);
+  if (area2(destinationPointsQ16[0], destinationPointsQ16[1], destinationPointsQ16[2]) <= 0 ||
+      area2(destinationPointsQ16[0], destinationPointsQ16[2], destinationPointsQ16[3]) <= 0) {
+    return reject('TORSO_FRAME_FOLDED_OR_MIRRORED');
+  }
+
+  let minX = garmentWidth; let minY = garmentHeight;
+  let maxX = -1; let maxY = -1;
+  let visiblePixels = 0;
+  for (let y = 0; y < garmentHeight; y += 1) {
+    for (let x = 0; x < garmentWidth; x += 1) {
+      if (garmentRgba[(y * garmentWidth + x) * 4 + 3] < ALPHA_VISIBLE_AT_LEAST) continue;
+      visiblePixels += 1;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (visiblePixels === 0) return reject('NO_VISIBLE_ALPHA_GARMENT');
+  if (maxX === minX || maxY === minY) return reject('ALPHA_OUTLINE_COLLAPSED');
+  if (minX === 0 && minY === 0 && maxX === garmentWidth - 1 && maxY === garmentHeight - 1) {
+    return reject('NO_TRANSPARENT_OUTLINE_MARGIN');
+  }
+
+  const xSpan = (maxX - minX) / (garmentWidth - 1);
+  const ySpan = (maxY - minY) / (garmentHeight - 1);
+  const scaleX = 1 / xSpan;
+  const scaleY = 1 / ySpan;
+  if (scaleX > MAX_AXIS_MAGNIFICATION || scaleY > MAX_AXIS_MAGNIFICATION ||
+      Math.max(scaleX / scaleY, scaleY / scaleX) > MAX_RELATIVE_ANISOTROPY) {
+    return reject('UNSAFE_ALPHA_OUTLINE_MAGNIFICATION');
+  }
+
+  const sourcePointsQ16 = [
+    [q16(minX / (garmentWidth - 1)), q16(minY / (garmentHeight - 1))],
+    [q16(maxX / (garmentWidth - 1)), q16(minY / (garmentHeight - 1))],
+    [q16(maxX / (garmentWidth - 1)), q16(maxY / (garmentHeight - 1))],
+    [q16(minX / (garmentWidth - 1)), q16(maxY / (garmentHeight - 1))],
+  ];
+  return Object.freeze({
+    status: 'CANDIDATE',
+    authority: 'RESEARCH_ONLY',
+    spec: Object.freeze({
+      sourcePointsQ16,
+      destinationPointsQ16,
+      triangles: [[0, 1, 2], [0, 2, 3]],
+      outputWidth: projectWidth,
+      outputHeight: projectHeight,
+    }),
+    evidence: Object.freeze({
+      alphaThreshold: ALPHA_VISIBLE_AT_LEAST,
+      boundsPixels: Object.freeze({ minX, minY, maxX, maxY }),
+      visiblePixels,
+      scaleX,
+      scaleY,
+    }),
+  });
+}
