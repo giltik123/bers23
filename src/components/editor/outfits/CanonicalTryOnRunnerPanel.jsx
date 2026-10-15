@@ -244,7 +244,7 @@ export default function CanonicalTryOnRunnerPanel({
           result={result}
           host={host}
           busy={busy}
-          disabled={disabled}
+          disabled={disabled || loading}
           onInspect={() => action('inspect')}
           onRun={() => action('run')}
           onResume={() => action('resume')}
