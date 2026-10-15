@@ -1,0 +1,40 @@
+name: Fashion F5 alpha-outline fit research acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/fashion-alpha-outline-fit-rnd.mjs'
+      - 'scripts/capture-fashion-real-image-quality.mjs'
+      - 'tests/fashion-alpha-outline-fit-rnd.test.mjs'
+      - 'docs/fashion-alpha-outline-fit-rnd.md'
+      - '.github/workflows/fashion-alpha-outline-fit-rnd.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  fashion-alpha-fit-rnd:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install pinned dependency graph
+        run: npm ci
+      - name: Prove transparent silhouette scale correction and fail-closed R&D boundary
+        run: node --test tests/fashion-alpha-outline-fit-rnd.test.mjs
+      - name: Check capture script syntax
+        run: node --check scripts/capture-fashion-real-image-quality.mjs
+      - name: Typecheck and build main browser boundary
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Check exact diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
