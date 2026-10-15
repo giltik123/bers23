@@ -76,6 +76,7 @@ test('A/B pixels: bounded transparent garment occupies torso instead of shrinkin
   const proposed = alphaBoundedGarmentFitRND({
     garmentRgba: garment, garmentWidth, garmentHeight,
     projectWidth, projectHeight, torsoQ16Normalized: frame,
+    sourceHasIntrinsicTransparency: true,
   });
   assert.equal(proposed.status, 'CANDIDATE');
   if (proposed.status !== 'CANDIDATE') throw new Error('research candidate unexpectedly unavailable');
