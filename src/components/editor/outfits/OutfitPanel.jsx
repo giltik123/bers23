@@ -21,7 +21,7 @@ function label(value) {
   return String(value || '').replaceAll('_', ' ').toLowerCase();
 }
 
-export default function OutfitPanel() {
+export default function OutfitPanel({ onCanonicalChange }) {
   const model = useMemo(() => createCanonicalOutfitViewModel({
     outfits: coreClient.fashion.outfits,
     wardrobe: coreClient.fashion.wardrobe,
@@ -58,16 +58,20 @@ export default function OutfitPanel() {
     setError('');
     try {
       applySnapshot(await model.load());
+      onCanonicalChange?.();
     } catch (cause) {
       setError(cause?.message || 'Outfits could not be loaded.');
     } finally {
       setBusy('');
     }
-  }, [applySnapshot, model]);
+  }, [applySnapshot, model, onCanonicalChange]);
 
   const reconcileQuietly = useCallback(async () => {
-    try { applySnapshot(await model.load()); } catch { /* keep the originating mutation error */ }
-  }, [applySnapshot, model]);
+    try {
+      applySnapshot(await model.load());
+      onCanonicalChange?.();
+    } catch { /* keep the originating mutation error */ }
+  }, [applySnapshot, model, onCanonicalChange]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -114,6 +118,7 @@ export default function OutfitPanel() {
       setOutfits((current) => replaceOutfit(current, created));
       setSelectedId(created.id);
       setNewName('');
+      onCanonicalChange?.();
     } catch (cause) {
       await reconcileQuietly();
       setError(`Creation result was not confirmed. Canonical state was refreshed; check the list before retrying. ${cause?.message || ''}`.trim());
@@ -129,6 +134,7 @@ export default function OutfitPanel() {
     try {
       const next = await action(selected);
       setOutfits((current) => replaceOutfit(current, next));
+      onCanonicalChange?.();
       return true;
     } catch (cause) {
       await reconcileQuietly();
