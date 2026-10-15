@@ -15,7 +15,8 @@ test('Editor wires canonical Try-On through the private hook and existing Result
   assert.match(editor, /if \(tryOnBlockedByEditor \|\| pendingResult\) return/);
   assert.match(editor, /disabled=\{tryOnBlockedByEditor\}/);
   assert.match(editor, /if \(!tryOnActive && !agentActive\) setEditTab\(next\)/);
-  assert.match(editor, /!tryOn\.state\.host\.active && <OutfitPanel \/>/);
+  assert.match(editor, /!tryOn\.state\.host\.active && <OutfitPanel onCanonicalChange=\{notifyOutfitChange\} \/>/);
+  assert.match(editor, /outfitRevision=\{outfitRevision\}/);
 
   const fashionRetry = editor.indexOf("pending?.kind === 'FASHION_TRYON'");
   const backgroundRetry = editor.indexOf("pending?.kind === 'BACKGROUND_ISOLATION'");
