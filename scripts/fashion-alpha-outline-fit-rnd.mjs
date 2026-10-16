@@ -94,7 +94,12 @@ export function alphaBoundedGarmentFitRND({
     throw new TypeError('Torso frame requires four in-bounds normalized corners');
   }
   const destinationPointsQ16 = torsoQ16Normalized.map(([x, y]) => [q16(x), q16(y)]);
-  if (area2(destinationPointsQ16[0], destinationPointsQ16[1], destinationPointsQ16[2]) <= 0 ||
+  // Positive areas of the two mesh triangles alone do not reject concave
+  // quads. Require the same strict winding at ALL four corners to rule out
+  // concave, self-crossing and collapsed project frames before warping pixels.
+  const strictlyConvex = destinationPointsQ16.every((point, index, points) =>
+    area2(point, points[(index + 1) % 4], points[(index + 2) % 4]) > 0);
+  if (!strictlyConvex ||
       area2(destinationPointsQ16[0], destinationPointsQ16[2], destinationPointsQ16[3]) <= 0) {
     return reject('TORSO_FRAME_FOLDED_OR_MIRRORED');
   }

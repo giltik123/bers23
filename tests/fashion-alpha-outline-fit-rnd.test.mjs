@@ -81,6 +81,10 @@ test('invalid sizes, corrupt bytes and folded body geometry never reach a previe
   assert.throws(() => invoke(fixture(), 16, 16, [[-0.1, 0], [1, 0], [1, 1], [0, 1]]), /four in-bounds/);
   assert.equal(invoke(fixture(), 16, 16, [[0.8, 0.2], [0.2, 0.2], [0.25, 0.9], [0.75, 0.9]]).reason,
     'TORSO_FRAME_FOLDED_OR_MIRRORED');
+  // Both original mesh triangles wind positively here, but the upper-right
+  // point cuts inside the quadrilateral. A triangular mesh would fold locally.
+  assert.equal(invoke(fixture(), 16, 16, [[0.2, 0.2], [0.8, 0.2], [0.4, 0.4], [0.2, 0.8]]).reason,
+    'TORSO_FRAME_FOLDED_OR_MIRRORED');
 });
 
 test('comparison is opt-in and cannot replace immutable v1 quality evidence or Core FINAL', async () => {
