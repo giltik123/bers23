@@ -44,6 +44,8 @@ The dedicated path-filtered workflow `Fashion precise edit R&D pixel lock` now p
 4. Apply one-pixel alpha-correct inward feather; audit all bytes outside that precise edit matte.
 5. Upload the 6 side-by-side PNGs with columns **source | F4 current result | R&D inward feather** and a JSON manifest with exact SHA-256 of outputs, observed pixel edits and performance.
 
+The comparison manifest also contains **advisory spatial footprint diagnostics** for the F4 baseline: changed torso pixels/rectangle area, the bounding rectangle of actually changed pixels and its width/height as a fraction of the configured torso rectangle. This can reveal a suspiciously small changed patch when comparing versions, but a large changed area does **not** prove garment replacement, correct silhouette, occlusion, fabric folds or photorealism. There is deliberately no automated quality-pass threshold, no production admission and no RC ledger mutation.
+
 The artifact is named `bers-fashion-precise-edit-comparison-<PR-head-SHA>` and all decisions stay `PENDING_INDEPENDENT_VISUAL_REVIEW`. The comparison is not automatically better: reviewers must independently examine visible seams, edges near arms/hair, logos, prints, pose alignment and whether smoothing loses garment structure. It cannot repair a completely wrong torso/arm region or synthetic cloth drape. Network downloads from public fixture sources may fail independently of code correctness, and the hosted job will report that rather than silently generate synthetic substitute images.
 
 ## Evidence thresholds before quality acceptance
