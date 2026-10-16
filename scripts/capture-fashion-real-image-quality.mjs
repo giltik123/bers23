@@ -110,12 +110,14 @@ async function decodeProject(bytes, width) {
   return { rgba: new Uint8ClampedArray(data), width: info.width, height: info.height };
 }
 
-async function decodeGarment(bytes, width, height) {
-  // Source-alpha evidence must be measured BEFORE fit:'contain' introduces
-  // synthetic transparent padding. Opaque JPEGs are not alpha-masked garments.
-  const metadata = await sharp(bytes).metadata();
+async function decodeGarment(bytes, width, height, verifyIntrinsicAlpha = false) {
+  // Preserve the established baseline capture's decode path and cost. Source
+  // alpha attestation is research-only and must never run unless explicitly
+  // requested with --compare-alpha-fit. Check BEFORE contain padding.
   let sourceHasIntrinsicTransparency = false;
-  if (metadata.hasAlpha === true) {
+  if (verifyIntrinsicAlpha) {
+    const metadata = await sharp(bytes).metadata();
+    if (metadata.hasAlpha === true) {
     const { data: unpadded, info: unpaddedInfo } = await sharp(bytes).rotate().resize(width, height, {
       fit: 'inside',
       withoutEnlargement: false,
@@ -124,6 +126,7 @@ async function decodeGarment(bytes, width, height) {
       rgba: unpadded, width: unpaddedInfo.width, height: unpaddedInfo.height,
       encodedHasAlphaChannel: metadata.hasAlpha,
     });
+    }
   }
   const pipeline = sharp(bytes).rotate().resize(width, height, {
     fit: 'contain',
@@ -214,7 +217,11 @@ async function main() {
 
   const garmentDecoded = new Map();
   for (const fixture of manifest.garments) {
-    const decoded = await decodeGarment(downloaded.get(fixture.id).bytes, manifest.preprocessing.garment.width, manifest.preprocessing.garment.height);
+    const decoded = await decodeGarment(
+      downloaded.get(fixture.id).bytes,
+      manifest.preprocessing.garment.width, manifest.preprocessing.garment.height,
+      args.compareAlphaFit,
+    );
     garmentDecoded.set(fixture.id, decoded);
     const preview = await pngFromRgba(decoded.rgba, decoded.width, decoded.height);
     await writeFile(path.join(outDir, 'sources', `${fixture.id}.png`), preview);

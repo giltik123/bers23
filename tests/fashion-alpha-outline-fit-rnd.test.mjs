@@ -92,6 +92,10 @@ test('comparison is opt-in and cannot replace immutable v1 quality evidence or C
   const research = await readFile('scripts/fashion-alpha-outline-fit-rnd.mjs', 'utf8');
   assert.match(capture, /--compare-alpha-fit/);
   assert.match(capture, /metadata.hasAlpha === true/);
+  assert.match(capture, /if \(verifyIntrinsicAlpha\)/,
+    'baseline capture must not parse intrinsic alpha without the opt-in flag');
+  assert.match(capture, /args\.compareAlphaFit,/,
+    'only the optional A/B capture should request original alpha attestation');
   assert.match(capture, /fit: 'inside'/);
   assert.match(capture, /sourceHasIntrinsicTransparency: garment.sourceHasIntrinsicTransparency/);
   assert.match(capture, /if \(args\.compareAlphaFit\)/);
