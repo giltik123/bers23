@@ -12,6 +12,8 @@ on:
       - 'src/application/fashion/createCanonicalTryOnProductRuntime.js'
       - 'src/application/fashion/createCanonicalTryOnProductSession.js'
       - 'tests/fashion-tryon-editor-wiring.test.mjs'
+      - 'tests/fashion-tryon-live-outfit-refresh.test.mjs'
+      - 'src/components/editor/outfits/OutfitPanel.jsx'
       - 'tests/fashion-tryon-product-controls.test.mjs'
       - 'tests/fashion-tryon-editor-host.test.mjs'
       - 'tests/fashion-tryon-editor-controller.test.mjs'
@@ -42,6 +44,7 @@ jobs:
         run: |
           node --test \
             tests/fashion-tryon-editor-wiring.test.mjs \
+            tests/fashion-tryon-live-outfit-refresh.test.mjs \
             tests/fashion-tryon-product-controls.test.mjs \
             tests/fashion-tryon-editor-host.test.mjs \
             tests/fashion-tryon-editor-controller.test.mjs \

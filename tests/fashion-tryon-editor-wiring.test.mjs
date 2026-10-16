@@ -15,7 +15,8 @@ test('Editor wires canonical Try-On through the private hook and existing Result
   assert.match(editor, /if \(tryOnBlockedByEditor \|\| pendingResult\) return/);
   assert.match(editor, /disabled=\{tryOnBlockedByEditor\}/);
   assert.match(editor, /if \(!tryOnActive && !agentActive\) setEditTab\(next\)/);
-  assert.match(editor, /!tryOn\.state\.host\.active && <OutfitPanel \/>/);
+  assert.match(editor, /!tryOn\.state\.host\.active && <OutfitPanel onCanonicalChange=\{notifyOutfitChange\} \/>/);
+  assert.match(editor, /outfitRevision=\{outfitRevision\}/);
 
   const fashionRetry = editor.indexOf("pending?.kind === 'FASHION_TRYON'");
   const backgroundRetry = editor.indexOf("pending?.kind === 'BACKGROUND_ISOLATION'");
@@ -72,7 +73,7 @@ test('runner locks to the admitted Outfit, source artifact and beforeUrl and nev
   assert.match(runner, /!hostActive && \(/);
   assert.match(runner, /Selection alone never starts execution/);
   const effectStart = runner.indexOf('useEffect(() => {');
-  const effectEnd = runner.indexOf('}, [model]);', effectStart);
+  const effectEnd = runner.indexOf('}, [load, outfitRevision]);', effectStart);
   assert.ok(effectStart >= 0 && effectEnd > effectStart, 'read-only Outfit load effect must remain explicit');
   const loadEffect = runner.slice(effectStart, effectEnd);
   assert.match(loadEffect, /void load\(\)/);

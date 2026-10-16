@@ -21,7 +21,7 @@ function label(value) {
   return String(value || '').replaceAll('_', ' ').toLowerCase();
 }
 
-export default function OutfitPanel() {
+export default function OutfitPanel({ onCanonicalChange }) {
   const model = useMemo(() => createCanonicalOutfitViewModel({
     outfits: coreClient.fashion.outfits,
     wardrobe: coreClient.fashion.wardrobe,
@@ -53,23 +53,27 @@ export default function OutfitPanel() {
     ));
   }, []);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async ({ announce = true } = {}) => {
     setBusy('load');
     setError('');
     try {
       applySnapshot(await model.load());
+      if (announce) onCanonicalChange?.();
     } catch (cause) {
       setError(cause?.message || 'Outfits could not be loaded.');
     } finally {
       setBusy('');
     }
-  }, [applySnapshot, model]);
+  }, [applySnapshot, model, onCanonicalChange]);
 
   const reconcileQuietly = useCallback(async () => {
-    try { applySnapshot(await model.load()); } catch { /* keep the originating mutation error */ }
-  }, [applySnapshot, model]);
+    try {
+      applySnapshot(await model.load());
+      onCanonicalChange?.();
+    } catch { /* keep the originating mutation error */ }
+  }, [applySnapshot, model, onCanonicalChange]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { void reload({ announce: false }); }, [reload]);
 
   const selected = outfits.find((item) => item.id === selectedId) || null;
   const garmentById = useMemo(() => new Map(garments.map((item) => [item.garmentId, item])), [garments]);
@@ -114,6 +118,7 @@ export default function OutfitPanel() {
       setOutfits((current) => replaceOutfit(current, created));
       setSelectedId(created.id);
       setNewName('');
+      onCanonicalChange?.();
     } catch (cause) {
       await reconcileQuietly();
       setError(`Creation result was not confirmed. Canonical state was refreshed; check the list before retrying. ${cause?.message || ''}`.trim());
@@ -129,6 +134,7 @@ export default function OutfitPanel() {
     try {
       const next = await action(selected);
       setOutfits((current) => replaceOutfit(current, next));
+      onCanonicalChange?.();
       return true;
     } catch (cause) {
       await reconcileQuietly();
@@ -152,7 +158,7 @@ export default function OutfitPanel() {
         <p className="text-xs font-medium flex items-center gap-1.5">
           <Layers className="w-3.5 h-3.5 text-primary" /> Outfits
         </p>
-        <Button variant="ghost" size="sm" className="h-8" onClick={reload} disabled={Boolean(busy)}>
+        <Button variant="ghost" size="sm" className="h-8" onClick={() => reload()} disabled={Boolean(busy)}>
           <RefreshCw className={`h-3.5 w-3.5 ${busy === 'load' ? 'animate-spin' : ''}`} />
           <span className="sr-only">Reload outfits</span>
         </Button>
