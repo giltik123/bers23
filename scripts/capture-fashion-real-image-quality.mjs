@@ -4,6 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { performance } from 'node:perf_hooks';
 import sharp from 'sharp';
+import { alphaBoundedGarmentFitRND, sourceHasIntrinsicGarmentAlphaRND } from './fashion-alpha-outline-fit-rnd.mjs';
 
 import {
   GARMENT_TEXTURE_COMPOSITE_ALPHA_POLICY,
@@ -17,12 +18,13 @@ const ONE = GARMENT_TEXTURE_COMPOSITE_FIXED_POINT_ONE;
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
 
 function parseArgs(argv) {
-  const result = { manifest: 'config/v1-fashion-real-image-fixtures.json', out: '.test-cache/fashion-real-image-quality', candidate: process.env.EXPECTED_SHA || '' };
+  const result = { manifest: 'config/v1-fashion-real-image-fixtures.json', out: '.test-cache/fashion-real-image-quality', candidate: process.env.EXPECTED_SHA || '', compareAlphaFit: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--manifest') result.manifest = argv[++i];
     else if (arg === '--out') result.out = argv[++i];
     else if (arg === '--candidate') result.candidate = argv[++i];
+    else if (arg === '--compare-alpha-fit') result.compareAlphaFit = true;
     else throw new Error(`Unknown argument: ${arg}`);
   }
   if (!/^[0-9a-f]{40}$/.test(result.candidate)) throw new Error('Exact 40-hex candidate SHA is required');
@@ -108,7 +110,24 @@ async function decodeProject(bytes, width) {
   return { rgba: new Uint8ClampedArray(data), width: info.width, height: info.height };
 }
 
-async function decodeGarment(bytes, width, height) {
+async function decodeGarment(bytes, width, height, verifyIntrinsicAlpha = false) {
+  // Preserve the established baseline capture's decode path and cost. Source
+  // alpha attestation is research-only and must never run unless explicitly
+  // requested with --compare-alpha-fit. Check BEFORE contain padding.
+  let sourceHasIntrinsicTransparency = false;
+  if (verifyIntrinsicAlpha) {
+    const metadata = await sharp(bytes).metadata();
+    if (metadata.hasAlpha === true) {
+    const { data: unpadded, info: unpaddedInfo } = await sharp(bytes).rotate().resize(width, height, {
+      fit: 'inside',
+      withoutEnlargement: false,
+    }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    sourceHasIntrinsicTransparency = sourceHasIntrinsicGarmentAlphaRND({
+      rgba: unpadded, width: unpaddedInfo.width, height: unpaddedInfo.height,
+      encodedHasAlphaChannel: metadata.hasAlpha,
+    });
+    }
+  }
   const pipeline = sharp(bytes).rotate().resize(width, height, {
     fit: 'contain',
     position: 'centre',
@@ -117,7 +136,7 @@ async function decodeGarment(bytes, width, height) {
   }).ensureAlpha();
   const { data, info } = await pipeline.raw().toBuffer({ resolveWithObject: true });
   if (info.width !== width || info.height !== height || info.channels !== 4) throw new Error('Garment preprocess geometry mismatch');
-  return { rgba: new Uint8ClampedArray(data), width: info.width, height: info.height };
+  return { rgba: new Uint8ClampedArray(data), width: info.width, height: info.height, sourceHasIntrinsicTransparency };
 }
 
 function warpSpec(project, torso) {
@@ -167,6 +186,7 @@ async function main() {
   await mkdir(outDir, { recursive: true });
   await mkdir(path.join(outDir, 'sources'), { recursive: true });
   await mkdir(path.join(outDir, 'outputs'), { recursive: true });
+  if (args.compareAlphaFit) await mkdir(path.join(outDir, 'research-alpha-fit'), { recursive: true });
 
   const allFixtures = [...manifest.projects, ...manifest.garments];
   const downloaded = new Map();
@@ -197,7 +217,11 @@ async function main() {
 
   const garmentDecoded = new Map();
   for (const fixture of manifest.garments) {
-    const decoded = await decodeGarment(downloaded.get(fixture.id).bytes, manifest.preprocessing.garment.width, manifest.preprocessing.garment.height);
+    const decoded = await decodeGarment(
+      downloaded.get(fixture.id).bytes,
+      manifest.preprocessing.garment.width, manifest.preprocessing.garment.height,
+      args.compareAlphaFit,
+    );
     garmentDecoded.set(fixture.id, decoded);
     const preview = await pngFromRgba(decoded.rgba, decoded.width, decoded.height);
     await writeFile(path.join(outDir, 'sources', `${fixture.id}.png`), preview);
@@ -207,6 +231,7 @@ async function main() {
   if (!Number.isSafeInteger(repeats) || repeats < 3 || repeats > 20) throw new Error('Measured repeats must be an integer from 3 to 20');
 
   const samples = [];
+  const researchComparisons = [];
   const allLatencies = [];
   let peakMemoryBytes = Math.max(1, process.resourceUsage().maxRSS * 1024);
 
@@ -242,6 +267,38 @@ async function main() {
       const sampleId = `${projectFixture.id}__${garmentFixture.id}`;
       const outputPath = path.join(outDir, 'outputs', `${sampleId}.png`);
       await writeFile(outputPath, outputPng);
+      if (args.compareAlphaFit) {
+        // Research comparison only: never replace the established v1 release
+        // fixture output, source identity, latency evidence or review verdict.
+        const proposal = alphaBoundedGarmentFitRND({
+          garmentRgba: garment.rgba,
+          garmentWidth: garment.width,
+          garmentHeight: garment.height,
+          projectWidth: project.width,
+          projectHeight: project.height,
+          torsoQ16Normalized: projectFixture.torsoQ16Normalized,
+          sourceHasIntrinsicTransparency: garment.sourceHasIntrinsicTransparency,
+        });
+        if (proposal.status === 'CANDIDATE') {
+          const startedAt = performance.now();
+          const candidateRgba = garmentTextureCompositeRgba8(
+            project.rgba, project.width, project.height,
+            garment.rgba, garment.width, garment.height,
+            proposal.spec, { ...textureSpec, featherRadius: manifest.preprocessing.featherRadius },
+          );
+          const comparisonLatencyMs = performance.now() - startedAt;
+          const candidatePng = await pngFromRgba(candidateRgba, project.width, project.height);
+          await writeFile(path.join(outDir, 'research-alpha-fit', `${sampleId}.png`), candidatePng);
+          researchComparisons.push({
+            id: sampleId, status: 'CANDIDATE', baselineSha256: sha256(outputPng),
+            candidateSha256: sha256(candidatePng), comparisonLatencyMs,
+            alphaEvidence: proposal.evidence,
+          });
+        } else {
+          researchComparisons.push({ id: sampleId, status: 'SKIPPED', reason: proposal.reason,
+            baselineSha256: sha256(outputPng) });
+        }
+      }
       samples.push({
         id: sampleId,
         projectId: projectFixture.id,
@@ -256,6 +313,21 @@ async function main() {
         reviewFocus: garmentFixture.reviewFocus,
       });
     }
+  }
+
+  if (args.compareAlphaFit) {
+    const report = {
+      schemaVersion: 1,
+      kind: 'BERS_FASHION_ALPHA_OUTLINE_FIT_RESEARCH_COMPARISON',
+      candidateSha: args.candidate,
+      authority: 'RESEARCH_ONLY',
+      reviewed: false,
+      approvedForProduction: false,
+      changesCanonicalQualityEvidence: false,
+      samples: researchComparisons,
+    };
+    await writeFile(path.join(outDir, 'research-alpha-fit', 'comparison.json'),
+      JSON.stringify(report, null, 2) + '\n');
   }
 
   const fixtureIdentity = {
