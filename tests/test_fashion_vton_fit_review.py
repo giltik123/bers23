@@ -125,9 +125,9 @@ class FitReviewTests(unittest.TestCase):
                 return (len(payload).to_bytes(4, "big") + tag + payload
                         + zlib.crc32(tag + payload).to_bytes(4, "big"))
             ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-            return (b"\\x89PNG\\r\\n\\x1a\\n"
+            return (b"\x89PNG\r\n\x1a\n"
                     + chunk(b"IHDR", ihdr)
-                    + chunk(b"IDAT", zlib.compress(b"\\x00"))
+                    + chunk(b"IDAT", zlib.compress(b"\x00"))
                     + chunk(b"IEND", b""))
 
         oversized_pair = header_only_png(3600, 3600)
