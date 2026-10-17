@@ -61,7 +61,13 @@ export default function CanonicalTryOnRunnerPanel({
       setSelectedEntryId('');
     } catch (cause) {
       if (request === loadRequestRef.current) {
-        setError(cause?.message || 'Canonical Outfits could not be loaded for Try-On.');
+        // A failed canonical read cannot authorize Run from a prior snapshot.
+        // Leave Reload usable, but require a fresh successful selection.
+        setOutfits([]);
+        setGarments([]);
+        setSelectedOutfitId('');
+        setSelectedEntryId('');
+        setError(`Try-On choices could not be refreshed. Reload canonical Outfits before trying again. ${cause?.message || ''}`.trim());
       }
     } finally {
       if (request === loadRequestRef.current) setLoading(false);

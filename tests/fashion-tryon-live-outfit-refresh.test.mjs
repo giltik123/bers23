@@ -33,3 +33,26 @@ test('Try-On chooser refreshes read-only after changing Outfit revision or host 
   assert.match(runner, /disabled=\{disabled \|\| loading\}/);
   assert.doesNotMatch(runner.slice(runner.indexOf('useEffect(() => {'), runner.indexOf('}, [load, outfitRevision]);')), /onAction|prepareTryOn|continueTryOn|retry/);
 });
+
+test('failed canonical chooser reload invalidates stale entries but keeps explicit Reload available', async () => {
+  const runner = await readFile('src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx', 'utf8');
+  const load = runner.slice(
+    runner.indexOf('const load = useCallback(async () => {'),
+    runner.indexOf('}, [busy, hostActive, model]);'),
+  );
+  const failure = load.slice(load.indexOf('} catch (cause) {'), load.indexOf('} finally {'));
+  assert.match(failure, /if \(request === loadRequestRef\.current\)/,
+    'only the latest failed request may invalidate selection');
+  for (const invalidation of [
+    'setOutfits([]);', 'setGarments([]);',
+    "setSelectedOutfitId('');", "setSelectedEntryId('');",
+  ]) {
+    assert.ok(failure.includes(invalidation),
+      `a failed canonical snapshot must clear previous selection: ${invalidation}`);
+  }
+  assert.match(failure, /setError\(/);
+  assert.match(runner, /onClick=\{load\} disabled=\{selectionLocked \|\| disabled\}/,
+    'explicit Retry/Reload remains available after loading finishes');
+  assert.doesNotMatch(failure, /onAction|prepareTryOn|continueTryOn|retry\(/,
+    'failed read must never trigger execution or retry automatically');
+});
