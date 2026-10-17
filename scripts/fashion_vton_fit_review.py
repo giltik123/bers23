@@ -34,7 +34,8 @@ def _hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _image(data: bytes):
+def _image_dimensions(data: bytes):
+    """Read and bound the image header WITHOUT allocating a decoded pixel buffer."""
     from PIL import Image
     Image.MAX_IMAGE_PIXELS = MAX_PIXELS
     with Image.open(BytesIO(data)) as source:
@@ -42,6 +43,13 @@ def _image(data: bytes):
             raise ValueError("Unsupported review image format")
         if source.width < 1 or source.height < 1 or source.width * source.height > MAX_PIXELS:
             raise ValueError("Review image pixel budget exceeded")
+        return source.size
+
+
+def _image(data: bytes):
+    from PIL import Image
+    _image_dimensions(data)
+    with Image.open(BytesIO(data)) as source:
         return source.convert("RGB")
 
 
@@ -106,21 +114,28 @@ def generate_preview(*, person: Path, garment: Path, run_dir: Path, output: Path
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("Malformed GPU research report") from exc
     files = _check_report(run_report, _hash(person_data), _hash(garment_data), run_dir)
+    # Reject oversized multi-run reports BEFORE decoding any model result.
+    # A valid compressed PNG header can describe millions of pixels in few bytes.
+    dimensions = [_image_dimensions(data) for _, data, _ in files]
+    if sum(width * height for width, height in dimensions) > 24_000_000:
+        raise ValueError("Aggregate review pixel budget exceeded")
     person_image = _image(person_data)
     garment_image = _image(garment_data)
-    images = [(name, _image(data), sha) for name, data, sha in files]
-    if sum(image.width * image.height for _, image, _ in images) > 24_000_000:
-        raise ValueError("Aggregate review pixel budget exceeded")
 
     rendered = []
     records = []
-    for name, image, source_sha in images:
-        preview_bytes = _triptych(person_image, garment_image, image)
+    # Only one generative image is decoded at a time, not all 10 GPU outputs.
+    for (name, data, source_sha), (width, height) in zip(files, dimensions):
+        image = _image(data)
+        try:
+            preview_bytes = _triptych(person_image, garment_image, image)
+        finally:
+            image.close()
         preview_name = f"fit-review-{RESULT.fullmatch(name).group(1)}.png"
         rendered.append((preview_name, preview_bytes))
         records.append({
             "sourceResult": name, "sourceResultSha256": source_sha,
-            "generatedImageGeometry": {"width": image.width, "height": image.height},
+            "generatedImageGeometry": {"width": width, "height": height},
             "preview": preview_name, "previewSha256": _hash(preview_bytes),
             "humanReview": {axis: "PENDING" for axis in REVIEW_AXES},
         })
