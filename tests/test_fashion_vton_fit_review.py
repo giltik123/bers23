@@ -113,5 +113,53 @@ class FitReviewTests(unittest.TestCase):
         self.assertFalse(self.output.exists())
 
 
+    def test_aggregate_budget_rejected_using_headers_before_pixel_decode(self):
+        # Deliberately truncated compressed pixel streams: Pillow can read
+        # their PNG geometry, but decode would fail. Prove the total budget is
+        # checked before loading a 26-million-pixel pair into memory.
+        import struct
+        import zlib
+
+        def header_only_png(width, height):
+            def chunk(tag, payload):
+                return (len(payload).to_bytes(4, "big") + tag + payload
+                        + zlib.crc32(tag + payload).to_bytes(4, "big"))
+            ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+            return (b"\\x89PNG\\r\\n\\x1a\\n"
+                    + chunk(b"IHDR", ihdr)
+                    + chunk(b"IDAT", zlib.compress(b"\\x00"))
+                    + chunk(b"IEND", b""))
+
+        oversized_pair = header_only_png(3600, 3600)
+        report_file = self.run / "run-report.json"
+        report = json.loads(report_file.read_text())
+        report["runs"] = []
+        for index in range(1, 3):
+            name = f"result-{index:02d}.png"
+            (self.run / name).write_bytes(oversized_pair)
+            report["runs"].append({"name": name, "sha256": sha(oversized_pair)})
+        report_file.write_text(json.dumps(report))
+        with self.assertRaisesRegex(ValueError, "Aggregate review pixel budget exceeded"):
+            generate_preview(person=self.person, garment=self.garment,
+                             run_dir=self.run, output=self.output)
+        self.assertFalse(self.output.exists())
+
+    def test_multiple_valid_results_reviewed_without_automatic_approval(self):
+        second = png((90, 100, 110))
+        (self.run / "result-02.png").write_bytes(second)
+        report_file = self.run / "run-report.json"
+        report = json.loads(report_file.read_text())
+        report["runs"].append({"name": "result-02.png", "sha256": sha(second)})
+        report_file.write_text(json.dumps(report))
+        manifest = generate_preview(person=self.person, garment=self.garment,
+                                    run_dir=self.run, output=self.output)
+        self.assertEqual(len(manifest["generatedModelResults"]), 2)
+        self.assertEqual([item["sourceResult"] for item in manifest["generatedModelResults"]],
+                         ["result-01.png", "result-02.png"])
+        self.assertTrue(all(all(value == "PENDING" for value in item["humanReview"].values())
+                            for item in manifest["generatedModelResults"]))
+        self.assertFalse(manifest["qualityAccepted"])
+
+
 if __name__ == "__main__":
     unittest.main()
