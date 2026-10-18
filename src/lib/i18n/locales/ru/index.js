@@ -121,6 +121,7 @@ export const modules = {
     "restore": "Восстановить",
     "archive": "В архив",
     "delete": "Удалить",
+    "sortRecent": "Последние изменения", "sortCreated": "Сначала новые", "sortName": "По алфавиту", "sortEdits": "Больше правок",
     "recent": "Недавно изменённые",
     "name": "По названию",
     "oldest": "Сначала старые"
