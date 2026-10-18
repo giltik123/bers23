@@ -22,6 +22,7 @@ test('Virtual Try-On FINAL reopens, retains source, accepts, undoes/redoes and r
     const stale = await images.persistFinal(scope, 'vton-stale', 'virtual-try-on', pixels, lineage);
     const freshStore = new PostgresImageArtifactStore(pool);
     assert.equal((await freshStore.loadFinalByExecution('vton-first', scope))?.sourceImageStorageId, lineage.sourceImageStorageId);
+    await assert.rejects(pool.query('UPDATE canonical_image_artifacts SET source_image_storage_id=$1 WHERE storage_id=$1', [first.storageId]));
     await projects.acceptFinal(owner, scope.projectId, first.storageId, 'try-on');
     await assert.rejects(projects.acceptFinal(owner, scope.projectId, stale.storageId, 'stale'), (e: any) => e.status === 409);
     // Exact replay remains available after Accept changes the cursor.

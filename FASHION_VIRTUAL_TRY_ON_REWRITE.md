@@ -30,13 +30,15 @@ The public command carries only garmentId and a consent boolean, in addition to 
 
 FAL receives two server-materialized PNG inputs. Its result uses the existing bounded MIME/byte loader. Only the exact documented cdn.fashn.ai host is added to fal.media/v3.fal.media; subdomains, lookalikes and forbidden redirects stay blocked. Safety checking is always enabled. Runtime verification proves decoded structure and input lineage, not visual quality.
 
-Migration 049 adds source-only VIRTUAL_TRY_ON lineage while retaining the prior check expression. A database insert guard binds new results to the current owned Project source and its dimensions. Exact persisted replay can reopen after Accept. Generic Project acceptance serializes the source check with history mutations, so another tab's accepted image disarms a stale result. User review remains mandatory before Accept; the existing face/garment/body/artifact checks now cover this operation. No provider failure silently falls back to a collage. Unknown outcomes are surfaced without an automatic retry.
+Migration 049 adds source-only VIRTUAL_TRY_ON lineage while retaining the prior check expression, and closes optional refinement fields only when that independent extension is present. It does not load the F5 refinement migration into F4-only bundles. A database insert guard binds new results to the current owned Project source and its dimensions. Exact persisted replay can reopen after Accept. Generic Project acceptance serializes the source check with history mutations, so another tab's accepted image disarms a stale result. User review remains mandatory before Accept; the existing face/garment/body/artifact checks now cover this operation. No provider failure silently falls back to a collage. Unknown outcomes are surfaced without an automatic retry.
 
 ## Validation recorded locally
 
 - New canonical pipeline, consent, invalid bytes, aspect ratio, foreign scope, replay fingerprint, stale source and off-centre geometry plus disabled-provider admission: 9/9 passed.
 - Exact output-host/MIME/byte/redirect policy: 8/8 passed.
 - Existing controlled-local-edit and production FAL contracts: 24/24 passed.
+- Canonical service cancellation/reservation/replay and product vertical regression: 28/28 passed.
+- Production migration inventory and strict subset packaging: 5/5 passed after removing the unnecessary F5 migration dependency.
 - Server TypeScript, browser production build, server bundle and changed browser-file ESLint passed before final review; repeat checks apply to the final head.
 - General creative-workflow suite: 123/132 passed, 9 failed. Substituting the original HEAD WorkflowEngine yields the same 9 failures (eight recovery cases and the existing provider-unavailable assertion). These are not reported as passing.
 - New real PostgreSQL acceptance test covers persist/reopen/Accept/exact replay/stale and foreign sources/Undo/Redo. Local PostgreSQL was initially unavailable; the dedicated PR workflow provisions PostgreSQL 16. Database concurrency/authority acceptance is pending that exact-head CI.

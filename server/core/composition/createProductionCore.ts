@@ -1,5 +1,4 @@
 import { checkVirtualTryOnSchema, migrateVirtualTryOnSchema } from '../fashion/virtualTryOnSchema.ts';
-import { migrateGarmentAppearanceRefinementFinalLineageSchema } from '../fashion/garmentAppearanceRefinementFinalLineageSchema.ts';
 import { createVirtualTryOnGarmentResolver } from '../fashion/resolveVirtualTryOnGarment.ts';
 import { PostgresGarmentStore } from '../fashion/postgresGarmentStore.ts';
 import { PostgresGarmentWardrobeStore } from '../fashion/postgresGarmentWardrobeStore.ts';
@@ -157,7 +156,6 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       now,
     });
     if (config.nodeEnv === 'test') {
-      await migrateGarmentAppearanceRefinementFinalLineageSchema(transactions.pool);
       await migrateVirtualTryOnSchema(transactions.pool);
     } else await checkVirtualTryOnSchema(transactions.pool);
     const ownsArtifacts = (scope: Parameters<ArtifactAuthority['owns']>[0], ids: readonly string[]) => artifacts.owns(scope, ids);
