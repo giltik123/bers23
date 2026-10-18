@@ -139,7 +139,7 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
     "preferences": "Preferences and notifications",
     "closeMenu": "Close navigation menu",
     "openMenu": "Open navigation menu",
-    "close": "Close",
+    "toLight": "Switch to light appearance", "toDark": "Switch to dark appearance", "unreadCount": "{count} unread", "close": "Close",
     "menu": "Menu"
   },
   assetUi: {
