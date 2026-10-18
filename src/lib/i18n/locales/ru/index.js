@@ -136,7 +136,7 @@ export const modules = {
     "preferences": "Настройки и уведомления",
     "closeMenu": "Закрыть меню",
     "openMenu": "Открыть меню",
-    "close": "Закрыть",
+    "toLight": "Включить светлую тему", "toDark": "Включить тёмную тему", "unreadCount": "Непрочитанных: {count}", "close": "Закрыть",
     "menu": "Меню"
   },
   assetUi: {
