@@ -34,7 +34,7 @@ export default function NotificationCenter() {
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-controls={panelId}
-        aria-label={state.unread > 0 ? t('notifications.title') + ', ' + state.unread : t('notifications.title')}
+        aria-label={state.unread > 0 ? t('notifications.title') + ', ' + t('navUi.unreadCount', { count: state.unread }) : t('notifications.title')}
         className="relative inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
       >
         <Bell className="h-4 w-4" aria-hidden="true" />
