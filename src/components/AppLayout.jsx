@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { Sparkles, FolderOpen, Images, Workflow, CreditCard, Settings2, Menu, X } from 'lucide-react';
 import ThemeToggle from '@/components/ThemeToggle';
+import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
 import NotificationCenter from '@/components/NotificationCenter';
 import { deviceProfiler } from '@/lib/performance/deviceProfiler';
 import { memoryManager } from '@/lib/performance/memoryManager';
@@ -86,6 +87,7 @@ export default function AppLayout() {
             <NavLink {...accountNavigation[0]} active={isActive('/subscription')} />
             <span className="mx-1 h-7 w-px bg-border" aria-hidden="true" />
             <NotificationCenter />
+            <LanguageSwitcher />
             <ThemeToggle showLabel />
             <NavLink {...accountNavigation[1]} active={isActive('/settings')} />
           </div>
@@ -111,6 +113,7 @@ export default function AppLayout() {
               {accountNavigation.map((item) => <NavLink key={item.path} {...item} active={isActive(item.path)} onNavigate={() => setMenuOpen(false)} compact />)}
               <div className="flex flex-wrap items-center gap-2 px-2 pt-3" aria-label={t("navUi.preferences")}>
                 <NotificationCenter />
+                <LanguageSwitcher />
                 <ThemeToggle showLabel />
               </div>
             </div>
