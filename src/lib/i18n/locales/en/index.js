@@ -124,6 +124,7 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
     "restore": "Restore",
     "archive": "Archive",
     "delete": "Delete",
+    "sortRecent": "Last edited", "sortCreated": "Newest", "sortName": "Name A–Z", "sortEdits": "Most edits",
     "recent": "Recently updated",
     "name": "Name",
     "oldest": "Oldest"
