@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Loader2, ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ProjectCard from '@/components/projects/ProjectCard';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import ProjectToolbar from '@/components/projects/ProjectToolbar';
 import ErrorBanner from '@/components/editor/ErrorBanner';
 import { projectService, searchProjects, sortProjects } from '@/lib/projectService';
@@ -12,6 +13,7 @@ import { networkManager } from '@/lib/performance/networkManager';
 import { offlineQueue } from '@/lib/performance/offlineQueue';
 
 export default function Projects() {
+  const { t } = useTranslation();
   const [projects, setProjects] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState('');
@@ -30,7 +32,7 @@ export default function Projects() {
       setProjects(await projectService.list());
     } catch (error) {
       console.error('[Projects] Failed to load projects', error);
-      setLoadError(error?.message || 'Unable to load projects.');
+      setLoadError(error?.message || t('projectUi.listFailed'));
     }
   };
   const createProjectFromFile = (file) => projectService.createFromFile(file);
@@ -46,8 +48,8 @@ export default function Projects() {
     } catch (error) {
       console.error('[Projects] Failed to create project', error);
       const retryable = !networkManager.snapshot().online || /network|fetch|timeout/i.test(error?.message || '');
-      if (retryable) { offlineQueue.enqueue({ kind: 'project-upload', file }); setUploadError('Queued to retry while this tab remains open. If you reload or close it, choose the file again.'); }
-      else setUploadError(error?.message || 'Unable to create this project.');
+      if (retryable) { offlineQueue.enqueue({ kind: 'project-upload', file }); setUploadError(t('projectUi.retryQueued')); }
+      else setUploadError(error?.message || t('projectUi.createFailed'));
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -55,11 +57,11 @@ export default function Projects() {
   };
 
   const handleRename = async (project) => {
-    const name = window.prompt('Rename project', project.name);
+    const name = window.prompt(t('projectUi.renameTitle'), project.name);
     if (!name || name === project.name) return;
     setActionError('');
     try { await projectService.rename(project.id, name); await reload(); }
-    catch (error) { console.error('[Projects] Failed to rename project', error); setActionError(error?.message || 'Unable to rename project.'); }
+    catch (error) { console.error('[Projects] Failed to rename project', error); setActionError(error?.message || t('projectUi.renameFailed')); }
   };
 
 
@@ -78,7 +80,7 @@ export default function Projects() {
   const handleDelete = async (project) => {
     setActionError('');
     try { await projectService.remove(project.id); setProjects((current) => current.filter((p) => p.id !== project.id)); }
-    catch (error) { console.error('[Projects] Failed to delete project', error); setActionError(error?.message || 'Unable to delete project.'); }
+    catch (error) { console.error('[Projects] Failed to delete project', error); setActionError(error?.message || t('projectUi.deleteFailed')); }
   };
 
   const visible = projects
@@ -96,19 +98,19 @@ export default function Projects() {
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-7 px-4 py-7 sm:space-y-8 sm:px-6 sm:py-10">
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} aria-label="Choose a photo for a new project" />
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} aria-label={t('projectUi.fileInput')} />
       <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Your workspace</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Projects</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Your photos and edits live here. Choose an existing project or start with a new image.</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">{t('projectUi.workspace')}</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">{t('navUi.projects')}</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{t('projectUi.intro')}</p>
       </header>
 
-      <section aria-label="Start editing" className="relative overflow-hidden rounded-3xl border border-teal-800/40 bg-gradient-to-br from-teal-950 via-teal-900 to-teal-800 p-6 text-white shadow-lg sm:p-8">
+      <section aria-label={t('projectUi.startEditing')} className="relative overflow-hidden rounded-3xl border border-teal-800/40 bg-gradient-to-br from-teal-950 via-teal-900 to-teal-800 p-6 text-white shadow-lg sm:p-8">
         <div className="relative z-10 max-w-2xl space-y-5">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-teal-200">CREATE SOMETHING</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Bring your next photo to life.</h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-teal-50/85">Open a photo, make a focused change, compare the preview and save only when it looks right.</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-teal-200">{t('projectUi.createSomething')}</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">{t('projectUi.hero')}</h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-teal-50/85">{t('projectUi.heroHint')}</p>
           </div>
           <Button
             onClick={() => fileRef.current?.click()}
@@ -116,12 +118,12 @@ export default function Projects() {
             className="min-h-12 rounded-xl bg-white px-5 font-semibold text-teal-950 shadow-sm hover:bg-teal-50"
           >
             {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="mr-2 h-4 w-4" aria-hidden="true" />}
-            {uploading ? 'Creating project…' : 'New project'}
+            {uploading ? t('projectUi.creating') : t('projectUi.newProject')}
           </Button>
           <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-teal-50/80" aria-label="How editing works">
-            <span><strong className="mr-1 text-white">01</strong> Upload photo</span>
-            <span><strong className="mr-1 text-white">02</strong> Choose an edit</span>
-            <span><strong className="mr-1 text-white">03</strong> Preview & save</span>
+            <span><strong className="mr-1 text-white">01</strong> {t("projectUi.stepUpload")}</span>
+            <span><strong className="mr-1 text-white">02</strong> {t("projectUi.stepEdit")}</span>
+            <span><strong className="mr-1 text-white">03</strong> {t("projectUi.stepSave")}</span>
           </div>
         </div>
         <div className="pointer-events-none absolute -right-16 -top-24 h-80 w-80 rounded-full border border-teal-200/15 bg-teal-200/10 blur-2xl" aria-hidden="true" />
@@ -134,10 +136,10 @@ export default function Projects() {
       <section aria-label="Project library" className="space-y-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold tracking-tight">Your projects</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Find a photo and continue where you left off.</p>
+            <h2 className="text-xl font-semibold tracking-tight">{t('projectUi.projectLibrary')}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{t('projectUi.libraryHint')}</p>
           </div>
-          {visible && <span className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground" aria-live="polite">{visible.length} shown</span>}
+          {visible && <span className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground" aria-live="polite">{t('projectUi.shown', { count: visible.length })}</span>}
         </div>
 
         <ProjectToolbar
@@ -147,12 +149,12 @@ export default function Projects() {
         />
 
         {!visible && !loadError ? (
-          <div className="flex justify-center rounded-3xl border border-border/70 bg-card py-20" role="status" aria-label="Loading projects"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+          <div className="flex justify-center rounded-3xl border border-border/70 bg-card py-20" role="status" aria-label={t('projectUi.loading')}><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
         ) : loadError ? null : visible.length === 0 ? (
           query || showArchived ? (
             <div className="rounded-3xl border border-border/70 bg-card px-6 py-16 text-center">
-              <p className="text-sm font-medium">{showArchived ? 'No archived projects found' : 'No matching projects'}</p>
-              <p className="mt-2 text-sm text-muted-foreground">Try another search or switch back to active projects.</p>
+              <p className="text-sm font-medium">{showArchived ? t('projectUi.archivedEmpty') : t('projectUi.matchingEmpty')}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{t('projectUi.trySearch')}</p>
             </div>
           ) : (
             <button
@@ -162,8 +164,8 @@ export default function Projects() {
               className="flex w-full flex-col items-center gap-3 rounded-3xl border-2 border-dashed border-border bg-card px-5 py-20 text-muted-foreground transition-colors hover:border-primary/50 hover:bg-accent/40 hover:text-foreground"
             >
               <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><ImageIcon className="h-7 w-7" /></span>
-              <span className="text-base font-semibold text-foreground">Add your first photo</span>
-              <span className="max-w-sm text-center text-sm">Choose an image from your device to start editing. Your projects will appear here.</span>
+              <span className="text-base font-semibold text-foreground">{t('projectUi.addFirst')}</span>
+              <span className="max-w-sm text-center text-sm">{t('projectUi.firstHint')}</span>
             </button>
           )
         ) : (
