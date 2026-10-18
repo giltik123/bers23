@@ -250,7 +250,7 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
         <Button onClick={onAccept} disabled={busy || reviewBlocked} className="flex-1 min-w-[100px]">
           {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />} Accept
         </Button>
-        {onRetry && <Button variant="outline" onClick={onRetry} disabled={busy} className="rounded-xl">
+        {onRetry && kind !== 'VIRTUAL_TRY_ON' && <Button variant="outline" onClick={onRetry} disabled={busy} className="rounded-xl">
           <RotateCcw className="w-4 h-4 mr-2" /> Retry
         </Button>}
         <Button variant="outline" onClick={onDiscard} disabled={busy} className="rounded-xl text-destructive hover:text-destructive">

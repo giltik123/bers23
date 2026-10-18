@@ -980,6 +980,10 @@ export default function Editor() {
     const pending = pendingResult;
     disposePendingPreview(pending);
     setPendingResult(null);
+    if (pending?.kind === 'VIRTUAL_TRY_ON') {
+      setAiError('Выберите вещь и подтвердите новую примерку заново.');
+      return;
+    }
     if (pending?.kind === 'FASHION_TRYON') {
       void tryOn.retry().catch((cause) => setAiError(cause?.message || 'Canonical deterministic Try-On retry failed.'));
       return;
@@ -1392,7 +1396,7 @@ export default function Editor() {
           editScope={pendingResult.scope || null}
           onAccept={acceptResult}
           onDiscard={discardResult}
-          onRetry={pendingResult.kind === 'VIRTUAL_TRY_ON' ? null : retryResult}
+          onRetry={retryResult}
           busy={committing || tryOn.busy || boundedAgent.busy || isolatingBackground || applyingMaskedExposure || applyingMaskedWhiteBalance || applyingMaskedLevels || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode)}
         />
       ) : cropInteractionActive ? (
@@ -1459,8 +1463,8 @@ export default function Editor() {
                 onAbandon={abandonTryOn}
                 onClose={closeTryOn}
               />
-              {!tryOn.state.host.active && <OutfitPanel onCanonicalChange={notifyOutfitChange} />}
               </details>
+              {!tryOn.state.host.active && <OutfitPanel onCanonicalChange={notifyOutfitChange} />}
             </div>
           ) : editTab === 'fashion' ? (
             <FashionPanel voiceQuery={voiceWardrobeQuery} />

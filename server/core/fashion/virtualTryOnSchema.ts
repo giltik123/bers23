@@ -12,7 +12,10 @@ export async function migrateVirtualTryOnSchema(pool: Pool): Promise<void> {
   try { await checkVirtualTryOnSchema(pool); return; } catch { /* apply additive policy */ }
   let sql: string;
   try { sql = await readFile(new URL('./migrations/049_virtual_try_on_final_lineage.sql', import.meta.url), 'utf8'); }
-  catch { sql = await readFile(resolve('dist-server/migrations/049_virtual_try_on_final_lineage.sql'), 'utf8'); }
+  catch (error) {
+    if (process.env.NODE_ENV === 'production') throw error;
+    sql = await readFile(resolve('server/core/fashion/migrations/049_virtual_try_on_final_lineage.sql'), 'utf8');
+  }
   await pool.query(sql);
   await checkVirtualTryOnSchema(pool);
 }

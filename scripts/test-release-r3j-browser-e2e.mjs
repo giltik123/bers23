@@ -243,6 +243,7 @@ try {
   assert.match(entryId, /^[0-9a-f-]{36}$/);
   assert.equal(outfitWithEntry.entries[0].garment_id, garment.id);
 
+  await page.getByText('Ручной перенос текстуры и комплекты (дополнительно)', { exact: true }).click();
   const runner = page.getByRole('region', { name: 'Canonical deterministic Try-On runner', exact: true });
   await runner.waitFor({ state: 'visible', timeout: 15_000 });
   const runnerReload = waitForCoreResponses(page, [
