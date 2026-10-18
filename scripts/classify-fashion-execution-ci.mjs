@@ -266,7 +266,7 @@ function getF4b4PostgresExactPaths() {
   if (manifest?.version !== 1 || manifest?.profile !== FASHION_EXECUTION_PROFILES.F4B4_POSTGRES_VERTICAL) {
     throw new Error('Invalid F4b.4 PostgreSQL CI closure manifest identity');
   }
-  const expectedCounts = Object.freeze({ bundleInputs: 229, migrationPaths: 44, supportPaths: 17 });
+  const expectedCounts = Object.freeze({ bundleInputs: 231, migrationPaths: 45, supportPaths: 17 });
   for (const [key, expected] of Object.entries(expectedCounts)) {
     if (!Array.isArray(manifest[key]) || manifest[key].length !== expected) {
       throw new Error(`Invalid F4b.4 PostgreSQL CI closure ${key}: expected ${expected} exact paths`);
@@ -290,6 +290,9 @@ function getF4b4PostgresExactPaths() {
   }
   if (!manifest.migrationPaths.includes('server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql')) {
     throw new Error('Fashion PostgreSQL CI closure must include Masked Levels lineage migration 048');
+  }
+  if (!manifest.migrationPaths.includes('server/core/fashion/migrations/049_virtual_try_on_final_lineage.sql')) {
+    throw new Error('F4b.4 PostgreSQL CI closure must include virtual try-on lineage migration 049');
   }
   if (manifest.migrationPaths.includes('server/core/fashion/migrations/032_fashion_garment_refinement_final_lineage.sql')) {
     throw new Error('F5 refinement migration 032 must not enter F4b.4 PostgreSQL CI authority');

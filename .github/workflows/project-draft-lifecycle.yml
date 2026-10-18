@@ -62,7 +62,8 @@ jobs:
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 48) throw new Error(`Expected 48 contiguous migrations, got ${migrations.length}`);
+          if (migrations.length !== 49) throw new Error(`Expected 49 contiguous migrations, got ${migrations.length}`);
+          if (migrations[48]?.name !== '049_virtual_try_on_final_lineage.sql' || migrations[48]?.source !== 'server/core/fashion/migrations/049_virtual_try_on_final_lineage.sql') throw new Error('049 Virtual Try-On lineage must be the exact global tail in Fashion authority');
           if (migrations[43]?.name !== '044_canonical_project_revision.sql') throw new Error('044 Project revision migration moved');
           if (migrations[44]?.name !== '045_canonical_project_status_lifecycle.sql') throw new Error('045 Project status lifecycle is not the exact tail');
           if (migrations[44]?.source !== 'server/core/projects/migrations/045_canonical_project_status_lifecycle.sql') throw new Error('045 Project lifecycle migration moved outside Project authority');
@@ -81,6 +82,7 @@ jobs:
           test -f dist-server/migrations/046_canonical_masked_exposure_final_lineage.sql
           test -f dist-server/migrations/047_canonical_masked_white_balance_final_lineage.sql
           test -f dist-server/migrations/048_canonical_masked_levels_final_lineage.sql
+          test -f dist-server/migrations/049_virtual_try_on_final_lineage.sql
           node dist-server/migrate.mjs migrate
           node dist-server/migrate.mjs check
       - name: Bundle Project Draft lifecycle regressions

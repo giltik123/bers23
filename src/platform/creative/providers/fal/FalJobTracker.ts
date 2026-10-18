@@ -6,6 +6,10 @@ export class FalJobTracker {
   async wait(job: { requestId: string; statusUrl?: string; responseUrl?: string }, deadline: number, onPoll?: (response: unknown) => void, signal: AbortSignal = new AbortController().signal): Promise<{ response: unknown; polls: number; retries: number }> {
     const base = this.dependencies.api.baseUrl!; let polls = 0; let retries = 0;
     const statusUrl = job.statusUrl ?? `${base}/requests/${encodeURIComponent(job.requestId)}/status`; const responseUrl = job.responseUrl ?? `${base}/requests/${encodeURIComponent(job.requestId)}`;
+    for (const value of [statusUrl, responseUrl]) {
+      const url = new URL(value); const allowed = new URL(base);
+      if (url.protocol !== 'https:' || url.origin !== allowed.origin || url.username || url.password) throw new Error('Fal queue control URL is outside the authenticated API origin');
+    }
     while (this.dependencies.clock() < deadline) {
       throwIfCancelled(signal);
       await this.dependencies.sleep(this.dependencies.api.pollIntervalMs ?? 500);

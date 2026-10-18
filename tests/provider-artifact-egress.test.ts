@@ -11,7 +11,7 @@ const response = (status = 200, headers: Record<string, string> = {}, bytes: Uin
 const policy = Object.freeze({ allowedHosts: FAL_OUTPUT_ARTIFACT_HOSTS, maxRedirects: 4 });
 
 test('FAL output artifact policy is exact, immutable and evidence-bounded', () => {
-  assert.deepEqual(FAL_OUTPUT_ARTIFACT_HOSTS, ['fal.media', 'v3.fal.media']);
+  assert.deepEqual(FAL_OUTPUT_ARTIFACT_HOSTS, ['fal.media', 'v3.fal.media', 'cdn.fashn.ai']);
   assert.equal(Object.isFrozen(FAL_OUTPUT_ARTIFACT_HOSTS), true);
 });
 
@@ -38,6 +38,8 @@ test('scheme credentials ports and non-allowlisted destinations fail before netw
     'https://169.254.169.254/latest/meta-data',
     'https://evil.example/a.png',
     'https://sub.fal.media/a.png',
+    'https://cdn.fashn.ai.evil.example/a.png',
+    'https://sub.cdn.fashn.ai/a.png',
   ]) {
     let calls = 0;
     const transport = new ProviderArtifactEgressTransport(async () => { calls++; return response(); }, policy);
@@ -97,6 +99,6 @@ test('artifact egress transport is GET-only and production composition cannot be
   const transport = new ProviderArtifactEgressTransport(async () => response(), policy);
   await assert.rejects(transport.send({ url: 'https://fal.media/a', method: 'POST', headers: {}, body: '{}', timeoutMs: 1000 }, new AbortController().signal), /GET-only/);
   const composition = await readFile('src/platform/creative/composition/CreativeProviderComposition.ts', 'utf8');
-  assert.equal(composition.includes("['fal.media', 'v3.fal.media']"), true);
+  assert.equal(composition.includes("['fal.media', 'v3.fal.media', 'cdn.fashn.ai']"), true);
   assert.equal(/allowedHosts:\s*(input|request|metadata|env)/.test(composition), false);
 });

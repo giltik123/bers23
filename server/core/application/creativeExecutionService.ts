@@ -2,9 +2,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { CreativeExecutionPlatform, type CreativeArtifact, type CreativeExecutionPlatformRuntimeDependencies, type CreativeRequest, type ProductionOutcome } from '../../../src/platform/creative/canonical/index.ts';
 import type { ExecutionRun, ExecutionRunRegistry } from '../execution/executionRunRegistry.ts';
 
-export type CreativeEditCommand = Readonly<{ projectId: string; instruction: string; selectedObjectIds?: readonly string[]; inputArtifactId: string; maskArtifactIds?: readonly string[]; preserveMode?: string; clientRequestId: string }>;
+export type CreativeEditCommand = Readonly<{ projectId: string; instruction: string; selectedObjectIds?: readonly string[]; inputArtifactId: string; maskArtifactIds?: readonly string[]; preserveMode?: string; clientRequestId: string; garmentId?: string; tryOnConsent?: boolean }>;
 export type AuthenticatedScope = Readonly<{ tenantId: string; userId: string }>;
 export type CreativeArtifactReplayIdentities = Readonly<{ inputArtifactIdentity: string; maskArtifactIdentities: readonly string[] }>;
+export type VirtualTryOnGarment = Readonly<{ identity: string; category: 'tops' | 'bottoms' | 'one-pieces'; artifact: CreativeArtifact }>;
 export type CreativeExecutionServiceDependencies = Readonly<{
   platform: CreativeExecutionPlatformRuntimeDependencies;
   ownsArtifacts(scope: AuthenticatedScope & { projectId: string }, artifactIds: readonly string[]): Promise<boolean>;
@@ -23,6 +24,7 @@ export type CreativeExecutionServiceDependencies = Readonly<{
    * a durable run identity.
    */
   executionRuns?: ExecutionRunRegistry;
+  resolveTryOnGarment?(scope: AuthenticatedScope & { projectId: string }, garmentId: string, sourceArtifactId: string): Promise<VirtualTryOnGarment>;
   creditsPerEdit?: number;
   hardBudgetCredits?: number;
   now?: () => number;
@@ -35,9 +37,10 @@ type CreativeInflight = Readonly<{ fingerprint: Promise<string>; promise: Promis
 const CREATIVE_CANCEL_REASON = 'CREATIVE_EXECUTION_CANCELLED';
 const CREATIVE_REPLAY_IDENTITY_VERSION = 'creative-request-v1';
 
-export function creativeRequestFingerprint(command: CreativeEditCommand, artifacts: CreativeArtifactReplayIdentities): string {
+export function creativeRequestFingerprint(command: CreativeEditCommand, artifacts: CreativeArtifactReplayIdentities, garmentIdentity?: string): string {
   const canonical = JSON.stringify({
     version: CREATIVE_REPLAY_IDENTITY_VERSION,
+    ...(garmentIdentity ? { garmentIdentity, operation: 'VIRTUAL_TRY_ON' } : {}),
     instruction: command.instruction,
     inputArtifactIdentity: artifacts.inputArtifactIdentity,
     maskArtifactIdentities: [...artifacts.maskArtifactIdentities],
@@ -76,12 +79,18 @@ export class CreativeExecutionService {
       return Promise.reject(publicError('validation_error',
         'Controlled generative edits currently support exactly one selected object and one Core mask', 400, false));
     }
+    if (command.garmentId && (hasMasks || hasObjects || command.tryOnConsent !== true)) return Promise.reject(publicError('validation_error', 'Try-On requires explicit cloud consent and cannot be combined with masks', 400, false));
+    if (command.garmentId && (!this.dependencies.resolveTryOnGarment || !this.dependencies.hydrateArtifacts || !this.dependencies.persistFinal)) return Promise.reject(publicError('fashion_unavailable', 'Virtual Try-On is not configured', 503, false));
+    const reference = command.garmentId
+      ? this.dependencies.resolveTryOnGarment!({ ...auth, projectId: command.projectId }, command.garmentId, command.inputArtifactId)
+      : Promise.resolve(undefined);
+    void reference.catch(() => undefined);
     const key = `${auth.tenantId}:${auth.userId}:${command.projectId}:${command.clientRequestId}`;
-    const fingerprint = this.#resolveFingerprint(command, auth);
+    const fingerprint = this.#resolveFingerprint(command, auth, reference);
     const prior = this.#inflight.get(key);
     if (prior) return joinSameProcessReplay(prior, fingerprint);
 
-    const task = fingerprint.then(value => this.#execute(command, auth, key, value, correlationId));
+    const task = fingerprint.then(value => this.#execute(command, auth, key, value, correlationId, reference));
     this.#inflight.set(key, Object.freeze({ fingerprint, promise: task }));
     void task.catch(() => {
       const current = this.#inflight.get(key);
@@ -118,7 +127,7 @@ export class CreativeExecutionService {
   result(executionId: string, auth?: AuthenticatedScope) { this.assertScope(executionId, auth); return this.#results.get(executionId); }
   deliveryUrl(artifact: CreativeArtifact): string | undefined { const storageId = artifact.metadata?.storageId; return artifact.role === 'COMPOSITE' && artifact.state === 'FINAL' && typeof storageId === 'string' && this.dependencies.mintFinalDelivery ? this.dependencies.mintFinalDelivery(artifact.scope, storageId) : undefined; }
 
-  async #resolveFingerprint(command: CreativeEditCommand, auth: AuthenticatedScope): Promise<string> {
+  async #resolveFingerprint(command: CreativeEditCommand, auth: AuthenticatedScope, reference: Promise<VirtualTryOnGarment | undefined>): Promise<string> {
     const scope = Object.freeze({ tenantId: auth.tenantId, userId: auth.userId, projectId: command.projectId });
     const references = Object.freeze([command.inputArtifactId, ...(command.maskArtifactIds ?? [])]);
     let identities: readonly string[];
@@ -135,13 +144,14 @@ export class CreativeExecutionService {
     } else {
       identities = references;
     }
+    const garment = await reference;
     return creativeRequestFingerprint(command, Object.freeze({
       inputArtifactIdentity: identities[0],
       maskArtifactIdentities: Object.freeze(identities.slice(1)),
-    }));
+    }), garment?.identity);
   }
 
-  async #execute(command: CreativeEditCommand, auth: AuthenticatedScope, key: string, fingerprint: string, correlationId?: string): Promise<ProductionOutcome> {
+  async #execute(command: CreativeEditCommand, auth: AuthenticatedScope, key: string, fingerprint: string, correlationId?: string, reference: Promise<VirtualTryOnGarment | undefined> = Promise.resolve(undefined)): Promise<ProductionOutcome> {
     const scope = Object.freeze({
       tenantId: auth.tenantId,
       userId: auth.userId,
@@ -160,10 +170,11 @@ export class CreativeExecutionService {
     const requestCorrelationId = correlationId ?? randomUUID();
     const estimatedCredits = this.dependencies.creditsPerEdit ?? 1; const hardBudgetCredits = this.dependencies.hardBudgetCredits ?? estimatedCredits;
     const controlled = Boolean(command.maskArtifactIds?.length && command.selectedObjectIds?.length);
-    const hydrated = controlled && this.dependencies.hydrateArtifacts
+    const garment = await reference;
+    const hydrated = (controlled || garment) && this.dependencies.hydrateArtifacts
       ? await this.dependencies.hydrateArtifacts(scope, command.inputArtifactId, command.maskArtifactIds ?? [])
       : artifacts.map((id, index) => ({ id, kind: 'image', value: { artifactId: id }, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: index ? 'MASK' : 'ORIGINAL' } as CreativeArtifact));
-    const request: CreativeRequest = { id: executionId, intent: command.instruction, scope, inputArtifacts: hydrated, budget: { credits: hardBudgetCredits, aiCalls: 1, latencyMs: 120_000, ramMb: 2048, gpuMs: 120_000, retries: 0 }, metadata: { idempotencyKey: command.clientRequestId, estimatedCredits, requestId: requestCorrelationId, correlationId: requestCorrelationId, editCapability: controlled ? 'CONTROLLED_LOCAL_EDIT' : 'GLOBAL_EDIT', preserveMode: command.preserveMode ?? 'STRICT', selectedObjectIds: command.selectedObjectIds ?? [], maskArtifactIds: command.maskArtifactIds ?? [] } };
+    const request: CreativeRequest = { id: executionId, intent: command.instruction, scope, inputArtifacts: garment ? [...hydrated, garment.artifact] : hydrated, budget: { credits: hardBudgetCredits, aiCalls: 1, latencyMs: 120_000, ramMb: 2048, gpuMs: 120_000, retries: 0 }, metadata: { idempotencyKey: command.clientRequestId, estimatedCredits, requestId: requestCorrelationId, correlationId: requestCorrelationId, ...(garment ? { virtualTryOnCategory: garment.category } : {}), editCapability: garment ? 'VIRTUAL_TRY_ON' : controlled ? 'CONTROLLED_LOCAL_EDIT' : 'GLOBAL_EDIT', preserveMode: command.preserveMode ?? 'STRICT', selectedObjectIds: command.selectedObjectIds ?? [], maskArtifactIds: command.maskArtifactIds ?? [] } };
 
     // Replay/conflicting-key classification is completed above before planning.
     // Planning remains advisory/pure and must not reserve Billing or dispatch a
@@ -211,7 +222,7 @@ export class CreativeExecutionService {
         throw new DOMException('Creative execution cancelled', 'AbortError');
       }
       let outcome = await this.#platform.execute(executionId);
-      if (controlled && outcome.status === 'SUCCESS' && outcome.verification.valid && this.dependencies.persistFinal) {
+      if ((controlled || garment) && outcome.status === 'SUCCESS' && outcome.verification.valid && this.dependencies.persistFinal) {
         const composite = outcome.artifacts.find(artifact => artifact.role === 'COMPOSITE' && artifact.state === 'FINAL');
         if (!composite) throw new Error('Verified FINAL COMPOSITE is missing');
         const durable = await this.dependencies.persistFinal(scope, executionId, composite);

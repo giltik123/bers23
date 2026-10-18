@@ -72,7 +72,7 @@ test('R3g proves canonical Fashion and dual Outfit reads without Detect Object M
   assert.match(tryOnRunner, /createCanonicalOutfitViewModel/);
   assert.match(tryOnRunner, /const snapshot = await model\.load\(\)/);
   assert.match(harness, /countRequest\('GET \/api\/core\/wardrobe\/outfits'\), 4/);
-  assert.match(harness, /countRequest\('GET \/api\/core\/wardrobe\/garments'\), 6/);
+  assert.match(harness, /countRequest\('GET \/api\/core\/wardrobe\/garments'\), 8/);
   assert.match(harness, /\/api\/core\/garments/);
   assert.match(harness, /\/api\/core\/wardrobe\/garments/);
   assert.match(harness, /\/api\/core\/wardrobe\/outfits/);

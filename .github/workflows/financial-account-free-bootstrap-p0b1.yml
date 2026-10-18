@@ -74,7 +74,8 @@ jobs:
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 48) throw new Error(`Expected 48 contiguous production migrations, got ${migrations.length}`);
+          if (migrations.length !== 49) throw new Error(`Expected 49 contiguous production migrations, got ${migrations.length}`);
+          if (migrations[48]?.name !== '049_virtual_try_on_final_lineage.sql' || migrations[48]?.source !== 'server/core/fashion/migrations/049_virtual_try_on_final_lineage.sql') throw new Error('049 Virtual Try-On lineage must be the exact global tail in Fashion authority');
           if (migrations[0]?.name !== '001_transaction_store.sql') throw new Error('001 transaction root migration moved');
           if (migrations[37]?.name !== '038_financial_account_foundation.sql') throw new Error('038 financial migration moved from its accepted global position');
           if (migrations[38]?.name !== '039_workflow_continuation_plan_parameters.sql') throw new Error('039 workflow plan-parameter migration moved from its accepted global position');
@@ -107,6 +108,7 @@ jobs:
           test -f dist-server/migrations/046_canonical_masked_exposure_final_lineage.sql
           test -f dist-server/migrations/047_canonical_masked_white_balance_final_lineage.sql
           test -f dist-server/migrations/048_canonical_masked_levels_final_lineage.sql
+          test -f dist-server/migrations/049_virtual_try_on_final_lineage.sql
       - name: Apply and verify accepted database schema
         run: |
           npm run db:migrate:transactions

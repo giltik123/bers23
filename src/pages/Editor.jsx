@@ -58,6 +58,7 @@ import WorkspaceBar from '@/components/editor/workspace/WorkspaceBar';
 import WorkspaceToolbar from '@/components/editor/workspace/WorkspaceToolbar';
 import WorkspaceRecommendations from '@/components/editor/workspace/WorkspaceRecommendations';
 const FashionPanel = lazy(() => import('@/components/editor/fashion/FashionPanel'));
+const VirtualTryOnPanel = lazy(() => import('@/components/editor/outfits/VirtualTryOnPanel'));
 const OutfitPanel = lazy(() => import('@/components/editor/outfits/OutfitPanel'));
 const CanonicalTryOnRunnerPanel = lazy(() => import('@/components/editor/outfits/CanonicalTryOnRunnerPanel'));
 const CreativeStudioPanel = lazy(() => import('@/components/editor/creative/CreativeStudioPanel'));
@@ -148,6 +149,7 @@ export default function Editor() {
   const [downloading, setDownloading] = useState(false);
   const [pendingResult, setPendingResult] = useState(null);
   const [committing, setCommitting] = useState(false);
+  const [manualTryOnExpanded, setManualTryOnExpanded] = useState(false);
   const [editTab, setEditTab] = useState('ai');
   const [outfitRevision, setOutfitRevision] = useState(0);
   const notifyOutfitChange = useCallback(() => setOutfitRevision((current) => current + 1), []);
@@ -902,6 +904,26 @@ export default function Editor() {
     throw new Error('Эта операция ещё не принята BERS Core.');
   };
 
+  const runVirtualTryOn = async ({ garmentId, tryOnConsent }) => {
+    if (editorBusy || committing || pendingResult || !project.current_image_artifact_id) return;
+    setApplying(true);
+    setAiError(null);
+    setLastAction(null);
+    const beforeUrl = project.current_image_url;
+    try {
+      const outcome = await creativeEditApplicationService.execute({
+        projectId: project.id, inputArtifactId: project.current_image_artifact_id,
+        instruction: 'Virtual garment try-on', garmentId, tryOnConsent,
+        selectedObjectIds: [], maskArtifactIds: [], clientRequestId: globalThis.crypto.randomUUID(),
+      });
+      if (outcome.status === 'UNKNOWN') throw new Error('Примерка ещё обрабатывается. Не запускайте повторно: сначала дождитесь сверки результата.');
+      if (outcome.status !== 'SUCCESS' || !outcome.finalArtifactId || !outcome.imageUrl) throw new Error('Примерка не вернула готовое изображение. Исходное фото сохранено.');
+      setPendingResult({ kind: 'VIRTUAL_TRY_ON', instruction: 'Примерка одежды', beforeUrl,
+        result: { ...outcome, image_url: outcome.imageUrl, generation_time_ms: outcome.timing?.durationMs } });
+    } catch (cause) { setAiError(cause?.message || 'Не удалось выполнить примерку'); }
+    finally { setApplying(false); }
+  };
+
   const acceptResult = async () => {
     const pending = pendingResult;
     setCommitting(true);
@@ -959,6 +981,10 @@ export default function Editor() {
     const pending = pendingResult;
     disposePendingPreview(pending);
     setPendingResult(null);
+    if (pending?.kind === 'VIRTUAL_TRY_ON') {
+      setAiError('Выберите вещь и подтвердите новую примерку заново.');
+      return;
+    }
     if (pending?.kind === 'FASHION_TRYON') {
       void tryOn.retry().catch((cause) => setAiError(cause?.message || 'Canonical deterministic Try-On retry failed.'));
       return;
@@ -1415,6 +1441,15 @@ export default function Editor() {
             <CreativeStudioPanel project={project} objects={objects} disabled={editorBusy} />
           ) : editTab === 'outfits' ? (
             <div className="space-y-3">
+              {!tryOn.state.host.active && <VirtualTryOnPanel
+                key={project.current_image_artifact_id}
+                disabled={editorBusy || committing || Boolean(selection) || Boolean(driftWarning)}
+                onRun={runVirtualTryOn}
+                onOpenWardrobe={() => setEditTab('fashion')}
+              />}
+              <details open={tryOn.state.host.active || manualTryOnExpanded} onToggle={event => setManualTryOnExpanded(event.currentTarget.open)}>
+                <summary className="text-sm cursor-pointer">Ручной перенос текстуры и комплекты (дополнительно)</summary>
+                <p className="text-xs text-muted-foreground my-2">Геометрический перенос пикселей не моделирует посадку ткани и перекрытие руками.</p>
               <CanonicalTryOnRunnerPanel
                 project={project}
                 outfitRevision={outfitRevision}
@@ -1429,6 +1464,7 @@ export default function Editor() {
                 onAbandon={abandonTryOn}
                 onClose={closeTryOn}
               />
+              </details>
               {!tryOn.state.host.active && <OutfitPanel onCanonicalChange={notifyOutfitChange} />}
             </div>
           ) : editTab === 'fashion' ? (

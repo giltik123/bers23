@@ -12,6 +12,7 @@ import { GARMENT_MESH_WARP_PRODUCTION_EXECUTION_RULE } from './productionGarment
 export const PRODUCTION_EXECUTION_CAPABILITY_VERSION = '6.42F4B5B';
 type CapabilityRule = Readonly<{ capabilityId: string; route: ExecutionRoute; operationType: string; target: Exclude<ExecutionTarget, 'BLOCKED'>; providerId?: string; operationIntent?: string }>;
 const RULES: readonly CapabilityRule[] = Object.freeze([
+  Object.freeze({ capabilityId: 'fal:virtual-try-on:v1', route: 'PROVIDER', operationType: 'VIRTUAL_TRY_ON', target: 'CLOUD', providerId: 'fal' }),
   Object.freeze({ capabilityId: 'fal:image-edit:v1', route: 'PROVIDER', operationType: 'image-edit', target: 'CLOUD', providerId: 'fal' }),
   Object.freeze({ capabilityId: 'fal:controlled-local-edit:v1', route: 'PROVIDER', operationType: 'CONTROLLED_LOCAL_EDIT', target: 'CLOUD', providerId: 'fal' }),
   Object.freeze({ capabilityId: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.verify, route: 'INTERNAL', operationType: 'verify', target: 'LOCAL', operationIntent: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT }),

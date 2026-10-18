@@ -12,6 +12,14 @@ export class FalRequestMapper {
   model(value: string, config: FalApiConfiguration): string { const capability = this.capability(value); if (!capability) throw new Error(`Unsupported Fal capability: ${value}`); return config.models?.[capability] ?? DEFAULT_MODELS[capability]; }
   map(request: ProviderRequest): Readonly<Record<string, unknown>> {
     const capability = this.capability(request.capability); if (!capability) throw new Error(`Unsupported Fal capability: ${request.capability}`);
+    if (capability === 'try-on') {
+      const source = request.inputs ?? {};
+      const model = source.model_image; const garment = source.garment_image;
+      if (typeof model !== 'string' || typeof garment !== 'string' || !model.startsWith('https://') || !garment.startsWith('https://')) throw new Error('Try-On requires model_image and garment_image HTTPS inputs');
+      if (!['tops', 'bottoms', 'one-pieces'].includes(String(source.category))) throw new Error('Try-On category is unsupported');
+      return falDeepFreeze({ model_image: model, garment_image: garment, category: source.category,
+        garment_photo_type: 'auto', mode: 'quality', num_samples: 1, output_format: 'png', enable_safety_checker: true });
+    }
     const input: Record<string, unknown> = { ...(request.inputs ?? {}) };
     if (request.prompt !== undefined) input.prompt = request.prompt;
     if (request.imageUrl !== undefined) input.image_url = request.imageUrl;

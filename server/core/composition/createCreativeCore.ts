@@ -37,6 +37,7 @@ export type CreativeCoreCompositionInput = Readonly<{
   ownsArtifacts: CreativeExecutionServiceDependencies['ownsArtifacts'];
   resolveArtifactReplayIdentities?: CreativeExecutionServiceDependencies['resolveArtifactReplayIdentities'];
   hydrateArtifacts?: CreativeExecutionServiceDependencies['hydrateArtifacts'];
+  resolveTryOnGarment?: CreativeExecutionServiceDependencies['resolveTryOnGarment'];
   persistFinal?: CreativeExecutionServiceDependencies['persistFinal'];
   mintFinalDelivery?: CreativeExecutionServiceDependencies['mintFinalDelivery'];
   creditsPerEdit?: number;
@@ -55,6 +56,7 @@ function createCreativeApplicationCore(input: CreativeCoreCompositionInput) {
     ownsArtifacts: input.ownsArtifacts,
     resolveArtifactReplayIdentities: input.resolveArtifactReplayIdentities,
     hydrateArtifacts: input.hydrateArtifacts,
+    resolveTryOnGarment: input.resolveTryOnGarment,
     persistFinal: input.persistFinal,
     mintFinalDelivery: input.mintFinalDelivery,
     executionRuns: input.executionRuns,

@@ -73,6 +73,8 @@
     "server/core/fashion/postgresGarmentWardrobeStore.ts",
     "server/core/fashion/postgresGarmentWarpLayerStore.ts",
     "server/core/fashion/postgresProjectBodyAnchorStore.ts",
+    "server/core/fashion/resolveVirtualTryOnGarment.ts",
+    "server/core/fashion/virtualTryOnSchema.ts",
     "server/core/http/creativeExecuteHandler.ts",
     "server/core/http/creativeLifecycleHandlers.ts",
     "server/core/localExecution/DeterministicExecutionResourceModelV1.ts",
@@ -276,7 +278,8 @@
     "server/core/projects/migrations/045_canonical_project_status_lifecycle.sql",
     "server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql",
     "server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql",
-    "server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql"
+    "server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql",
+    "server/core/fashion/migrations/049_virtual_try_on_final_lineage.sql"
   ],
   "supportPaths": [
     ".github/workflows/fashion-execution-ci-policy.yml",

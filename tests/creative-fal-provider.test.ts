@@ -9,10 +9,17 @@ let now = 1_000; let sequence = 0;
 const response = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 const dependencies = (fetchImpl: typeof fetch, overrides: Partial<ProviderRuntimeDependencies> = {}): ProviderRuntimeDependencies => ({ transport: { send: async (request) => { const response = await fetchImpl(request.url, { method: request.method, headers: { ...request.headers }, body: request.body as BodyInit | undefined }); return { status: response.status, headers: Object.fromEntries(response.headers), body: await response.json().catch(() => ({})) }; } }, clock: () => now++, random: () => 0, id: () => `id-${++sequence}`, sleep: async () => { now += 10; }, api: { apiKey: 'super-secret', baseUrl: 'https://queue.test', pollIntervalMs: 1, timeoutMs: 1_000 }, artifactLoader: { load: async (url) => Object.freeze({ url, mimeType: 'image/png', size: 3, hash: 'abc' }) }, ...overrides });
 
-// 140 deterministic capability-contract cases (7 capabilities x 20 invariants).
-for (const capability of capabilities) for (let invariant = 1; invariant <= 20; invariant += 1) test(`${capability} mapping invariant ${invariant}`, () => {
+// Generic single-image capabilities retain their established mapping contract.
+for (const capability of capabilities.filter(value => value !== 'try-on')) for (let invariant = 1; invariant <= 20; invariant += 1) test(`${capability} mapping invariant ${invariant}`, () => {
   const mapper = new FalRequestMapper(); const input = Object.freeze({ strength: invariant }); const mapped = mapper.map({ scope, capability, prompt: 'safe prompt', imageUrl: 'https://input/image.png', maskUrl: 'https://input/mask.png', inputs: input });
   assert.equal(mapper.capability(capability), capability); assert.ok(mapper.model(capability, { apiKey: 'x' }).startsWith('fal-ai/')); assert.equal(mapped.prompt, 'safe prompt'); assert.equal(mapped.image_url, 'https://input/image.png'); assert.equal(mapped.mask_url, 'https://input/mask.png'); assert.equal(mapped.strength, invariant); assert.ok(Object.isFrozen(mapped)); assert.deepEqual(input, { strength: invariant });
+});
+test('try-on uses a closed two-image schema and cannot be overridden with generic inputs', () => {
+  const mapper = new FalRequestMapper();
+  const mapped = mapper.map({ scope, capability: 'try-on', prompt: 'ignored', imageUrl: 'https://wrong/image.png', inputs: { model_image: 'https://input/person.png', garment_image: 'https://input/garment.png', category: 'tops', enable_safety_checker: false, num_samples: 50, arbitrary: true } });
+  assert.deepEqual(mapped, { model_image: 'https://input/person.png', garment_image: 'https://input/garment.png', category: 'tops', garment_photo_type: 'auto', mode: 'quality', num_samples: 1, output_format: 'png', enable_safety_checker: true });
+  assert.throws(() => mapper.map({ scope, capability: 'try-on', imageUrl: 'https://input/person.png' }), /model_image and garment_image/);
+  assert.ok(Object.isFrozen(mapped));
 });
 
 test('request mapper supports documented aliases', () => { const mapper = new FalRequestMapper(); assert.equal(mapper.capability('virtual_try_on'), 'try-on'); assert.equal(mapper.capability('remove-background'), 'background-remove'); });

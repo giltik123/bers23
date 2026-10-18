@@ -1,0 +1,39 @@
+name: Fashion virtual try-on
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  canonical-try-on:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bers
+          POSTGRES_PASSWORD: bers
+          POSTGRES_DB: bers_vton
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U bers -d bers_vton" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://bers:bers@localhost:5432/bers_vton
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - run: npm run server:typecheck
+      - run: npm run build && npm run server:build
+      - run: npm run db:migrate:transactions && npm run db:check:transactions
+      - run: npx esbuild tests/fashion-virtual-try-on.test.ts tests/fashion-virtual-try-on-postgres.test.ts tests/provider-artifact-egress.test.ts --bundle --platform=node --format=esm --target=node24 --outdir=.test-cache/vton --out-extension:.js=.mjs --external:node:* --external:sharp --external:pg
+      - run: node --test .test-cache/vton/*.mjs
+      - run: npm run test:controlled-local-edit

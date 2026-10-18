@@ -461,6 +461,16 @@ function superResolutionOperations(artifacts: readonly CreativePlanArtifactSnaps
 }
 
 function simpleOperations(request: CreativeRequest, artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints): readonly CreativeOperation[] {
+  if (request.metadata?.editCapability === 'VIRTUAL_TRY_ON') {
+    const source = artifacts.find(a => a.role === 'ORIGINAL' || a.role === 'COMPOSITE');
+    const reference = artifacts.find(a => a.role === 'WORKING');
+    const category = request.metadata?.virtualTryOnCategory;
+    if (!source || !reference || !['tops', 'bottoms', 'one-pieces'].includes(String(category))) return immutable([]);
+    const id = 'virtual-try-on';
+    return immutable([{ id, type: 'VIRTUAL_TRY_ON', requiredArtifacts: [source.id, reference.id], produces: ['image'],
+      verification: verificationFor(id, 'verify', constraints, 'image'),
+      input: { sourceArtifactId: source.id, referenceArtifactId: reference.id, category, correlationId: request.metadata?.correlationId } }]);
+  }
   const selected = request.metadata?.selectedObjectIds as readonly unknown[] | undefined;
   const controlled = request.metadata?.editCapability === 'CONTROLLED_LOCAL_EDIT'
     && artifacts.some(a => a.role === 'ORIGINAL' || a.role === 'COMPOSITE')

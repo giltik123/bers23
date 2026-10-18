@@ -11,6 +11,7 @@ type ProviderRule = Readonly<{
 }>;
 
 const RULES: readonly ProviderRule[] = Object.freeze([
+  Object.freeze({ selectionId: 'provider:fal:virtual-try-on:cloud:v1', operationType: 'VIRTUAL_TRY_ON', target: 'CLOUD', providerId: 'fal' }),
   Object.freeze({ selectionId: 'provider:fal:image-edit:cloud:v1', operationType: 'image-edit', target: 'CLOUD', providerId: 'fal' }),
   Object.freeze({ selectionId: 'provider:fal:controlled-local-edit:cloud:v1', operationType: 'CONTROLLED_LOCAL_EDIT', target: 'CLOUD', providerId: 'fal' }),
 ]);
