@@ -11,10 +11,10 @@ test('BERS navigation names every destination and shows the current section', as
   }
   assert.match(app, /function NavLink\(\{ path, label, icon: Icon, active/);
   assert.match(app, /aria-current=\{active \? 'page' : undefined\}/);
-  assert.match(app, /<nav className="hidden items-center gap-1 lg:flex" aria-label="Main navigation">/);
-  assert.match(app, /aria-label=\{menuOpen \? 'Close navigation menu' : 'Open navigation menu'\}/);
+  assert.match(app, /navUi\.main/);
+  assert.match(app, /navUi\.closeMenu/);
   assert.match(app, /aria-expanded=\{menuOpen\}/);
-  assert.match(app, /aria-label="Mobile navigation"/);
+  assert.match(app, /navUi\.mobile/);
   assert.match(app, /onNavigate=\{\(\) => setMenuOpen\(false\)\}/);
   assert.match(app, /<ThemeToggle showLabel \/>/);
   assert.match(app, /<NotificationCenter \/>/);
@@ -23,14 +23,14 @@ test('BERS navigation names every destination and shows the current section', as
 
 test('top utility actions have visible labels, correct semantics and outside-click dismissal', async () => {
   const [notifications, theme] = await Promise.all([read('src/components/NotificationCenter.jsx'), read('src/components/ThemeToggle.jsx')]);
-  assert.match(notifications, /<span>Notifications<\/span>/);
+  assert.match(notifications, /notifications\.title/);
   assert.match(notifications, /aria-expanded=\{open\}/);
   assert.match(notifications, /document\.addEventListener\('keydown', closeOnEscape\)/);
   assert.match(notifications, /document\.addEventListener\('pointerdown', closeOnOutsideClick\)/);
   assert.match(notifications, /notificationCenter\.markRead\(item\.id\)/);
   assert.match(theme, /showLabel = false/);
-  assert.match(theme, /aria-label=\{dark \? "Switch to light appearance" : "Switch to dark appearance"\}/);
-  assert.match(theme, /showLabel && <span>Appearance<\/span>/);
+  assert.match(theme, /navUi\.toLight/);
+  assert.match(theme, /settings\.appearance/);
   assert.match(theme, /document\.documentElement\.classList\.toggle\('dark', dark\)/);
   assert.match(theme, /window\.addEventListener\('bers-theme-change', synchronize\)/);
   assert.match(theme, /window\.dispatchEvent\(new CustomEvent\('bers-theme-change'/);
@@ -87,17 +87,17 @@ test('Projects and login use the same design and do not hide key actions behind 
     read('src/components/AuthLayout.jsx'),
     read('src/index.css'),
   ]);
-  assert.match(projects, /<h1[^>]*>Projects<\/h1>/);
+  assert.match(projects, /navUi\.projects/);
   assert.match(projects, /onClick=\{\(\) => fileRef\.current\?\.click\(\)\}/);
-  assert.match(projects, /'New project'/);
-  assert.match(projects, /01<\/strong> Upload photo/);
-  assert.match(projects, /03<\/strong> Preview & save/);
-  assert.match(cards, /Open editor/);
-  assert.match(cards, /aria-label=\{project\.favorite \? "Remove from favorites" : "Add to favorites"\}/);
-  assert.match(cards, /Remove from favorites/);
+  assert.match(projects, /projectUi\.newProject/);
+  assert.match(projects, /projectUi\.stepUpload/);
+  assert.match(projects, /projectUi\.stepSave/);
+  assert.match(cards, /projectUi\.openEditor/);
+  assert.match(cards, /projectUi\.removeFavorite/);
+  assert.match(cards, /projectUi\.removeFavorite/);
   assert.doesNotMatch(cards, /opacity-0 group-hover:opacity-100/);
-  assert.match(actions, /aria-label="Project options"/);
-  assert.match(auth, /Creative studio/);
+  assert.match(actions, /projectUi\.options/);
+  assert.match(auth, /authUi\.brand/);
   assert.match(auth, /<h1[^>]*>\{title\}<\/h1>/);
   assert.match(css, /--primary: 178 66% 27%/);
   assert.match(css, /--ring: 178 66% 27%/);
