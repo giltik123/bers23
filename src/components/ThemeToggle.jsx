@@ -24,7 +24,7 @@ export default function ThemeToggle({ showLabel = false }) {
   };
 
   return (
-    <Button type="button" variant="ghost" size={showLabel ? "sm" : "icon"} onClick={toggleAppearance} aria-label={dark ? t('settings.appearanceHint') : t('settings.appearanceHint')} className={showLabel ? "min-h-11 gap-2 rounded-xl px-3 text-muted-foreground" : undefined}>
+    <Button type="button" variant="ghost" size={showLabel ? "sm" : "icon"} onClick={toggleAppearance} aria-label={dark ? t('navUi.toLight') : t('navUi.toDark')} className={showLabel ? "min-h-11 gap-2 rounded-xl px-3 text-muted-foreground" : undefined}>
       {dark ? <Sun className="w-5 h-5" aria-hidden="true" /> : <Moon className="w-5 h-5" aria-hidden="true" />}
       {showLabel && <span>{t('settings.appearance')}</span>}
     </Button>
