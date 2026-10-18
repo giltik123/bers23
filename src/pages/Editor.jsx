@@ -145,6 +145,7 @@ export default function Editor() {
 
   const [instruction, setInstruction] = useState('');
   const [applying, setApplying] = useState(false);
+  const [virtualTryOnNeedsAccountSetup, setVirtualTryOnNeedsAccountSetup] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [downloading, setDownloading] = useState(false);
   const [pendingResult, setPendingResult] = useState(null);
@@ -904,6 +905,17 @@ export default function Editor() {
     throw new Error('Эта операция ещё не принята BERS Core.');
   };
 
+  const prepareVirtualTryOnAccount = async () => {
+    if (editorBusy || committing || pendingResult) return;
+    setApplying(true);
+    setAiError(null);
+    try {
+      await coreClient.financialAccount.initialize();
+      setVirtualTryOnNeedsAccountSetup(false);
+    } catch (cause) { setAiError(cause?.message || 'Не удалось подготовить облачную обработку.'); }
+    finally { setApplying(false); }
+  };
+
   const runVirtualTryOn = async ({ garmentId, tryOnConsent }) => {
     if (editorBusy || committing || pendingResult || !project.current_image_artifact_id) return;
     setApplying(true);
@@ -920,7 +932,10 @@ export default function Editor() {
       if (outcome.status !== 'SUCCESS' || !outcome.finalArtifactId || !outcome.imageUrl) throw new Error('Примерка не вернула готовое изображение. Исходное фото сохранено.');
       setPendingResult({ kind: 'VIRTUAL_TRY_ON', instruction: 'Примерка одежды', beforeUrl,
         result: { ...outcome, image_url: outcome.imageUrl, generation_time_ms: outcome.timing?.durationMs } });
-    } catch (cause) { setAiError(cause?.message || 'Не удалось выполнить примерку'); }
+    } catch (cause) {
+      if (cause?.code === 'creative_account_unconfigured') setVirtualTryOnNeedsAccountSetup(true);
+      setAiError(cause?.message || 'Не удалось выполнить примерку');
+    }
     finally { setApplying(false); }
   };
 
@@ -1445,6 +1460,8 @@ export default function Editor() {
                 key={project.current_image_artifact_id}
                 disabled={editorBusy || committing || Boolean(selection) || Boolean(driftWarning)}
                 onRun={runVirtualTryOn}
+                needsAccountSetup={virtualTryOnNeedsAccountSetup}
+                onPrepareAccount={prepareVirtualTryOnAccount}
                 onOpenWardrobe={() => setEditTab('fashion')}
               />}
               <details open={tryOn.state.host.active || manualTryOnExpanded} onToggle={event => setManualTryOnExpanded(event.currentTarget.open)}>

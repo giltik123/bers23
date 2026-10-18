@@ -102,6 +102,9 @@ export const coreClient = Object.freeze({
     redirectToLogin: (returnTo) => window.location.assign(`/login?return_to=${encodeURIComponent(safeReturnTo(returnTo))}`),
     loginWithProvider: (provider, returnTo = '/') => window.location.assign(`${API_ROOT}/auth/login/${encodeURIComponent(provider)}?return_to=${encodeURIComponent(safeReturnTo(returnTo))}`),
   },
+  financialAccount: {
+    initialize: () => request('/financial/account/initialize', json('POST', {})),
+  },
   creative: {
     execute: (payload) => request('/creative/execute', json('POST', payload)),
     status: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/status`),

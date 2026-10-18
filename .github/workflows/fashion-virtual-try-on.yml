@@ -34,6 +34,7 @@ jobs:
       - run: npm run server:typecheck
       - run: npm run build && npm run server:build
       - run: npm run db:migrate:transactions && npm run db:check:transactions
-      - run: npx esbuild tests/fashion-virtual-try-on.test.ts tests/fashion-virtual-try-on-postgres.test.ts tests/provider-artifact-egress.test.ts --bundle --platform=node --format=esm --target=node24 --outdir=.test-cache/vton --out-extension:.js=.mjs --external:node:* --external:sharp --external:pg
+      - run: node --test tests/fashion-account-preparation-client.test.mjs
+      - run: npx esbuild tests/fashion-virtual-try-on.test.ts tests/fashion-virtual-try-on-postgres.test.ts tests/provider-artifact-egress.test.ts tests/creative-account-preparation.test.ts --bundle --platform=node --format=esm --target=node24 --outdir=.test-cache/vton --out-extension:.js=.mjs --external:node:* --external:sharp --external:pg
       - run: node --test .test-cache/vton/*.mjs
       - run: npm run test:controlled-local-edit
