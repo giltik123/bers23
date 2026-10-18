@@ -17,14 +17,17 @@ const command = { projectId: 'project', inputArtifactId: 'person', instruction: 
 const source = { id: 'person', kind: 'image', value: pixels, scope, producerOperationId: 'upload', state: 'AVAILABLE' as const, role: 'ORIGINAL' as const };
 const reference = { identity: 'reference-sha', category: 'tops' as const, artifact: { ...source, id: 'garment', role: 'WORKING' as const, metadata: { virtualTryOnReference: true } } };
 
-async function fixture(output?: Uint8Array) {
+async function fixture(output?: Uint8Array, queued = false) {
   const png = output ?? await sharp({ create: { width: 4, height: 6, channels: 4, background: '#579bdf' } }).png().toBuffer();
   const outgoing: { url: string; body: any }[] = [];
   const uploads: Uint8Array[] = [];
   const runtime = createFalWorkflowRuntime({ apiKey: 'test-key', baseUrl: 'https://queue.fal.test', timeoutMs: 1000, artifacts: {} as never,
     fetcher: async (url, init) => {
       if (String(url) === 'https://cdn.fashn.ai/output.png') return new Response(png, { headers: { 'content-type': 'image/png' } });
+      if (init?.method === 'GET' && String(url).endsWith('/status')) return Response.json({ status: 'COMPLETED' });
+      if (init?.method === 'GET') return Response.json({ images: [{ url: 'https://cdn.fashn.ai/output.png' }] });
       outgoing.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      if (queued) return Response.json({ request_id: 'queued-test', status_url: 'https://queue.fal.test/requests/queued-test/status', response_url: 'https://queue.fal.test/requests/queued-test', cancel_url: 'https://queue.fal.test/requests/queued-test/cancel' }, { status: 202 });
       return Response.json({ images: [{ url: 'https://cdn.fashn.ai/output.png' }] });
     },
     materializer: { materialize: async input => { uploads.push(input.bytes); return { url: `https://fal.media/input-${uploads.length}.png`, byteSize: input.bytes.length, width: 4, height: 6 }; } },
@@ -124,4 +127,22 @@ test('runtime refuses cross-scope garment pixels before uploading either photo',
 test('disabled production provider fails before loading or transmitting photos', async () => {
   const resolver = createVirtualTryOnGarmentResolver({ enabled: false } as never);
   await assert.rejects(resolver(scope, 'garment', 'person'), (e: any) => e.status === 503 && e.code === 'fashion_unavailable');
+});
+
+
+test('actual queue-shaped FAL response polls control URLs before downloading only the final image', async () => {
+  const f = await fixture(undefined, true);
+  const outcome = await f.service.execute(command, scope);
+  assert.equal(outcome.status, 'SUCCESS');
+  assert.equal(f.outgoing.length, 1);
+  assert.ok(f.persisted());
+  assert.deepEqual(f.events, ['reserve','commit']);
+});
+
+test('queue control URL cannot send the provider key to another origin', async () => {
+  const { FalJobTracker } = await import('../src/platform/creative/providers/fal/FalJobTracker.ts');
+  let calls = 0;
+  const tracker = new FalJobTracker({ api: { baseUrl: 'https://queue.fal.test' }, transport: { send: async () => { calls++; } }, clock: Date.now } as never);
+  await assert.rejects(tracker.wait({ requestId: 'request', statusUrl: 'https://evil.example/status', responseUrl: 'https://queue.fal.test/result' }, Date.now() + 1000), /authenticated API origin/);
+  assert.equal(calls, 0);
 });

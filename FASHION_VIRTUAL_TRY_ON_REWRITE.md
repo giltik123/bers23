@@ -1,6 +1,6 @@
 # Fashion try-on rewrite, 2026-10-18
 
-Status: implementation candidate; not a production quality acceptance.
+Status: implementation candidate with a successful live two-photo inference; hosted CI and the deployed product journey remain release gates.
 
 ## Failure and resulting behavior
 
@@ -43,12 +43,18 @@ Migration 049 adds source-only VIRTUAL_TRY_ON lineage while retaining the prior 
 - General creative-workflow suite: 123/132 passed, 9 failed. Substituting the original HEAD WorkflowEngine yields the same 9 failures (eight recovery cases and the existing provider-unavailable assertion). These are not reported as passing.
 - New real PostgreSQL acceptance test covers persist/reopen/Accept/exact replay/stale and foreign sources/Undo/Redo. Local PostgreSQL was initially unavailable; the dedicated PR workflow provisions PostgreSQL 16. Database concurrency/authority acceptance is pending that exact-head CI.
 
-## Observed production configuration
+## Live provider evidence, 2026-10-18
 
-Railway OAuth inventory for bers-v1-core/production confirms FAL_KEY is absent, including sealed variable names. The running main service therefore cannot perform FAL inference. The new resolver fails with an explicit 503 before reading or transmitting photos when the provider is disabled. The operator must add FAL_KEY through protected Railway Variables and configure CREATIVE_PROVIDER=FAL; never paste credentials into an issue, PR or chat. This is a release blocker, not a subscription check.
+The operator added FAL_KEY through Railway Variables. Its value remained redacted to this agent. A temporary QA runtime ran the exact bundled production FAL workflow code against the supplied 600x900 red-shirt person photo and 740x415 on-model grey-jacket reference. It did not access a database. The original unused schema-inspector start configuration was restored after the QA process exited, temporary credentials/code were cleared, and its temporary public domain was removed.
+
+The first live request exposed an existing provider adapter defect: queue control URLs (status_url/response_url/cancel_url) were treated as output artifacts, so the request bypassed polling and failed output egress validation. The response mapper now excludes these control URLs, the tracker polls before fetching final image bytes, and authenticated control URLs must stay within the configured HTTPS API origin. An actual queue-shaped full-pipeline fixture and a foreign-origin credential test cover this boundary. The expanded FAL/try-on/cancellation suite passes 165/165 locally.
+
+After the fix, the live request returned a real PNG: 600x900, 331316 bytes, 26442 ms including uploads, model inference and download. Local filename: BERS-Fashion-FASHN-real-output.png. The image is a separate private QA deliverable, not a repository fixture. SHA-256: 5239c99f6db758c88ead986df2740f1a7ca0f82501b685134238d77819e122da.
+
+Visual review: the red T-shirt was replaced by a grey jacket/white shirt, the full garment occupies the torso and sleeves, and the target face, hair, hands, jeans, shoes and background appear preserved. This eliminates the demonstrated narrow-strip failure for this pair. Fabric texture is smoother than the reference; button and tailoring details are not exact. One successful pair does not prove correct output for every photograph or exact commercial garment fidelity.
 
 ## Remaining release evidence
 
-No live FASHN inference was executed in this workspace. There is no new real-photo output PNG or screenshot proving this candidate works on the supplied red-shirt/full-body and grey-jacket photographs. Do not describe transport tests or the former READY status as successful visual try-on.
+Require hosted CI on the final head. Earlier exact-head Virtual Try-On PostgreSQL CI passed, including persist/reopen/Accept/replay/immutability/stale and foreign source/Undo/Redo. Follow-up changes fix legacy migration inventory expectations, standalone fixture SQL loading and navigation harness expectations for the new picker; those gates must pass again on the final head.
 
-Before release: require exact-head hosted CI, apply migration 049, deploy the candidate with the existing server FAL configuration, then run authorized real-photo comparisons and save actual output files. Inspect garment identity, body alignment, face/hair, hands/occlusion, old clothing leakage and background, plus Accept/reopen/download/Undo/Redo. Include ordinary and difficult photos and document failures. No promise of correct output for every possible photograph is justified. A separate undressed-person image is neither required nor produced by this clothed try-on workflow.
+After accepted CI and merge, verify the actual deployed BERS UI with cloud provider enabled: preview, explicit review/Accept, reopen, download and Undo/Redo. Runtime-level live model evidence above is not a claim that the production browser journey has already passed. No undressed-person image is required or produced by this clothed try-on workflow.

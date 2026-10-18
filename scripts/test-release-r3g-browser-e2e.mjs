@@ -203,7 +203,7 @@ try {
 
   assert.equal(countRequest('GET /api/core/garments'), 2, 'Fashion must load Managed Garment authority once on each of its two mounts');
   assert.equal(countRequest('GET /api/core/wardrobe/outfits'), 4, 'each Outfits mount contains the Try-On chooser and Outfit builder; both must load canonical Outfit authority once');
-  assert.equal(countRequest('GET /api/core/wardrobe/garments'), 6, 'Fashion loads one Wardrobe projection per mount and both Outfits consumers load one projection per mount');
+  assert.equal(countRequest('GET /api/core/wardrobe/garments'), 8, 'Fashion loads one Wardrobe projection per mount; the automatic try-on picker, manual chooser and Outfit builder each load one per Outfits mount');
   assert.equal(providerCalls, 0, 'zero-object navigation must never reach provider boundary');
   assert.deepEqual(diagnostics.localExecutionRequests, [], 'zero-object navigation must not invoke local execution');
   assert.deepEqual(diagnostics.creativeRequests, [], 'zero-object navigation must not route through generic Creative/provider authority');
