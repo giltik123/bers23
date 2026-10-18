@@ -54,7 +54,7 @@ export default function AppLayout() {
   useEffect(() => { sessionRecovery.saveRoute([location.pathname, location.search].join('')); offlineQueue.snapshot(); setMenuOpen(false); }, [location.pathname, location.search]);
 
   const navigation = [
-    { path: '/', label: 'Projects', icon: FolderOpen },
+    { path: '/', label: t('navUi.projects'), icon: FolderOpen },
     { path: '/assets', label: t('assets.title'), icon: Images },
     { path: '/automations', label: t('automation.title'), icon: Workflow },
   ];
@@ -68,21 +68,21 @@ export default function AppLayout() {
     <div data-platform={platform.formFactor} className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="sticky top-0 z-40 border-b border-border/70 bg-card/95 shadow-sm backdrop-blur-xl">
         <div className="mx-auto flex min-h-[72px] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-          <Link to="/" className="flex shrink-0 items-center gap-3 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring" aria-label="BERS — Projects">
+          <Link to="/" className="flex shrink-0 items-center gap-3 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring" aria-label={t("navUi.home")}>
             <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm" aria-hidden="true">
               <Sparkles className="h-5 w-5" />
             </span>
             <span className="flex flex-col leading-tight">
               <span className="text-lg font-bold tracking-tight">BERS</span>
-              <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Creative studio</span>
+              <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">{t("navUi.brand")}</span>
             </span>
           </Link>
 
-          <nav className="hidden items-center gap-1 lg:flex" aria-label="Main navigation">
+          <nav className="hidden items-center gap-1 lg:flex" aria-label={t("navUi.main")}>
             {navigation.map((item) => <NavLink key={item.path} {...item} active={isActive(item.path)} />)}
           </nav>
 
-          <div className="hidden items-center gap-1 lg:flex" aria-label="Account and preferences">
+          <div className="hidden items-center gap-1 lg:flex" aria-label={t("navUi.account")}>
             <NavLink {...accountNavigation[0]} active={isActive('/subscription')} />
             <span className="mx-1 h-7 w-px bg-border" aria-hidden="true" />
             <NotificationCenter />
@@ -92,24 +92,24 @@ export default function AppLayout() {
 
           <button
             type="button"
-            aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-label={menuOpen ? t("navUi.closeMenu") : t("navUi.openMenu")}
             aria-controls="bers-mobile-navigation"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
             className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground lg:hidden"
           >
             {menuOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <Menu className="h-4 w-4" aria-hidden="true" />}
-            {menuOpen ? 'Close' : 'Menu'}
+            {menuOpen ? t("navUi.close") : t("navUi.menu")}
           </button>
         </div>
 
         {menuOpen && (
-          <nav id="bers-mobile-navigation" className="border-t border-border/70 bg-card px-4 pb-4 pt-3 shadow-lg lg:hidden" aria-label="Mobile navigation">
+          <nav id="bers-mobile-navigation" className="border-t border-border/70 bg-card px-4 pb-4 pt-3 shadow-lg lg:hidden" aria-label={t("navUi.mobile")}>
             <div className="mx-auto max-w-7xl space-y-1">
               {navigation.map((item) => <NavLink key={item.path} {...item} active={isActive(item.path)} onNavigate={() => setMenuOpen(false)} compact />)}
               <div className="my-2 border-t border-border/70" />
               {accountNavigation.map((item) => <NavLink key={item.path} {...item} active={isActive(item.path)} onNavigate={() => setMenuOpen(false)} compact />)}
-              <div className="flex flex-wrap items-center gap-2 px-2 pt-3" aria-label="Preferences and notifications">
+              <div className="flex flex-wrap items-center gap-2 px-2 pt-3" aria-label={t("navUi.preferences")}>
                 <NotificationCenter />
                 <ThemeToggle showLabel />
               </div>
