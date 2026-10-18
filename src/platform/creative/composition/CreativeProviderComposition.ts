@@ -3,7 +3,7 @@ import { HttpProviderTransport, RuntimeProviderArtifactLoader } from '../provide
 import { ProviderArtifactEgressTransport } from '../provider-runtime/ProviderArtifactEgressTransport';
 import { FalProvider, type FalApiConfiguration, type ProviderRuntimeDependencies } from '../providers/fal';
 
-export const FAL_OUTPUT_ARTIFACT_HOSTS = Object.freeze(['fal.media', 'v3.fal.media'] as const);
+export const FAL_OUTPUT_ARTIFACT_HOSTS = Object.freeze(['fal.media', 'v3.fal.media', 'cdn.fashn.ai'] as const);
 
 /** The only Creative composition root allowed to reference a concrete provider. */
 export function composeCreativeProviders(input: Readonly<{ fetcher: ConstructorParameters<typeof HttpProviderTransport>[0]; api: FalApiConfiguration; clock: () => number; random: () => number; id: () => string; sleep: (milliseconds: number) => Promise<void> }>) {

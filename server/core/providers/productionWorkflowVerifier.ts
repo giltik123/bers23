@@ -134,6 +134,19 @@ export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
       if (!hasValidSuperResolutionGeometry(artifacts[0])) return invalid(operation.id, ERRORS.invalidModelGeometry, [CHECKS.supported, CHECKS.imageKind, CHECKS.modelContract, CHECKS.modelScope, CHECKS.localLineage]);
       return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.modelContract, CHECKS.modelScope, CHECKS.localLineage, CHECKS.modelGeometry], errors: [] });
     }
+    if (operation.type === 'VIRTUAL_TRY_ON') {
+      const artifact = artifacts[0];
+      const image = artifact?.value as { width?: number; height?: number; data?: Uint8ClampedArray } | undefined;
+      const parents = artifact?.metadata?.parentArtifactIds;
+      if (operation.executionRoute !== 'PROVIDER' || operation.providerId !== 'fal' || artifacts.length !== 1 || artifact.kind !== 'image'
+          || artifact.metadata?.producerOperation !== 'VIRTUAL_TRY_ON' || artifact.metadata?.artifactRole !== 'COMPOSITE'
+          || !Number.isSafeInteger(image?.width) || !Number.isSafeInteger(image?.height) || Number(image?.width) < 1 || Number(image?.height) < 1
+          || Number(image?.width) * Number(image?.height) > 67_108_864 || !(image?.data instanceof Uint8ClampedArray)
+          || image.data.length !== Number(image.width) * Number(image.height) * 4
+          || operation.requiredArtifacts?.length !== 2 || new Set(operation.requiredArtifacts).size !== 2
+          || !Array.isArray(parents) || parents.length !== 2 || !operation.requiredArtifacts.every(id => parents.includes(id))) return invalid(operation.id, 'VIRTUAL_TRY_ON_OUTPUT_INVALID');
+      return freezeResult({ stepId: operation.id, valid: true, checks: ['VIRTUAL_TRY_ON_DECODED_IMAGE', 'VIRTUAL_TRY_ON_INPUT_LINEAGE', 'HUMAN_VISUAL_REVIEW_REQUIRED'], errors: [] });
+    }
     if (operation.type === 'CONTROLLED_LOCAL_EDIT') return invalid(operation.id, ERRORS.controlledOwned);
     if (operation.type !== 'image-edit') return invalid(operation.id, ERRORS.unsupported);
     if (artifacts.length === 0) return invalid(operation.id, ERRORS.outputRequired, [CHECKS.supported]);

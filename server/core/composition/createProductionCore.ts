@@ -1,3 +1,8 @@
+import { checkVirtualTryOnSchema, migrateVirtualTryOnSchema } from '../fashion/virtualTryOnSchema.ts';
+import { migrateGarmentAppearanceRefinementFinalLineageSchema } from '../fashion/garmentAppearanceRefinementFinalLineageSchema.ts';
+import { createVirtualTryOnGarmentResolver } from '../fashion/resolveVirtualTryOnGarment.ts';
+import { PostgresGarmentStore } from '../fashion/postgresGarmentStore.ts';
+import { PostgresGarmentWardrobeStore } from '../fashion/postgresGarmentWardrobeStore.ts';
 import { randomUUID } from 'node:crypto';
 import { checkTransactionSchema } from '../../transactions/infrastructure/postgres/transactionSchemaMigrator.ts';
 import { createPostgresTransactionRuntime } from '../../transactions/infrastructure/postgres/postgresTransactionRuntime.ts';
@@ -151,6 +156,10 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       limits: Object.freeze({ maxDimension: config.imageMaxDimension, maxPixels: config.imageMaxPixels, maxUploadBytes: config.imageUploadLimitBytes }),
       now,
     });
+    if (config.nodeEnv === 'test') {
+      await migrateGarmentAppearanceRefinementFinalLineageSchema(transactions.pool);
+      await migrateVirtualTryOnSchema(transactions.pool);
+    } else await checkVirtualTryOnSchema(transactions.pool);
     const ownsArtifacts = (scope: Parameters<ArtifactAuthority['owns']>[0], ids: readonly string[]) => artifacts.owns(scope, ids);
     const resolveArtifactReplayIdentities = async (scope: Parameters<ArtifactAuthority['owns']>[0], ids: readonly string[]) => Object.freeze(ids.map(id => externalArtifacts.resolveReplayIdentity(id, scope)));
     const hydrateArtifacts = (scope: Parameters<CanonicalArtifactHydrator['hydrate']>[0], original: string, masks: readonly string[]) => hydrator.hydrate(scope, original, masks);
@@ -161,11 +170,15 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       ownsArtifacts,
       resolveArtifactReplayIdentities,
       hydrateArtifacts,
+      resolveTryOnGarment: createVirtualTryOnGarmentResolver({ garments: new PostgresGarmentStore(transactions.pool), wardrobe: new PostgresGarmentWardrobeStore(transactions.pool), artifacts, projects }),
       persistFinal: async (scope, executionId, artifact) => {
         const metrics = artifact.metadata?.integrityMetrics as { verificationOutcome?: string } | undefined;
         const image = artifact.value as PixelImage;
         if (artifact.role !== 'COMPOSITE' || artifact.state !== 'FINAL' || metrics?.verificationOutcome !== 'PASS' || !(image?.data instanceof Uint8ClampedArray)) throw new Error('Only a verified FINAL COMPOSITE may be persisted');
-        const stored = await artifacts.images.persistFinal(scope, executionId, artifact.producerOperationId, image);
+        const sourceId = artifact.metadata?.sourceArtifactId;
+        const lineage = artifact.metadata?.producerOperation === 'VIRTUAL_TRY_ON'
+          ? { producerOperation: 'VIRTUAL_TRY_ON' as const, sourceImageStorageId: resolveStoredImageStorageId(externalArtifacts, String(sourceId), scope) } : undefined;
+        const stored = await artifacts.images.persistFinal(scope, executionId, artifact.producerOperationId, image, lineage);
         const artifactId = externalArtifacts.issueStoredFinal(stored.storageId, scope);
         return Object.freeze({ ...artifact, id: artifactId, value: Object.freeze({ artifactId }), image: { width: stored.width, height: stored.height, format: stored.encoding, orientation: 1 as const, colorSpace: 'srgb', alpha: true }, metadata: Object.freeze({ ...artifact.metadata, storageId: stored.storageId, executionId, operationId: stored.operationId, contentType: stored.contentType, encoding: stored.encoding, parentArtifactIds: artifact.metadata?.parentArtifactIds }) });
       },

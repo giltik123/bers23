@@ -125,7 +125,19 @@ export function deriveDestinationGarmentMesh(input: Readonly<{
   if (sourcePointsQ16.length > GARMENT_MESH_WARP_MAX_POINTS) throw geometryError('invalid_garment_parametric_topology', 'Garment source topology exceeds the point limit');
   const triangles = normalizeTriangles(input.triangles, sourcePointsQ16.length);
   const framePointsQ16 = quantizeNormalizedGarmentMeshPoints(frameAnchors.map(name => anchorPayload.anchors[name]!));
-  const destinationPointsQ16 = Object.freeze(sourcePointsQ16.map(point => mapPointThroughFrame(point, framePointsQ16)));
+  // Source points are normalized to the entire source photograph, not to the
+  // garment. Map their own extent into the body frame while retaining the
+  // original coordinates for texture sampling. Otherwise an off-centre garment
+  // is shrunk and offset a second time (the narrow-strip production defect).
+  const xs = sourcePointsQ16.map(point => point[0]);
+  const ys = sourcePointsQ16.map(point => point[1]);
+  const minX = Math.min(...xs); const minY = Math.min(...ys);
+  const spanX = Math.max(...xs) - minX; const spanY = Math.max(...ys) - minY;
+  if (!spanX || !spanY) throw geometryError('invalid_garment_parametric_topology', 'Garment extent must have positive width and height');
+  const destinationPointsQ16 = Object.freeze(sourcePointsQ16.map(point => mapPointThroughFrame([
+    roundHalfUpDiv((point[0] - minX) * GARMENT_MESH_WARP_FIXED_POINT_ONE, spanX),
+    roundHalfUpDiv((point[1] - minY) * GARMENT_MESH_WARP_FIXED_POINT_ONE, spanY),
+  ], framePointsQ16)));
 
   for (const [index, triangle] of triangles.entries()) {
     const sourceArea = orient(sourcePointsQ16[triangle[0]], sourcePointsQ16[triangle[1]], sourcePointsQ16[triangle[2]]);

@@ -54,7 +54,8 @@
     "test:creative-route-6.41c4": "mkdir -p node_modules/.cache && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/creative-internal-verify-route.test.ts'],bundle:true,platform:'node',format:'esm',target:'node20',outfile:'node_modules/.cache/creative-internal-verify-route.test.mjs',external:['node:*']});\" && node node_modules/.cache/creative-internal-verify-route.test.mjs",
     "release:evidence:frontend": "node scripts/verify-frontend-security-headers.mjs",
     "release:evidence:github": "node scripts/verify-github-main-protection.mjs",
-    "release:evidence:fashion": "node scripts/verify-v1-fashion-real-image-quality-evidence.mjs"
+    "release:evidence:fashion": "node scripts/verify-v1-fashion-real-image-quality-evidence.mjs",
+    "test:fashion-virtual-try-on": "esbuild tests/fashion-virtual-try-on.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-virtual-try-on.test.mjs --external:node:* --external:sharp && node --test .test-cache/fashion-virtual-try-on.test.mjs"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^17.0.0",

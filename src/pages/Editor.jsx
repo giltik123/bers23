@@ -58,6 +58,7 @@ import WorkspaceBar from '@/components/editor/workspace/WorkspaceBar';
 import WorkspaceToolbar from '@/components/editor/workspace/WorkspaceToolbar';
 import WorkspaceRecommendations from '@/components/editor/workspace/WorkspaceRecommendations';
 const FashionPanel = lazy(() => import('@/components/editor/fashion/FashionPanel'));
+const VirtualTryOnPanel = lazy(() => import('@/components/editor/outfits/VirtualTryOnPanel'));
 const OutfitPanel = lazy(() => import('@/components/editor/outfits/OutfitPanel'));
 const CanonicalTryOnRunnerPanel = lazy(() => import('@/components/editor/outfits/CanonicalTryOnRunnerPanel'));
 const CreativeStudioPanel = lazy(() => import('@/components/editor/creative/CreativeStudioPanel'));
@@ -902,6 +903,26 @@ export default function Editor() {
     throw new Error('Эта операция ещё не принята BERS Core.');
   };
 
+  const runVirtualTryOn = async ({ garmentId, tryOnConsent }) => {
+    if (editorBusy || committing || pendingResult || !project.current_image_artifact_id) return;
+    setApplying(true);
+    setAiError(null);
+    setLastAction(null);
+    const beforeUrl = project.current_image_url;
+    try {
+      const outcome = await creativeEditApplicationService.execute({
+        projectId: project.id, inputArtifactId: project.current_image_artifact_id,
+        instruction: 'Virtual garment try-on', garmentId, tryOnConsent,
+        selectedObjectIds: [], maskArtifactIds: [], clientRequestId: globalThis.crypto.randomUUID(),
+      });
+      if (outcome.status === 'UNKNOWN') throw new Error('Примерка ещё обрабатывается. Не запускайте повторно: сначала дождитесь сверки результата.');
+      if (outcome.status !== 'SUCCESS' || !outcome.finalArtifactId || !outcome.imageUrl) throw new Error('Примерка не вернула готовое изображение. Исходное фото сохранено.');
+      setPendingResult({ kind: 'VIRTUAL_TRY_ON', instruction: 'Примерка одежды', beforeUrl,
+        result: { ...outcome, image_url: outcome.imageUrl, generation_time_ms: outcome.timing?.durationMs } });
+    } catch (cause) { setAiError(cause?.message || 'Не удалось выполнить примерку'); }
+    finally { setApplying(false); }
+  };
+
   const acceptResult = async () => {
     const pending = pendingResult;
     setCommitting(true);
@@ -1371,7 +1392,7 @@ export default function Editor() {
           editScope={pendingResult.scope || null}
           onAccept={acceptResult}
           onDiscard={discardResult}
-          onRetry={retryResult}
+          onRetry={pendingResult.kind === 'VIRTUAL_TRY_ON' ? null : retryResult}
           busy={committing || tryOn.busy || boundedAgent.busy || isolatingBackground || applyingMaskedExposure || applyingMaskedWhiteBalance || applyingMaskedLevels || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode)}
         />
       ) : cropInteractionActive ? (
@@ -1415,6 +1436,15 @@ export default function Editor() {
             <CreativeStudioPanel project={project} objects={objects} disabled={editorBusy} />
           ) : editTab === 'outfits' ? (
             <div className="space-y-3">
+              {!tryOn.state.host.active && <VirtualTryOnPanel
+                key={project.current_image_artifact_id}
+                disabled={editorBusy || committing || Boolean(selection) || Boolean(driftWarning)}
+                onRun={runVirtualTryOn}
+                onOpenWardrobe={() => setEditTab('fashion')}
+              />}
+              <details open={tryOn.state.host.active || undefined}>
+                <summary className="text-sm cursor-pointer">Ручной перенос текстуры и комплекты (дополнительно)</summary>
+                <p className="text-xs text-muted-foreground my-2">Геометрический перенос пикселей не моделирует посадку ткани и перекрытие руками.</p>
               <CanonicalTryOnRunnerPanel
                 project={project}
                 outfitRevision={outfitRevision}
@@ -1430,6 +1460,7 @@ export default function Editor() {
                 onClose={closeTryOn}
               />
               {!tryOn.state.host.active && <OutfitPanel onCanonicalChange={notifyOutfitChange} />}
+              </details>
             </div>
           ) : editTab === 'fashion' ? (
             <FashionPanel voiceQuery={voiceWardrobeQuery} />

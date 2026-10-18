@@ -11,6 +11,7 @@ export const createCreativeEditApplicationService = (client = coreClient) => Obj
       inputArtifactId: input.inputArtifactId,
       maskArtifactIds: input.maskArtifactIds ?? [],
       preserveMode: input.preserveMode,
+      ...(input.garmentId ? { garmentId: input.garmentId, tryOnConsent: input.tryOnConsent === true } : {}),
       clientRequestId: input.clientRequestId,
     });
     return {

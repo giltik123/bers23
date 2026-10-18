@@ -22,6 +22,7 @@ export function createFalWorkflowRuntime(input: Readonly<{ apiKey: string; baseU
       const controller = new AbortController(); active.set(request.workflowId, controller); const signal = controller.signal;
       try {
         throwIfCancelled(signal);
+        if (request.operation.type === 'VIRTUAL_TRY_ON') return await virtualTryOn(request, provider, materializer, input.timeoutMs, signal);
         if (request.operation.type !== 'image-edit' && request.operation.type !== 'CONTROLLED_LOCAL_EDIT') throw new Error(`Unsupported FAL workflow operation type: ${request.operation.type}`);
         if (request.operation.type === 'CONTROLLED_LOCAL_EDIT') return await controlled(request, provider, materializer, input.timeoutMs, signal);
         const source = request.artifacts[0]; if (!source) throw new Error('A canonical input artifact is required');
@@ -41,6 +42,47 @@ export function createFalWorkflowRuntime(input: Readonly<{ apiKey: string; baseU
       return true;
     },
   });
+}
+
+async function virtualTryOn(request: Readonly<{ workflowId: string; operation: WorkflowOperation; artifacts: readonly Artifact[]; scope: Scope }>, provider: CreativeProvider, materializer: ProviderInputMaterializer, timeoutMs: number, signal: AbortSignal) {
+  const source = request.artifacts.find(a => a.id === request.operation.input?.sourceArtifactId);
+  const reference = request.artifacts.find(a => a.id === request.operation.input?.referenceArtifactId);
+  const person = source?.value as PixelImage; const garment = reference?.value as PixelImage;
+  const category = request.operation.input?.category;
+  if (!source || !reference || !isPixelImage(person) || !isPixelImage(garment) || reference.metadata?.virtualTryOnReference !== true
+      || !['tops', 'bottoms', 'one-pieces'].includes(String(category))
+      || [source, reference].some(a => a.scope.tenantId !== request.scope.tenantId || a.scope.userId !== request.scope.userId || a.scope.projectId !== request.scope.projectId)) throw new Error('Virtual Try-On requires canonical person and managed garment pixels');
+  const [personPng, garmentPng] = await Promise.all([encodeTryOnInput(person), encodeTryOnInput(garment)]);
+  throwIfCancelled(signal);
+  const [personInput, garmentInput] = await Promise.all([
+    materializer.materialize({ bytes: personPng, mimeType: 'image/png', purpose: 'roi', scope: request.scope }, signal),
+    materializer.materialize({ bytes: garmentPng, mimeType: 'image/png', purpose: 'roi', scope: request.scope }, signal),
+  ]);
+  throwIfCancelled(signal);
+  const result = await provider.execute({ id: `${request.workflowId}:${request.operation.id}`, scope: request.scope,
+    capability: 'try-on', inputs: { model_image: personInput.url, garment_image: garmentInput.url, category,
+      garment_photo_type: 'auto', mode: 'quality', num_samples: 1, output_format: 'png', enable_safety_checker: true },
+    timeoutMs, metadata: providerMetadata(request) }, signal);
+  throwIfCancelled(signal);
+  if (result.artifacts.length !== 1 || !result.artifacts[0].bytes) throw new Error('Virtual Try-On did not return one trusted image');
+  const outputMeta = await sharp(result.artifacts[0].bytes, { limitInputPixels: 16_777_216 }).metadata();
+  if (!outputMeta.width || !outputMeta.height || Math.abs((outputMeta.width / outputMeta.height) / (person.width / person.height) - 1) > 0.03) throw new Error('Virtual Try-On changed the photo aspect ratio');
+  // Keep the full generated frame and the canonical Project dimensions. Decode
+  // with bounded input pixels; never treat a provider URL as a persisted FINAL.
+  const decoded = await sharp(result.artifacts[0].bytes, { limitInputPixels: 16_777_216 })
+    .resize(person.width, person.height, { fit: 'fill' }).ensureAlpha().toColourspace('srgb').raw().toBuffer({ resolveWithObject: true });
+  throwIfCancelled(signal);
+  const image: PixelImage = { width: person.width, height: person.height, data: new Uint8ClampedArray(decoded.data), format: 'RGBA8', orientation: 1, colorSpace: 'srgb' };
+  return { artifacts: [{ id: `${request.workflowId}-tryon-final`, kind: 'image', value: image,
+    scope: request.scope, metadata: { lifecycle: 'FINAL', artifactRole: 'COMPOSITE', producerOperation: 'VIRTUAL_TRY_ON',
+      parentArtifactIds: [source.id, reference.id], sourceArtifactId: source.id,
+      integrityMetrics: { verificationOutcome: 'PASS', assessment: 'DECODED_STRUCTURE_ONLY_NOT_VISUAL_QUALITY' } } }], latencyMs: result.metrics.latencyMs };
+}
+
+async function encodeTryOnInput(image: PixelImage): Promise<Uint8Array> {
+  if (image.width < 1 || image.height < 1 || image.width * image.height > 67_108_864 || image.data.length !== image.width * image.height * 4) throw new Error('Virtual Try-On image dimensions are unsafe');
+  return sharp(image.data, { raw: { width: image.width, height: image.height, channels: 4 } })
+    .resize({ width: 2048, height: 2048, fit: 'inside', withoutEnlargement: true }).png().toBuffer();
 }
 
 async function controlled(request: Readonly<{ workflowId: string; operation: WorkflowOperation; artifacts: readonly Artifact[]; scope: Scope }>, provider: CreativeProvider, materializer: ProviderInputMaterializer, timeoutMs: number, signal: AbortSignal) {
