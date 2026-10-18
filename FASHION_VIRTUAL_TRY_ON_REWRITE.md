@@ -1,6 +1,6 @@
 # Fashion try-on rewrite, 2026-10-18
 
-Status: implementation candidate with a successful live two-photo inference; hosted CI and the deployed product journey remain release gates.
+Status: PR #1020 passed 136/136 hosted workflow runs and shipped as 74d60a6. Live model inference works. Production product acceptance remains open after the first unconfigured-account request exposed the missing-wallet case described below.
 
 ## Failure and resulting behavior
 
@@ -58,3 +58,13 @@ Visual review: the red T-shirt was replaced by a grey jacket/white shirt, the fu
 Require hosted CI on the final head. Earlier exact-head Virtual Try-On PostgreSQL CI passed, including persist/reopen/Accept/replay/immutability/stale and foreign source/Undo/Redo. Follow-up changes fix legacy migration inventory expectations, standalone fixture SQL loading and navigation harness expectations for the new picker; those gates must pass again on the final head.
 
 After accepted CI and merge, verify the actual deployed BERS UI with cloud provider enabled: preview, explicit review/Accept, reopen, download and Undo/Redo. Runtime-level live model evidence above is not a claim that the production browser journey has already passed. No undressed-person image is required or produced by this clothed try-on workflow.
+
+## Production first cloud account, follow-up
+
+The first deployed UI request returned HTTP 500 in 168 ms, before provider dispatch. A scoped read-only production query confirmed that this account had no canonical credit wallet, no reservation was created, and the execution run failed during preparation. The transaction store intentionally throws `wallet not found`; the transport previously hid that internal exception behind a generic execution failure. The initial tests used an already configured/stub Billing authority and did not cover this first-run state.
+
+The Billing adapter now translates only that known condition into HTTP 409 `creative_account_unconfigured`. It does not create a wallet, grant credits, bypass reservation or change insufficient-credit/infrastructure errors. The try-on UI then offers an explicit preparation action that calls the existing intent-only `POST /api/core/financial/account/initialize` with an empty body through the cookie/CSRF client. The existing server policy remains the only authority for eligibility, amount, identity and idempotency. Preparation does not retry or start inference; the user explicitly runs try-on again afterwards. Subscription pages and subscription status reads are unnecessary for this path.
+
+Automatically bootstrapping inside reserve was rejected because it would introduce an implicit financial side effect into the reservation boundary. A separate visible action preserves that boundary and does not attempt FREE initialization for already configured customers. No financial policy, table, entitlement, grant or amount implementation changes are included.
+
+The follow-up adds a real PostgreSQL missing-wallet → explicit server-policy initialization → idempotent initialization replay → canonical reservation test. A client transport test proves that browser-supplied identity/amount/plan arguments cannot enter the initialization request, and that cookie/CSRF protection is retained. Local checks: new preparation/transport tests 3/3, cumulative browser/Auth contracts 60/60, TypeScript, frontend/server builds and changed browser-file ESLint (zero errors). Exact-head hosted CI and the deployed UI journey must pass again before claiming product acceptance.

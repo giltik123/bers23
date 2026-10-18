@@ -11,7 +11,12 @@ export class TransactionBillingAuthorityAdapter implements BillingTransactionAut
 
   async reserve(input: Readonly<{ identity: CreativeOperationIdentity; authorizationId: string; amount: number; idempotencyKey: string }>): Promise<BillingReservation> {
     const fingerprint = createHash('sha256').update(JSON.stringify({ identity: input.identity, amount: input.amount, provider: this.provider })).digest('hex');
-    const result = await this.transactions.reserve({ correlation_id: input.identity.requestId, idempotency_key: input.idempotencyKey, request_fingerprint: fingerprint, owner_id: input.identity.userId, project_id: input.identity.projectId, operation_id: input.identity.operationId, operation_version: Number(input.identity.operationVersion), provider: this.provider, amount: input.amount });
+    const result = await this.transactions.reserve({ correlation_id: input.identity.requestId, idempotency_key: input.idempotencyKey, request_fingerprint: fingerprint, owner_id: input.identity.userId, project_id: input.identity.projectId, operation_id: input.identity.operationId, operation_version: Number(input.identity.operationVersion), provider: this.provider, amount: input.amount }).catch(cause => {
+      // Reserve never creates financial state. Preparation uses the existing
+      // intent-only account policy, with no client-supplied grant authority.
+      if (cause instanceof Error && cause.message === 'wallet not found') throw Object.assign(new Error('Сначала подготовьте облачную обработку для этого аккаунта.'), { code: 'creative_account_unconfigured', status: 409, retryable: false });
+      throw cause;
+    });
     this.#owners.set(result.reservation.id, input.identity.userId);
     return { reservationId: result.reservation.id, status: 'RESERVED', replayed: result.kind === 'replayed' };
   }

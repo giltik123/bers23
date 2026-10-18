@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { coreClient } from '@/api/coreClient';
 
-export default function VirtualTryOnPanel({ disabled, onRun, onOpenWardrobe }) {
+export default function VirtualTryOnPanel({ disabled, needsAccountSetup, onPrepareAccount, onRun, onOpenWardrobe }) {
   const [garments, setGarments] = useState([]);
   const [garmentId, setGarmentId] = useState('');
   const [consent, setConsent] = useState(false);
@@ -30,6 +30,10 @@ export default function VirtualTryOnPanel({ disabled, onRun, onOpenWardrobe }) {
     <label className="flex gap-2 text-sm items-start"><input type="checkbox" checked={consent} disabled={disabled || !garmentId} onChange={event => setConsent(event.target.checked)} /><span>Разрешаю отправить текущее фото и фото вещи в FAL / FASHN для облачной примерки.</span></label>
     <p className="text-xs text-muted-foreground">Закрытая телом одежда, несколько людей и необычные ракурсы могут ухудшить результат. Перед сохранением проверьте лицо, руки и посадку в сравнении «До / После».</p>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    <Button disabled={disabled || loading || !garmentId || !consent} onClick={() => onRun({ garmentId, tryOnConsent: consent })}>Примерить</Button>
+    {needsAccountSetup && <div className="space-y-2" role="status">
+      <p className="text-sm">Для первого облачного запуска нужно подготовить аккаунт. Бесплатный лимит назначает сервер. После подготовки нажмите «Примерить».</p>
+      <Button variant="outline" disabled={disabled} onClick={onPrepareAccount}>Подготовить облачную обработку</Button>
+    </div>}
+    <Button disabled={disabled || needsAccountSetup || loading || !garmentId || !consent} onClick={() => onRun({ garmentId, tryOnConsent: consent })}>Примерить</Button>
   </section>;
 }
