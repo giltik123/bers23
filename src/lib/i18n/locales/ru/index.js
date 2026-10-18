@@ -38,7 +38,7 @@ export const modules = {
     "loggingIn": "Выполняется вход…",
     "login": "Войти",
     "invalidLogin": "Неверная почта или пароль",
-    "createAccount": "Создать аккаунт",
+    "createAccount": "Создать аккаунт", "registerSubmit": "Создать аккаунт",
     "signupHint": "Зарегистрируйтесь, чтобы начать",
     "hasAccount": "Уже есть аккаунт?",
     "confirmPassword": "Повторите пароль",
