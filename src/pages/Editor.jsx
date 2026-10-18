@@ -149,6 +149,7 @@ export default function Editor() {
   const [downloading, setDownloading] = useState(false);
   const [pendingResult, setPendingResult] = useState(null);
   const [committing, setCommitting] = useState(false);
+  const [manualTryOnExpanded, setManualTryOnExpanded] = useState(false);
   const [editTab, setEditTab] = useState('ai');
   const [outfitRevision, setOutfitRevision] = useState(0);
   const notifyOutfitChange = useCallback(() => setOutfitRevision((current) => current + 1), []);
@@ -1446,7 +1447,7 @@ export default function Editor() {
                 onRun={runVirtualTryOn}
                 onOpenWardrobe={() => setEditTab('fashion')}
               />}
-              <details open={tryOn.state.host.active || undefined}>
+              <details open={tryOn.state.host.active || manualTryOnExpanded} onToggle={event => setManualTryOnExpanded(event.currentTarget.open)}>
                 <summary className="text-sm cursor-pointer">Ручной перенос текстуры и комплекты (дополнительно)</summary>
                 <p className="text-xs text-muted-foreground my-2">Геометрический перенос пикселей не моделирует посадку ткани и перекрытие руками.</p>
               <CanonicalTryOnRunnerPanel
