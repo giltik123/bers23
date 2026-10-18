@@ -170,7 +170,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       ownsArtifacts,
       resolveArtifactReplayIdentities,
       hydrateArtifacts,
-      resolveTryOnGarment: createVirtualTryOnGarmentResolver({ garments: new PostgresGarmentStore(transactions.pool), wardrobe: new PostgresGarmentWardrobeStore(transactions.pool), artifacts, projects }),
+      resolveTryOnGarment: createVirtualTryOnGarmentResolver({ enabled: providerEnabled, garments: new PostgresGarmentStore(transactions.pool), wardrobe: new PostgresGarmentWardrobeStore(transactions.pool), artifacts, projects }),
       persistFinal: async (scope, executionId, artifact) => {
         const metrics = artifact.metadata?.integrityMetrics as { verificationOutcome?: string } | undefined;
         const image = artifact.value as PixelImage;

@@ -119,3 +119,9 @@ test('runtime refuses cross-scope garment pixels before uploading either photo',
   }), /canonical person and managed garment/);
   assert.equal(f.uploads.length, 0); assert.equal(f.outgoing.length, 0);
 });
+
+
+test('disabled production provider fails before loading or transmitting photos', async () => {
+  const resolver = createVirtualTryOnGarmentResolver({ enabled: false } as never);
+  await assert.rejects(resolver(scope, 'garment', 'person'), (e: any) => e.status === 503 && e.code === 'fashion_unavailable');
+});

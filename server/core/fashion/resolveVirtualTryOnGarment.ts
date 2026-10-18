@@ -8,12 +8,14 @@ import type { AuthenticatedScope, VirtualTryOnGarment } from '../application/cre
 
 /** Read canonical, owner-scoped bytes; a client URL/contour is never an input. */
 export function createVirtualTryOnGarmentResolver(deps: Readonly<{
+  enabled?: boolean;
   garments: Pick<PostgresGarmentStore, 'get' | 'loadView'>;
   wardrobe: Pick<PostgresGarmentWardrobeStore, 'get'>;
   artifacts: Pick<ArtifactAuthority, 'resolveStoredImageEvidence'>;
   projects: Pick<PostgresProjectStore, 'get'>;
 }>) {
   return async (scope: AuthenticatedScope & { projectId: string }, garmentId: string, sourceArtifactId: string): Promise<VirtualTryOnGarment> => {
+    if (deps.enabled === false) throw denied(503, 'fashion_unavailable', 'Cloud try-on is temporarily unavailable');
     const source = await deps.artifacts.resolveStoredImageEvidence(scope, sourceArtifactId);
     const project = await deps.projects.get(scope, scope.projectId);
     if (!project || String(project.current_image_storage_id) !== source.storageId) throw denied(409, 'fashion_source_changed', 'The project image changed. Select the current photo again.');

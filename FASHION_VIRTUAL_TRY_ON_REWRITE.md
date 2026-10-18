@@ -34,12 +34,16 @@ Migration 049 adds source-only VIRTUAL_TRY_ON lineage while retaining the prior 
 
 ## Validation recorded locally
 
-- New canonical pipeline, consent, invalid bytes, aspect ratio, foreign scope, replay fingerprint, stale source and off-centre geometry: 8/8 passed.
+- New canonical pipeline, consent, invalid bytes, aspect ratio, foreign scope, replay fingerprint, stale source and off-centre geometry plus disabled-provider admission: 9/9 passed.
 - Exact output-host/MIME/byte/redirect policy: 8/8 passed.
 - Existing controlled-local-edit and production FAL contracts: 24/24 passed.
 - Server TypeScript, browser production build, server bundle and changed browser-file ESLint passed before final review; repeat checks apply to the final head.
 - General creative-workflow suite: 123/132 passed, 9 failed. Substituting the original HEAD WorkflowEngine yields the same 9 failures (eight recovery cases and the existing provider-unavailable assertion). These are not reported as passing.
-- New real PostgreSQL acceptance test covers persist/reopen/Accept/exact replay/stale and foreign sources/Undo/Redo. Local PostgreSQL was unavailable; the dedicated PR workflow provisions PostgreSQL 16. Database concurrency/authority acceptance is pending that exact-head CI.
+- New real PostgreSQL acceptance test covers persist/reopen/Accept/exact replay/stale and foreign sources/Undo/Redo. Local PostgreSQL was initially unavailable; the dedicated PR workflow provisions PostgreSQL 16. Database concurrency/authority acceptance is pending that exact-head CI.
+
+## Observed production configuration
+
+Railway OAuth inventory for bers-v1-core/production confirms FAL_KEY is absent, including sealed variable names. The running main service therefore cannot perform FAL inference. The new resolver fails with an explicit 503 before reading or transmitting photos when the provider is disabled. The operator must add FAL_KEY through protected Railway Variables and configure CREATIVE_PROVIDER=FAL; never paste credentials into an issue, PR or chat. This is a release blocker, not a subscription check.
 
 ## Remaining release evidence
 
