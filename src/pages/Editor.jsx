@@ -910,7 +910,7 @@ export default function Editor() {
     setApplying(true);
     setAiError(null);
     try {
-      await coreClient.financialAccount.initialize();
+      await creativeEditApplicationService.prepareAccount();
       setVirtualTryOnNeedsAccountSetup(false);
     } catch (cause) { setAiError(cause?.message || 'Не удалось подготовить облачную обработку.'); }
     finally { setApplying(false); }

@@ -4,8 +4,8 @@ import test from 'node:test';
 import { build } from 'esbuild';
 
 test('account preparation sends an explicit empty cookie/CSRF command with no browser grant authority', async () => {
-  const result = await build({ entryPoints: ['src/api/coreClient.js'], bundle: true, write: false, platform: 'node', format: 'esm', alias: { '@': path.resolve('src') }, define: { 'import.meta.env': '{}' } });
-  const { coreClient } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
+  const result = await build({ stdin: { contents: "export { coreClient } from './src/api/coreClient.js'; export { creativeEditApplicationService } from './src/application/creative/CreativeEditApplicationService.js';", resolveDir: process.cwd() }, bundle: true, write: false, platform: 'node', format: 'esm', alias: { '@': path.resolve('src') }, define: { 'import.meta.env': '{}' } });
+  const { coreClient, creativeEditApplicationService } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url, init) => {
@@ -14,7 +14,7 @@ test('account preparation sends an explicit empty cookie/CSRF command with no br
   };
   try {
     await coreClient.auth.me();
-    await coreClient.financialAccount.initialize({ userId: 'other', amount: 999, plan: 'paid' });
+    await creativeEditApplicationService.prepareAccount({ userId: 'other', amount: 999, plan: 'paid' });
     assert.equal(calls.length, 2);
     const { url, init } = calls[1];
     assert.equal(url, '/api/core/financial/account/initialize');

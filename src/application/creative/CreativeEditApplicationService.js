@@ -2,6 +2,7 @@ import { coreClient } from '@/api/coreClient';
 
 /** Thin product adapter. All planning, provider selection, billing and execution remain server authoritative. */
 export const createCreativeEditApplicationService = (client = coreClient) => Object.freeze({
+  prepareAccount: () => client.financialAccount.initialize(),
   async execute(input) {
     const execute = client === coreClient ? coreClient.creative.execute : client.creative.execute;
     const outcome = await execute({
