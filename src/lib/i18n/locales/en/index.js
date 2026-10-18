@@ -41,7 +41,7 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
     "loggingIn": "Logging in...",
     "login": "Log in",
     "invalidLogin": "Invalid email or password",
-    "createAccount": "Create your account",
+    "createAccount": "Create your account", "registerSubmit": "Create account",
     "signupHint": "Sign up to get started",
     "hasAccount": "Already have an account?",
     "confirmPassword": "Confirm password",
