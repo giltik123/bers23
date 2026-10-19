@@ -9,6 +9,8 @@ on:
       - 'src/components/projects/ProjectActionsMenu.jsx'
       - 'src/lib/performance/offlineQueue.js'
       - 'tests/project-ui-truthfulness.test.mjs'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
       - '.github/workflows/project-ui-truthfulness.yml'
   workflow_dispatch:
 
@@ -43,7 +45,8 @@ jobs:
       - name: Preserve narrow Project UI scope
         run: |
           set -euo pipefail
-          grep -q "Queued to retry while this tab remains open" src/pages/Projects.jsx
+          grep -q "projectUi.retryQueued" src/pages/Projects.jsx
+          grep -q "Queued to retry while this tab remains open" src/lib/i18n/locales/en/index.js
           ! grep -q "Duplicate will be available with server-authoritative project history" src/pages/Projects.jsx
           ! grep -q "> Duplicate<" src/components/projects/ProjectActionsMenu.jsx
           test -n "$BASE_SHA"

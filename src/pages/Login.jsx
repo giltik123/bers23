@@ -6,11 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LogIn, Mail, Lock, Loader2 } from "lucide-react";
 import AuthLayout from "@/components/AuthLayout";
+import { useTranslation } from "@/lib/i18n/TranslationProvider";
 import GoogleIcon from "@/components/GoogleIcon";
 
 const GOOGLE_AUTH_ENABLED = (import.meta.env ?? {}).VITE_GOOGLE_AUTH_ENABLED === "true";
 
 export default function Login() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -24,7 +26,7 @@ export default function Login() {
       await coreClient.auth.loginViaEmailPassword(email, password);
       window.location.href = "/";
     } catch (err) {
-      setError(err.message || "Invalid email or password");
+      setError(err.message || t("authUi.invalidLogin"));
     } finally {
       setLoading(false);
     }
@@ -37,13 +39,13 @@ export default function Login() {
   return (
     <AuthLayout
       icon={LogIn}
-      title="Welcome back"
-      subtitle="Log in to your account"
+      title={t("authUi.welcome")}
+      subtitle={t("authUi.loginHint")}
       footer={
         <>
-          Don't have an account?{" "}
+          {t("authUi.noAccount")}{" "}
           <Link to="/register" className="text-primary font-medium hover:underline">
-            Create one
+            {t("authUi.createOne")}
           </Link>
         </>
       }
@@ -56,7 +58,7 @@ export default function Login() {
             onClick={handleGoogle}
           >
             <GoogleIcon className="w-5 h-5 mr-2" />
-            Continue with Google
+            {t("authUi.continueGoogle")}
           </Button>
 
           <div className="relative mb-6">
@@ -64,7 +66,7 @@ export default function Login() {
               <div className="w-full border-t border-border" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-3 text-muted-foreground">or</span>
+              <span className="bg-card px-3 text-muted-foreground">{t("authUi.or")}</span>
             </div>
           </div>
         </>
@@ -78,7 +80,7 @@ export default function Login() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email">{t("authUi.email")}</Label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
             <Input
@@ -96,9 +98,9 @@ export default function Login() {
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">{t("authUi.password")}</Label>
             <Link to="/forgot-password" className="text-xs text-primary hover:underline">
-              Forgot password?
+              {t("authUi.forgot")}
             </Link>
           </div>
           <div className="relative">
@@ -119,10 +121,10 @@ export default function Login() {
           {loading ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Logging in...
+              {t("authUi.loggingIn")}
             </>
           ) : (
-            "Log in"
+            t("authUi.login")
           )}
         </Button>
       </form>

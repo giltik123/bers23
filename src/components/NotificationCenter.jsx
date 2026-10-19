@@ -1,8 +1,10 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { Bell, CheckCheck } from 'lucide-react';
 import { notificationCenter } from '@/lib/notifications/notificationCenter';
 
 export default function NotificationCenter() {
+  const { t } = useTranslation();
   const [state, setState] = useState(notificationCenter.snapshot());
   const [open, setOpen] = useState(false);
   const panelId = useId();
@@ -32,11 +34,11 @@ export default function NotificationCenter() {
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-controls={panelId}
-        aria-label={state.unread > 0 ? 'Notifications, ' + state.unread + ' unread' : 'Notifications'}
+        aria-label={state.unread > 0 ? t('notifications.title') + ', ' + t('navUi.unreadCount', { count: state.unread }) : t('notifications.title')}
         className="relative inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
       >
         <Bell className="h-4 w-4" aria-hidden="true" />
-        <span>Notifications</span>
+        <span>{t('notifications.title')}</span>
         {state.unread > 0 && (
           <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] leading-none text-primary-foreground" aria-hidden="true">{state.unread}</span>
         )}
@@ -44,19 +46,19 @@ export default function NotificationCenter() {
       {open && (
         <section
           id={panelId}
-          aria-label="Notifications"
+          aria-label={t('notifications.title')}
           className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-popover p-4 shadow-xl"
         >
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold">Notifications</h2>
+            <h2 className="text-sm font-semibold">{t('notifications.title')}</h2>
             {state.unread > 0 && (
               <button type="button" onClick={() => notificationCenter.markAllRead()} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-xs text-primary hover:bg-accent">
-                <CheckCheck className="h-4 w-4" aria-hidden="true" /> Mark all read
+                <CheckCheck className="h-4 w-4" aria-hidden="true" /> {t('notifications.markAllRead')}
               </button>
             )}
           </div>
           {state.items.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">You're all caught up. No notifications yet.</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">{t('notifications.empty')}</p>
           ) : (
             <div className="max-h-80 space-y-2 overflow-auto">
               {state.items.map((item) => (
