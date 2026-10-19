@@ -11,11 +11,11 @@ test('project canvas remains the primary surface; secondary panels require a del
   const prompt = editor.indexOf('<AdaptiveNavigation items={EDITOR_TABS}');
   const secondary = editor.indexOf('aria-label="Additional editor tools and status"');
   assert.ok(canvas >= 0 && basicTools > canvas && prompt > basicTools && secondary > prompt);
-  assert.match(editor, /<summary[^>]*>More tools and activity<\/summary>/);
+  assert.match(editor, /<summary[^>]*>\{language === 'ru' \? t\('editorUi\.moreTools'\)/, 'the extra-tools disclosure is still explicit');
   for (const component of ['WorkspaceBar', 'JobQueuePanel', 'PipelineStatusBar', 'CreditsBar', 'SceneMemoryPanel', 'EditorStatusBar']) {
     assert.ok(editor.indexOf('<' + component, secondary) > secondary, component + ' must be in disclosed area');
   }
-  assert.match(editor, /<details[^>]*>[\s\S]*?<summary[^>]*>Rotate or flip<\/summary>[\s\S]*?<OrthogonalTransformToolbar/);
+  assert.match(editor, /<details[^>]*>[\s\S]*?<summary[^>]*>\{language === 'ru' \? t\('editorUi\.rotateFlip'\)[\s\S]*?<OrthogonalTransformToolbar/, 'transform tool remains behind a disclosure');
   assert.match(editor, /<ResultCompare[\s\S]*?onAccept=\{acceptResult\}[\s\S]*?onDiscard=\{discardResult\}/);
 });
 

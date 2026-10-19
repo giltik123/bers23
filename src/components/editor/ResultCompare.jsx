@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { Check, Trash2, RotateCcw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAdaptiveGestures } from '@/components/adaptive/AdaptiveGestures';
@@ -18,6 +19,7 @@ const EMPTY_REVIEW = Object.freeze({ fit: false, occlusion: false, texture: fals
 // Split view is admitted only after both images have identical real geometry;
 // cropping/rotation/failed image delivery must never masquerade as aligned pixels.
 export default function ResultCompare({ beforeUrl, result, candidateOperation, kind = null, editScope = null, onAccept, onDiscard, onRetry, busy }) {
+  const { t, language } = useTranslation();
   const [view, setView] = useState('after');
   const [splitPosition, setSplitPosition] = useState(50);
   const [zoom, setZoom] = useState(1);
@@ -129,20 +131,20 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
     ? ` · ${(result.generation_time_ms / 1000).toFixed(1)}s` : '';
 
   return (
-    <section className="border border-border/60 rounded-2xl p-3 space-y-3" aria-label="Review pending image before accepting">
+    <section className="border border-border/60 rounded-2xl p-3 space-y-3" aria-label={language === 'ru' ? t('editControls.review') : 'Review pending image before accepting'}>
       <header className="mb-3">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">Almost there</p>
-        <h2 className="mt-1 text-xl font-semibold">Review your edit</h2>
-        <p role="status" className="text-sm text-muted-foreground">Preview ready — not saved yet. Compare both images, then choose Accept to keep the change or Discard to leave your original untouched.</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">{language === 'ru' ? t('editControls.almost') : 'Almost there'}</p>
+        <h2 className="mt-1 text-xl font-semibold">{language === 'ru' ? t('editControls.review') : 'Review your edit'}</h2>
+        <p role="status" className="text-sm text-muted-foreground">{language === 'ru' ? t('editControls.reviewHint') : 'Preview ready — not saved yet. Compare both images, then choose Accept to keep the change or Discard to leave your original untouched.'}</p>
       </header>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex rounded-lg border border-border overflow-hidden text-xs" role="group" aria-label="Image comparison mode">
+        <div className="flex rounded-lg border border-border overflow-hidden text-xs" role="group" aria-label={language === 'ru' ? t('editControls.compareMode') : 'Image comparison mode'}>
           <button type="button" aria-pressed={mode === 'before'} onClick={() => setView('before')}
-            className={`px-3 py-1.5 ${mode === 'before' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>Before</button>
+            className={`px-3 py-1.5 ${mode === 'before' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>{language === 'ru' ? t('editControls.before') : 'Before'}</button>
           <button type="button" aria-pressed={mode === 'after'} onClick={() => setView('after')}
-            className={`px-3 py-1.5 ${mode === 'after' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>After</button>
+            className={`px-3 py-1.5 ${mode === 'after' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>{language === 'ru' ? t('editControls.after') : 'After'}</button>
           <button type="button" aria-pressed={mode === 'split'} disabled={!splitAllowed} onClick={() => setView('split')}
-            className={`px-3 py-1.5 disabled:opacity-40 ${mode === 'split' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>Split</button>
+            className={`px-3 py-1.5 disabled:opacity-40 ${mode === 'split' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>{language === 'ru' ? t('editControls.split') : 'Split'}</button>
         </div>
         <span className="text-[11px] text-muted-foreground">
           {executionLabel}{creditLabel}{durationLabel}
@@ -151,15 +153,15 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
 
       {(naturalSizes.before || naturalSizes.after) && (
         <p className="text-xs text-muted-foreground" role="status">
-          Source: {naturalSizes.before ? `${naturalSizes.before.width}×${naturalSizes.before.height}` : 'unavailable'}
+          {language === 'ru' ? t('editControls.source') : 'Source'}: {naturalSizes.before ? `${naturalSizes.before.width}×${naturalSizes.before.height}` : (language === 'ru' ? t('editControls.unavailable') : 'unavailable')}
           {' → '}
-          Candidate: {naturalSizes.after ? `${naturalSizes.after.width}×${naturalSizes.after.height}` : 'unavailable'} pixels
+          {language === 'ru' ? t('editControls.candidate') : 'Candidate'}: {naturalSizes.after ? `${naturalSizes.after.width}×${naturalSizes.after.height}` : 'unavailable'} {language === 'ru' ? t('editControls.pixels') : 'pixels'}
         </p>
       )}
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2">
-          <label htmlFor="editor-preview-zoom">Inspection zoom</label>
-          <select id="editor-preview-zoom" aria-label="Inspection zoom" value={zoom} disabled={!naturalSize}
+          <label htmlFor="editor-preview-zoom">{language === 'ru' ? t('editControls.zoom') : 'Inspection zoom'}</label>
+          <select id="editor-preview-zoom" aria-label={language === 'ru' ? t('editControls.zoom') : 'Inspection zoom'} value={zoom} disabled={!naturalSize}
             onChange={(event) => setZoom(Number(event.target.value))}
             className="rounded-md border border-border bg-background px-2 py-1">
             <option value={1}>100%</option>
@@ -168,8 +170,8 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
         </div>
         {mode === 'split' && (
           <label className="flex flex-1 items-center gap-2 min-w-[160px] max-w-xs">
-            Split boundary
-            <input aria-label="Split boundary" type="range" min="0" max="100" step="1"
+            {language === 'ru' ? t('editControls.boundary') : 'Split boundary'}
+            <input aria-label={language === 'ru' ? t('editControls.boundary') : 'Split boundary'} type="range" min="0" max="100" step="1"
               value={splitPosition} onChange={(event) => setSplitPosition(Number(event.target.value))}
               className="flex-1 accent-primary" />
             <span className="tabular-nums">{splitPosition}%</span>
@@ -179,17 +181,17 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
 
       {geometry === 'aligned' && !canCompareOperationAligned(candidateOperation) && (
         <p role="status" className="text-xs text-muted-foreground">
-          This operation may change image registration. Split inspection is disabled; review Before and After separately.
+          {language === 'ru' ? t('editControls.noSplit') : 'This operation may change image registration. Split inspection is disabled; review Before and After separately.'}
         </p>
       )}
       {geometry === 'different' && (
         <p role="status" className="text-xs text-muted-foreground">
-          Images have different pixel dimensions. Split comparison is disabled to avoid false alignment.
+          {language === 'ru' ? t('editControls.different') : 'Images have different pixel dimensions. Split comparison is disabled to avoid false alignment.'}
         </p>
       )}
       {geometry === 'unavailable' && (
         <p role="status" className="text-xs text-muted-foreground">
-          One image cannot be measured. Before and After remain available when its preview loads.
+          {language === 'ru' ? t('editControls.sizeUnknown') : 'One image cannot be measured. Before and After remain available when its preview loads.'}
         </p>
       )}
 
@@ -197,10 +199,10 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
         <div className="relative" style={inspectedCanvas}>
           {mode === 'split' ? (
             <>
-              <img src={afterUrl} alt="Edited image, right side of split" draggable={false}
+              <img src={afterUrl} alt={language === 'ru' ? t('editControls.rightSplit') : 'Edited image, right side of split'} draggable={false}
                 onLoad={()=>markLoaded('after')} onError={()=>markFailed('after')}
                 className="absolute inset-0 h-full w-full object-fill" />
-              <img src={beforeUrl} alt="Original image, left side of split" draggable={false}
+              <img src={beforeUrl} alt={language === 'ru' ? t('editControls.leftSplit') : 'Original image, left side of split'} draggable={false}
                 onLoad={()=>markLoaded('before')} onError={()=>markFailed('before')}
                 className="absolute inset-0 h-full w-full object-fill"
                 style={{ clipPath: `inset(0 ${100 - splitPosition}% 0 0)` }} />
@@ -211,14 +213,14 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
             <img src={mode === 'before' ? beforeUrl : afterUrl}
               onLoad={()=>markLoaded(mode === 'before' ? 'before' : 'after')}
               onError={()=>markFailed(mode === 'before' ? 'before' : 'after')}
-              alt={mode === 'before' ? 'Original image' : 'Unaccepted edited image'}
+              alt={mode === 'before' ? t('editControls.originalImage') : t('editControls.editedImage')}
               draggable={false} className="h-full w-full object-fill" />
           )}
         </div>
       </div>
 
       <p className="text-[11px] text-muted-foreground">
-        Zoom uses actual decoded image dimensions (one CSS pixel per source pixel at 100%). This remains a visual preview, not a pixel-level quality certificate. Accept alone commits to Project history.
+        {language === 'ru' ? t('editControls.qualityHint') : 'Zoom uses actual decoded image dimensions (one CSS pixel per source pixel at 100%). This remains a visual preview, not a pixel-level quality certificate. Accept alone commits to Project history.'}
       </p>
       {(failed.before === identity || failed.after === identity) && needsHumanReview && (
         <p role="alert" className="text-sm text-destructive">Не удалось загрузить изображение для проверки. Принятие заблокировано.</p>
@@ -248,13 +250,13 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
       )}
       <div className="flex flex-wrap gap-2">
         <Button onClick={onAccept} disabled={busy || reviewBlocked} className="flex-1 min-w-[100px]">
-          {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />} Accept
+          {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />} {language === "ru" ? t("editControls.accept") : "Accept"}
         </Button>
         {onRetry && kind !== 'VIRTUAL_TRY_ON' && <Button variant="outline" onClick={onRetry} disabled={busy} className="rounded-xl">
-          <RotateCcw className="w-4 h-4 mr-2" /> Retry
+          <RotateCcw className="w-4 h-4 mr-2" /> {language === "ru" ? t("editControls.retry") : "Retry"}
         </Button>}
         <Button variant="outline" onClick={onDiscard} disabled={busy} className="rounded-xl text-destructive hover:text-destructive">
-          <Trash2 className="w-4 h-4 mr-2" /> Discard
+          <Trash2 className="w-4 h-4 mr-2" /> {language === "ru" ? t("editControls.discard") : "Discard"}
         </Button>
       </div>
     </section>

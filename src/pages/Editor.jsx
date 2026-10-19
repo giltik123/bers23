@@ -1,4 +1,5 @@
 import React, { lazy, Suspense, useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Loader2, ExternalLink, Download, Pencil, Maximize2, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -134,6 +135,7 @@ function proportionalResizeDimension(value, sourceSame, sourceOther) {
 }
 
 export default function Editor() {
+  const { t, language } = useTranslation();
   const projectId = new URLSearchParams(window.location.search).get('id')?.trim() || null;
   const {
     project, loading, error, reload,
@@ -1150,7 +1152,7 @@ export default function Editor() {
   };
 
   const handleCreateVersion = async () => {
-    const name = window.prompt('Version name', `Version ${(project.versions?.length || 0) + 1}`);
+    const name = window.prompt(t('editorUi.promptVersion'), t('editorUi.defaultVersion', { count: (project.versions?.length || 0) + 1 }));
     if (name) await createVersion(name);
   };
 
@@ -1158,7 +1160,7 @@ export default function Editor() {
     return <div className="flex justify-center py-24"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
   }
   if (error || !project) {
-    return <div className="max-w-xl mx-auto px-4 py-16"><ErrorBanner message={error || 'Project not found'} onRetry={projectId ? reload : null} /></div>;
+    return <div className="max-w-xl mx-auto px-4 py-16"><ErrorBanner message={error || t('editorUi.notFound')} onRetry={projectId ? reload : null} /></div>;
   }
 
   return (
@@ -1167,15 +1169,15 @@ export default function Editor() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 space-y-1.5">
             <Link to="/" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-primary">
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" /> All projects
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" /> {language === 'ru' ? t('editorUi.allProjects') : 'All projects'}
             </Link>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="max-w-full truncate text-2xl font-semibold tracking-tight">{project.name}</h1>
               <button type="button" onClick={handleRename} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground" aria-label="Rename project">
-                <Pencil className="h-4 w-4" aria-hidden="true" /> Rename
+                <Pencil className="h-4 w-4" aria-hidden="true" /> {language === 'ru' ? t('editorUi.rename') : 'Rename'}
               </button>
             </div>
-            <p className="text-xs text-muted-foreground">Photo editor · changes are saved only after you accept a preview</p>
+            <p className="text-xs text-muted-foreground">{language === 'ru' ? t('editorUi.editorHint') : 'Photo editor · changes are saved only after you accept a preview'}</p>
           </div>
         </div>
         <AdaptiveToolbar className="border-t border-border/70 pt-3">
@@ -1201,7 +1203,7 @@ export default function Editor() {
             {SUPER_RESOLUTION_PRODUCTION_AVAILABLE ? 'Upscale x4' : 'Upscale x4 · Candidate'}
           </Button>}
           <a href={project.current_image_url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm font-medium text-foreground hover:bg-accent" aria-label="View full-size image in a new tab">
-            <ExternalLink className="h-4 w-4" aria-hidden="true" /> View image
+            <ExternalLink className="h-4 w-4" aria-hidden="true" /> {language === 'ru' ? t('editorUi.viewImage') : 'View image'}
           </a>
           <Button type="button" variant="outline" size="sm"
             onClick={handleDownload}
@@ -1209,7 +1211,7 @@ export default function Editor() {
             aria-label="Download current Core image">
             {downloading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" /> :
               <Download className="mr-1.5 h-4 w-4" aria-hidden="true" />}
-            Download
+            {language === 'ru' ? t('editorUi.download') : 'Download'}
           </Button>
         </AdaptiveToolbar>
       </header>
@@ -1238,8 +1240,8 @@ export default function Editor() {
         <section className="min-w-0 space-y-3 rounded-3xl border border-border/70 bg-card p-3 shadow-sm sm:p-4" aria-label="Image canvas">
           <div className="flex items-center justify-between gap-3 px-1">
             <div>
-              <h2 className="flex items-center gap-2 text-sm font-semibold"><ImageIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Your image</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Select an object on the photo, or use a tool to edit the whole image.</p>
+              <h2 className="flex items-center gap-2 text-sm font-semibold"><ImageIcon className="h-4 w-4 text-primary" aria-hidden="true" /> {language === 'ru' ? t('editorUi.imageTitle') : 'Your image'}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{language === 'ru' ? t('editorUi.imageHint') : 'Select an object on the photo, or use a tool to edit the whole image.'}</p>
             </div>
             {project.width && project.height && <span className="shrink-0 rounded-lg bg-muted px-2 py-1 text-xs tabular-nums text-muted-foreground">{project.width} × {project.height}px</span>}
           </div>
@@ -1271,9 +1273,9 @@ export default function Editor() {
         <aside className="min-w-0 space-y-3 xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:overscroll-contain xl:pr-2" aria-label="Editing controls">
       {!pendingResult && <section className="space-y-3 rounded-2xl border border-border/60 bg-card/40 p-3" aria-label="Image tools">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Tools</p>
-          <h2 className="mt-1 text-lg font-semibold">Choose an edit</h2>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">Crop, resize or select a part of the image. Each edit can be previewed before saving.</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">{language === 'ru' ? t('editorUi.tools') : 'Tools'}</p>
+          <h2 className="mt-1 text-lg font-semibold">{language === 'ru' ? t('editorUi.chooseEdit') : 'Choose an edit'}</h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{language === 'ru' ? t('editorUi.toolsHint') : 'Crop, resize or select a part of the image. Each edit can be previewed before saving.'}</p>
         </div>
         <div className={cropInteractionActive || resizeInteractionActive ? 'space-y-3' : 'flex flex-wrap items-start gap-3'}>
         {!selection && !resizeInteractionActive && <CropToolbar
@@ -1304,7 +1306,7 @@ export default function Editor() {
       />}
         </div>
         {!selection && !cropInteractionActive && !resizeInteractionActive && <details className="rounded-lg border border-border/60 p-2">
-          <summary className="cursor-pointer select-none text-sm text-muted-foreground">Rotate or flip</summary>
+          <summary className="cursor-pointer select-none text-sm text-muted-foreground">{language === 'ru' ? t('editorUi.rotateFlip') : 'Rotate or flip'}</summary>
           <div className="pt-3">
       <OrthogonalTransformToolbar
         busy={Boolean(orthogonalTransformingMode)}
@@ -1381,7 +1383,7 @@ export default function Editor() {
           onManualSelect={startSelection}
         />
         {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && (
-          <AdaptivePanel title="Masks & objects">
+          <AdaptivePanel title={language === 'ru' ? t('editorUi.masks') : 'Masks & objects'}>
             <ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj?.id ?? null)} hidden={hiddenObjectIds} onToggleHidden={toggleHiddenObject} />
           </AdaptivePanel>
         )}
@@ -1391,7 +1393,7 @@ export default function Editor() {
 
 
       {objects.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && (
-        <p className="text-[11px] text-muted-foreground text-center">Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.</p>
+        <p className="text-[11px] text-muted-foreground text-center">{language === 'ru' ? t('editorUi.noObjects') : 'Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.'}</p>
       )}
 
       <VoiceInputPanel
@@ -1416,9 +1418,9 @@ export default function Editor() {
           busy={committing || tryOn.busy || boundedAgent.busy || isolatingBackground || applyingMaskedExposure || applyingMaskedWhiteBalance || applyingMaskedLevels || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode)}
         />
       ) : cropInteractionActive ? (
-        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Adjust the crop rectangle above, then apply or cancel it before starting another edit.</p>
+        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">{language === 'ru' ? t('editorUi.cropActive') : 'Adjust the crop rectangle above, then apply or cancel it before starting another edit.'}</p>
       ) : resizeInteractionActive ? (
-        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Set the exact resize dimensions above, then apply or cancel them before starting another edit.</p>
+        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">{language === 'ru' ? t('editorUi.resizeActive') : 'Set the exact resize dimensions above, then apply or cancel them before starting another edit.'}</p>
       ) : (
         <>
           {objects.length > 0 && (
@@ -1434,7 +1436,7 @@ export default function Editor() {
             </>
           )}
           <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={(next) => { if (!tryOnActive && !agentActive) setEditTab(next); }} />
-          <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">Loading panel…</div>}>
+          <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">{language === 'ru' ? t('editorUi.loadingPanel') : 'Loading panel…'}</div>}>
           {editTab === 'ai' ? (
             <AICommandStudio
               project={project}
@@ -1512,7 +1514,7 @@ export default function Editor() {
           ) : (
             <>
               {activeRecipe && (
-                <p className="text-[11px] text-muted-foreground">Recipe: <span className="font-medium text-foreground">{activeRecipe.name}</span> — edit the prompt below if needed.</p>
+                <p className="text-[11px] text-muted-foreground">{language === 'ru' ? t('editorUi.recipe') : 'Recipe:'} <span className="font-medium text-foreground">{activeRecipe.name}</span> {language === 'ru' ? t('editorUi.recipeHint') : '— edit the prompt below if needed.'}</p>
               )}
               {plan && <PlanPreview plan={plan} />}
               <InstructionBar
@@ -1530,13 +1532,13 @@ export default function Editor() {
       )}
 
       <details className="rounded-2xl border border-border/60 p-3 text-sm" aria-label="Additional editor tools and status">
-        <summary className="cursor-pointer select-none font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">More tools and activity</summary>
+        <summary className="cursor-pointer select-none font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{language === 'ru' ? t('editorUi.moreTools') : 'More tools and activity'}</summary>
         <div className="mt-3 space-y-4">
-          <AdaptivePanel title="Workspace"><WorkspaceBar projectId={project.id} /></AdaptivePanel>
-          <AdaptivePanel title="Job Center"><JobQueuePanel /></AdaptivePanel>
+          <AdaptivePanel title={language === 'ru' ? t('editorUi.workspace') : 'Workspace'}><WorkspaceBar projectId={project.id} /></AdaptivePanel>
+          <AdaptivePanel title={language === 'ru' ? t('editorUi.jobCenter') : 'Job Center'}><JobQueuePanel /></AdaptivePanel>
           <PipelineStatusBar width={project.width} height={project.height} />
           <CreditsBar estimate={!pendingResult && plan?.status === 'ready' ? (plan.credits?.credits ?? 0) : 0} />
-          <AdaptivePanel title="Scene Memory"><SceneMemoryPanel project={project} /></AdaptivePanel>
+          <AdaptivePanel title={language === 'ru' ? t('editorUi.sceneMemory') : 'Scene Memory'}><SceneMemoryPanel project={project} /></AdaptivePanel>
           <EditorStatusBar
             objectCount={objects.length}
             selectionCount={objects.filter((o) => o.selected).length}

@@ -158,7 +158,7 @@ test('Editor separates labeled View image from authenticated Core file download'
   const editor=await readFile('src/pages/Editor.jsx','utf8');
   // Viewing the signed image in another tab is allowed, but is NOT a download.
   assert.match(editor,/<a href=\{project\.current_image_url\} target="_blank" rel="noopener noreferrer"[^>]*aria-label="View full-size image in a new tab"/);
-  assert.match(editor,/<ExternalLink[^>]*\/> View image/);
+  assert.match(editor, /<ExternalLink[^>]*\/> \{language === 'ru' \? t\('editorUi\.viewImage'\)/, 'view remains a separate labeled navigation link');
   // Download is a separate, explicitly labeled button backed by real Core bytes.
   assert.match(editor,/const handleDownload = async/);
   assert.match(editor,/projectService\.get\(project\.id\)/);

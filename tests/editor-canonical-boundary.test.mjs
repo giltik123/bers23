@@ -552,7 +552,7 @@ test('zero-object projects expose canonical whole-image Prompt without an unback
   assert.match(bar, /disabled=\{!canEdit \|\| applying\}/);
   assert.match(bar, /disabled=\{!canEdit \|\| !instruction\.trim\(\) \|\| applying\}/);
   assert.match(bar, /event\.key === 'Enter' && canEdit && !applying && instruction\.trim\(\) && onApply\(\)/);
-  assert.match(bar, /Editing the whole image/);
+  assert.match(bar, /editControls\.wholeImage/, 'whole-image prompt must remain explicit in localized UI');
 
   assert.match(resolver, /if \(intent\?\.scope === 'whole_image'\)/);
   assert.match(resolver, /strategy: 'whole_image', needsClarification: false/);

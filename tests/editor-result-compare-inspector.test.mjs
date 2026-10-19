@@ -21,11 +21,11 @@ test('ResultCompare presents accessible split and zoom but changes Project only 
   assert.match(component,/canComparePixelsAligned\(beforeSize, afterSize\)/u);
   assert.match(component,/geometry === 'aligned' && canCompareOperationAligned\(candidateOperation\)/u);
   assert.match(component,/disabled=\{!splitAllowed\}/u);
-  assert.match(component,/aria-label="Image comparison mode"/u);
+  assert.match(component,/aria-label=\{language === 'ru' \? t\('editControls\.compareMode'\)/u);
   assert.match(component,/aria-pressed=\{mode === 'split'\}/u);
-  assert.match(component,/aria-label="Split boundary"/u);
+  assert.match(component,/aria-label=\{language === 'ru' \? t\('editControls\.boundary'\)/u);
   assert.match(component,/max="100" step="1"/u);
-  assert.match(component,/aria-label="Inspection zoom"/u);
+  assert.match(component,/aria-label=\{language === 'ru' \? t\('editControls\.zoom'\)/u);
   assert.match(component,/<option value=\{2\}>200%<\/option>/u);
   assert.match(component,/style=\{\{ clipPath:/u);
   assert.match(component,/disabled=\{busy\}/u);

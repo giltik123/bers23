@@ -55,12 +55,12 @@ test('Editor uses a spacious canvas-led workspace and explanatory editing modes'
 
 test('Editor undo/redo/versions are labeled actions with a confirmed restore', async () => {
   const [history, versions] = await Promise.all([read('src/components/editor/HistoryControls.jsx'), read('src/components/editor/VersionsPanel.jsx')]);
-  assert.match(history, /aria-label="Undo"[^>]*>[\s\S]*?Undo/);
-  assert.match(history, /aria-label="Redo"[^>]*>[\s\S]*?Redo/);
-  assert.match(history, /window\.confirm\('Restore the original image\?/);
+  assert.match(history, /editControls\.undo/);
+  assert.match(history, /editControls\.redo/);
+  assert.match(history, /window\.confirm\(t\('editControls\.restoreConfirm'\)\)/);
   assert.match(history, /onClick=\{confirmRestore\}/);
-  assert.match(versions, /aria-label="Versions"/);
-  assert.match(versions, /Versions\s*<\/button>/);
+  assert.match(versions, /aria-label=\{t\('editControls\.versions'\)\}/);
+  assert.match(versions, /editControls\.versions/);
   assert.match(versions, /onClick=\{onCreate\}/);
   assert.match(versions, /onClick=\{\(\) => onRestore\(v\)\}/);
 });
@@ -68,8 +68,8 @@ test('Editor undo/redo/versions are labeled actions with a confirmed restore', a
 test('the text tool previews first; only Accept commits the result', async () => {
   const [editor, prompt, compare] = await Promise.all([read('src/pages/Editor.jsx'), read('src/components/editor/InstructionBar.jsx'), read('src/components/editor/ResultCompare.jsx')]);
   assert.match(prompt, /onClick=\{onApply\}/);
-  assert.match(prompt, /aria-label="Preview edit"/);
-  assert.match(prompt, /not changed until you review the preview and choose Accept/);
+  assert.match(prompt, /aria-label=\{t\('editControls\.preview'\)\}/);
+  assert.match(prompt, /editControls\.previewHint/);
   assert.match(compare, /Preview ready — not saved yet/);
   for (const [label, action] of [['Accept','onAccept'], ['Retry','onRetry'], ['Discard','onDiscard']]) {
     assert.match(compare, new RegExp('onClick=\\{' + action + '\\}[^>]*>[\\s\\S]*?' + label));

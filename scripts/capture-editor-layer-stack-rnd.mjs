@@ -21,14 +21,30 @@ async function fetchPhoto(rawUrl) {
   if(url.protocol!=='https:' || url.hostname!=='upload.wikimedia.org' ||
     !url.pathname.startsWith('/wikipedia/commons/') || url.search || url.hash ||
     url.username || url.password) throw new Error('Only fixed Wikimedia source photographs are admitted');
-  const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(35_000),
-    headers:{accept:'image/jpeg,image/png,image/webp','user-agent':'BERS-layer-quality-research/1.0 (github.com/giltik123/bers23)'}});
-  if(!response.ok)throw new Error(`Real photo unavailable: HTTP ${response.status}`);
-  const size=Number(response.headers.get('content-length'));
-  if(Number.isFinite(size)&&size>25_000_000)throw new Error('Image download exceeds limit');
-  const bytes=Buffer.from(await response.arrayBuffer());
-  if(bytes.length===0||bytes.length>25_000_000)throw new Error('Real photo input is empty/oversized');
-  return bytes;
+  // Wikimedia can rate-limit GitHub runners. Retry the same allowlisted
+  // photograph politely; never substitute unreviewed, cached or synthetic pixels.
+  const backoffMs=[10_000,20_000,40_000,60_000];
+  for(let attempt=0;attempt<=backoffMs.length;attempt++){
+    const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(35_000),
+      headers:{accept:'image/jpeg,image/png,image/webp','user-agent':'BERS-layer-quality-research/1.0 (github.com/giltik123/bers23)'}});
+    if((response.status===429||response.status===503)&&attempt<backoffMs.length){
+      const raw=response.headers.get('retry-after');
+      const seconds=raw===null?NaN:Number(raw);
+      await response.body?.cancel();
+      if(Number.isFinite(seconds)&&seconds>60)throw new Error('Real photo source retry-after exceeds 60 seconds');
+      const delay=Math.max(backoffMs[attempt],Number.isFinite(seconds)&&seconds>=0?seconds*1000:0);
+      console.warn(`Real photo source HTTP ${response.status}; bounded retry ${attempt+1}/5 in ${delay}ms`);
+      await new Promise(resolve=>setTimeout(resolve,delay));
+      continue;
+    }
+    if(!response.ok)throw new Error(`Real photo unavailable: HTTP ${response.status}`);
+    const size=Number(response.headers.get('content-length'));
+    if(Number.isFinite(size)&&size>25_000_000)throw new Error('Image download exceeds limit');
+    const bytes=Buffer.from(await response.arrayBuffer());
+    if(bytes.length===0||bytes.length>25_000_000)throw new Error('Real photo input is empty/oversized');
+    return bytes;
+  }
+  throw new Error('Real photo source exhausted bounded retry budget');
 }
 async function png(rgba,width,height){
   return sharp(Buffer.from(rgba),{raw:{width,height,channels:4}})

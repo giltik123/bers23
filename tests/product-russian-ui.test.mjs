@@ -56,3 +56,31 @@ test('language selection never changes user images or AI prompts', async () => {
   assert.ok(manager.includes('rtlManager.apply(code)'));
   assert.doesNotMatch(manager, /coreClient|projectService|\/auth\/password\/login/);
 });
+
+
+test('Russian editor, preview and Try-On keep explicit review and controlled actions', async () => {
+  for (const namespace of ['editorUi', 'editControls', 'fashionUi']) {
+    assert.ok(russian[namespace] && Object.keys(russian[namespace]).length >= 10, namespace + ' translations missing');
+  }
+  assert.equal(russian.editorUi.tabs.outfits.label, 'Образы и примерка');
+  assert.equal(russian.editControls.accept, 'Принять');
+  assert.equal(russian.editControls.discard, 'Отклонить');
+  const [editor, navigation, history, compare, wardrobe, runner] = await Promise.all([
+    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/components/adaptive/AdaptiveNavigation.jsx', 'utf8'),
+    readFile('src/components/editor/HistoryControls.jsx', 'utf8'),
+    readFile('src/components/editor/ResultCompare.jsx', 'utf8'),
+    readFile('src/components/editor/fashion/FashionPanel.jsx', 'utf8'),
+    readFile('src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx', 'utf8'),
+  ]);
+  assert.match(navigation, /editorUi\.tabs\./);
+  assert.match(editor, /<AdaptiveNavigation items=\{EDITOR_TABS\}/);
+  assert.match(history, /window\.confirm\(t\('editControls\.restoreConfirm'\)\)/);
+  assert.match(compare, /onClick=\{onAccept\} disabled=\{busy \|\| reviewBlocked\}/);
+  assert.match(compare, /editControls\.accept/);
+  assert.match(compare, /editControls\.discard/);
+  assert.match(wardrobe, /fashionUi\.addGarment/);
+  assert.match(runner, /fashionUi\.refreshError/);
+  assert.match(runner, /setSelectedEntryId\(''\)/, 'failed or changed outfit must invalidate a stale item');
+  assert.doesNotMatch(navigation, /coreClient\./, 'translation must never start creative execution');
+});
