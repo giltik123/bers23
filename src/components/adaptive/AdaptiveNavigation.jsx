@@ -1,17 +1,19 @@
 import React from 'react';
 import { usePlatformProfile } from '@/lib/platform/PlatformManager';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 
 export default function AdaptiveNavigation({ items, active, onChange }) {
   const profile = usePlatformProfile();
+  const { t, language } = useTranslation();
   const current = items.find((item) => item.id === active);
 
   return (
-    <nav aria-label="Editing modes" className="space-y-3 rounded-2xl border border-border/70 bg-card p-3 shadow-sm sm:p-4">
+    <nav aria-label={language === "ru" ? t("editorUi.modes") : "Editing modes"} className="space-y-3 rounded-2xl border border-border/70 bg-card p-3 shadow-sm sm:p-4">
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Editing methods</p>
-        <p className="mt-1 text-sm font-medium text-foreground">What would you like to do?</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">{language === 'ru' ? t('editorUi.methods') : 'Editing methods'}</p>
+        <p className="mt-1 text-sm font-medium text-foreground">{language === 'ru' ? t('editorUi.what') : 'What would you like to do?'}</p>
       </div>
-      <div className={['flex gap-2 overflow-x-auto pb-1', profile.compact ? 'w-full' : 'flex-wrap'].join(' ')} role="group" aria-label="Choose editing method">
+      <div className={['flex gap-2 overflow-x-auto pb-1', profile.compact ? 'w-full' : 'flex-wrap'].join(' ')} role="group" aria-label={language === "ru" ? t("editorUi.chooseMethod") : "Choose editing method"}>
         {items.map((item) => (
           <button
             key={item.id}
@@ -25,13 +27,13 @@ export default function AdaptiveNavigation({ items, active, onChange }) {
                 : 'border-border bg-background text-foreground hover:border-primary/50 hover:bg-accent',
             ].join(' ')}
           >
-            {item.label}
+            {language === 'ru' ? t(`editorUi.tabs.${item.id}.label`) : item.label}
           </button>
         ))}
       </div>
       {current?.description && (
         <p className="rounded-xl bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground" aria-live="polite">
-          {current.description}
+          {language === 'ru' ? t(`editorUi.tabs.${current.id}.description`) : current?.description}
         </p>
       )}
     </nav>
