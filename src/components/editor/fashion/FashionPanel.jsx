@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { Archive, Camera, Heart, Images, Loader2, Plus, RefreshCw, RotateCcw, Shirt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { coreClient } from '@/api/coreClient';
@@ -14,14 +15,15 @@ import AddGarmentDialog from './AddGarmentDialog';
 import CanonicalCollectionsView from './CanonicalCollectionsView';
 import GarmentCaptureDialog from './GarmentCaptureDialog';
 
-function captureLabel(assessment) {
-  if (assessment?.cardinalComplete && assessment?.technicalResolution?.status === 'ADEQUATE') return '4-view capture ready';
+function captureLabel(assessment, t, language) {
+  if (assessment?.cardinalComplete && assessment?.technicalResolution?.status === 'ADEQUATE') return language === 'ru' ? t('fashionUi.captureReady') : '4-view capture ready';
   const coverage = Number(assessment?.cardinalCoverageScore);
-  if (Number.isFinite(coverage)) return `${Math.round(coverage * 100)}% cardinal coverage`;
-  return 'Capture not assessed';
+  if (Number.isFinite(coverage)) return language === 'ru' ? t('fashionUi.captureCoverage', { count: Math.round(coverage * 100) }) : `${Math.round(coverage * 100)}% cardinal coverage`;
+  return language === 'ru' ? t('fashionUi.captureUnknown') : 'Capture not assessed';
 }
 
 function WardrobeCard({ item, busy, onFavorite, onArchive, onRestore, onCapture }) {
+  const { t, language } = useTranslation();
   const category = getCategory(item.category);
   return (
     <article className="rounded-xl border border-border/70 bg-card overflow-hidden" aria-busy={busy || undefined}>
@@ -40,7 +42,7 @@ function WardrobeCard({ item, busy, onFavorite, onArchive, onRestore, onCapture 
           <button
             type="button"
             className="p-1 rounded-md hover:bg-accent disabled:opacity-50"
-            aria-label={item.favorite ? `Remove ${item.name} from favorites` : `Add ${item.name} to favorites`}
+            aria-label={item.favorite ? (language === 'ru' ? t('fashionUi.removeFavorite', { name: item.name }) : `Remove ${item.name} from favorites`) : (language === 'ru' ? t('fashionUi.addFavorite', { name: item.name }) : `Add ${item.name} to favorites`)}
             aria-pressed={item.favorite}
             disabled={busy}
             onClick={() => onFavorite(item, !item.favorite)}
@@ -52,9 +54,9 @@ function WardrobeCard({ item, busy, onFavorite, onArchive, onRestore, onCapture 
         <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground">
           <span className="rounded-full bg-secondary px-2 py-0.5">{item.representationTier}</span>
           <span className="rounded-full bg-secondary px-2 py-0.5 flex items-center gap-1">
-            <Images className="h-3 w-3" /> {item.viewCount} {item.viewCount === 1 ? 'view' : 'views'}
+            <Images className="h-3 w-3" /> {language === 'ru' ? t('fashionUi.views', { count: item.viewCount }) : `${item.viewCount} ${item.viewCount === 1 ? 'view' : 'views'}`}
           </span>
-          <span className="rounded-full bg-secondary px-2 py-0.5">{captureLabel(item.captureAssessment)}</span>
+          <span className="rounded-full bg-secondary px-2 py-0.5">{captureLabel(item.captureAssessment, t, language)}</span>
         </div>
 
         {item.tags.length > 0 && (
@@ -64,18 +66,18 @@ function WardrobeCard({ item, busy, onFavorite, onArchive, onRestore, onCapture 
         <div className="flex justify-end gap-1">
           {item.status === 'ACTIVE' && (
             <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={busy} onClick={() => onCapture(item)}>
-              <Camera className="h-3.5 w-3.5 mr-1" /> Add view
+              <Camera className="h-3.5 w-3.5 mr-1" /> {language === 'ru' ? t('fashionUi.addView') : 'Add view'}
             </Button>
           )}
           {item.status === 'ACTIVE' ? (
             <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={busy} onClick={() => onArchive(item)}>
               {busy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Archive className="h-3.5 w-3.5 mr-1" />}
-              Archive
+              {language === 'ru' ? t('fashionUi.archive') : 'Archive'}
             </Button>
           ) : (
             <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={busy} onClick={() => onRestore(item)}>
               {busy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5 mr-1" />}
-              Restore
+              {language === 'ru' ? t('fashionUi.restore') : 'Restore'}
             </Button>
           )}
         </div>
@@ -85,6 +87,7 @@ function WardrobeCard({ item, busy, onFavorite, onArchive, onRestore, onCapture 
 }
 
 export default function FashionPanel({ voiceQuery = null }) {
+  const { t, language } = useTranslation();
   const wardrobe = useMemo(() => createCanonicalWardrobeViewModel({
     garments: coreClient.fashion.garments,
     wardrobe: coreClient.fashion.wardrobe,
@@ -186,21 +189,21 @@ export default function FashionPanel({ voiceQuery = null }) {
     <section className="rounded-2xl border border-border p-3 space-y-3" aria-label="Canonical fashion wardrobe">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium flex items-center gap-1.5">
-          <Shirt className="w-3.5 h-3.5 text-primary" /> Wardrobe
+          <Shirt className="w-3.5 h-3.5 text-primary" /> {language === 'ru' ? t('fashionUi.wardrobe') : 'Wardrobe'}
         </p>
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" className="h-8" onClick={() => reload().catch(() => undefined)} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span className="sr-only">Reload wardrobe</span>
+            <span className="sr-only">{language === 'ru' ? t('fashionUi.reload') : 'Reload wardrobe'}</span>
           </Button>
           <Button size="sm" className="h-8" onClick={() => setAddOpen(true)}>
-            <Plus className="h-3.5 w-3.5 mr-1" /> Add garment
+            <Plus className="h-3.5 w-3.5 mr-1" /> {language === 'ru' ? t('fashionUi.addGarment') : 'Add garment'}
           </Button>
         </div>
       </div>
 
       <p className="text-[11px] text-muted-foreground">
-        Images, stable garment identity and capture evidence come from Managed Garment authority; category, season, material, tags and favorite state come from the revisioned Wardrobe authority.
+        {language === 'ru' ? t('fashionUi.notice') : 'Images, stable garment identity and capture evidence come from Managed Garment authority; category, season, material, tags and favorite state come from the revisioned Wardrobe authority.'}
       </p>
 
       {error && (
@@ -219,13 +222,13 @@ export default function FashionPanel({ voiceQuery = null }) {
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground" role="status">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading canonical wardrobe…
+          <Loader2 className="h-4 w-4 animate-spin" /> {language === 'ru' ? t('fashionUi.loading') : 'Loading canonical wardrobe…'}
         </div>
       ) : visibleItems.length === 0 ? (
         <div className="rounded-xl bg-secondary/40 p-4 text-center text-xs text-muted-foreground">
           {voiceQuery?.query && items.length>0
             ? 'По голосовому запросу ничего не найдено. Проверьте категорию или цвет.'
-            : 'No managed garments yet. Add a garment photo to create the first stable wardrobe item.'}
+            : (language === 'ru' ? t('fashionUi.empty') : 'No managed garments yet. Add a garment photo to create the first stable wardrobe item.')}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
