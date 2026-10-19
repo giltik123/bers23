@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { coreClient } from '@/api/coreClient';
@@ -28,6 +29,7 @@ export default function CanonicalTryOnRunnerPanel({
   onAbandon,
   onClose,
 }) {
+  const { t, language } = useTranslation();
   const model = useMemo(() => createCanonicalOutfitViewModel({
     outfits: coreClient.fashion.outfits,
     wardrobe: coreClient.fashion.wardrobe,
@@ -67,12 +69,12 @@ export default function CanonicalTryOnRunnerPanel({
         setGarments([]);
         setSelectedOutfitId('');
         setSelectedEntryId('');
-        setError(`Try-On choices could not be refreshed. Reload canonical Outfits before trying again. ${cause?.message || ''}`.trim());
+        setError(`${language === 'ru' ? t('fashionUi.refreshError') : 'Try-On choices could not be refreshed. Reload canonical Outfits before trying again.'} ${cause?.message || ''}`.trim());
       }
     } finally {
       if (request === loadRequestRef.current) setLoading(false);
     }
-  }, [busy, hostActive, model]);
+  }, [busy, hostActive, model, t, language]);
 
   useEffect(() => {
     void load(); // read-only refresh; never starts Try-On execution
@@ -186,10 +188,10 @@ export default function CanonicalTryOnRunnerPanel({
     <section className="rounded-2xl border border-border p-3 space-y-2" aria-label="Canonical deterministic Try-On runner">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <p className="text-xs font-medium">Try one managed garment</p>
-          <p className="text-[10px] text-muted-foreground">Choose one canonical Outfit entry. Selection alone never starts execution.</p>
+          <p className="text-xs font-medium">{language === 'ru' ? t('fashionUi.tryOn') : 'Try one managed garment'}</p>
+          <p className="text-[10px] text-muted-foreground">{language === 'ru' ? t('fashionUi.tryOnHint') : 'Choose one canonical Outfit entry. Selection alone never starts execution.'}</p>
         </div>
-        <Button type="button" variant="ghost" size="sm" className="h-8" onClick={load} disabled={selectionLocked || disabled} aria-label="Reload Try-On Outfit choices">
+        <Button type="button" variant="ghost" size="sm" className="h-8" onClick={load} disabled={selectionLocked || disabled} aria-label={language === 'ru' ? t('fashionUi.reloadOutfits') : 'Reload Try-On Outfit choices'}>
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
         </Button>
       </div>
@@ -211,9 +213,9 @@ export default function CanonicalTryOnRunnerPanel({
             onChange={(event) => { setSelectedOutfitId(event.target.value); setSelectedEntryId(''); setError(''); }}
             disabled={selectionLocked || disabled}
             className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-            aria-label="Outfit for deterministic Try-On"
+            aria-label={language === 'ru' ? t('fashionUi.outfitForTryon') : 'Outfit for deterministic Try-On'}
           >
-            <option value="">Choose Outfit…</option>
+            <option value="">{language === 'ru' ? t('fashionUi.chooseOutfit') : 'Choose Outfit…'}</option>
             {outfits.map((outfit) => <option key={outfit.id} value={outfit.id}>{outfit.name}</option>)}
           </select>
           <select
@@ -221,9 +223,9 @@ export default function CanonicalTryOnRunnerPanel({
             onChange={(event) => { setSelectedEntryId(event.target.value); setError(''); }}
             disabled={selectionLocked || disabled || !selectedOutfit}
             className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-            aria-label="Garment entry for deterministic Try-On"
+            aria-label={language === 'ru' ? t('fashionUi.garmentForTryon') : 'Garment entry for deterministic Try-On'}
           >
-            <option value="">Choose garment…</option>
+            <option value="">{language === 'ru' ? t('fashionUi.chooseGarment') : 'Choose garment…'}</option>
             {(selectedOutfit?.entries || []).map((entry) => {
               const garment = garmentById.get(entry.garmentId);
               return (
@@ -238,7 +240,7 @@ export default function CanonicalTryOnRunnerPanel({
 
       {hostActive && selectedOutfit && selectedEntry && (
         <p className="text-[11px] text-muted-foreground" role="status">
-          Locked selection: {selectedOutfit.name} · {selectedGarment?.name || selectedEntry.garmentId}
+          {language === 'ru' ? t('fashionUi.locked', { name: selectedOutfit.name }) : `Locked selection: ${selectedOutfit.name}`} · {selectedGarment?.name || selectedEntry.garmentId}
         </p>
       )}
 
