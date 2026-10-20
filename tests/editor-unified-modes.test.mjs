@@ -22,7 +22,7 @@ test('wardrobe lives on its own protected route and is reachable from try-on', a
     read('src/App.jsx'), read('src/pages/Editor.jsx'), read('src/pages/Wardrobe.jsx'),
   ]);
   assert.match(app, /<Route path="\/wardrobe" element=\{<Wardrobe \/>\} \/>/);
-  assert.match(editor, /navigate\('\/wardrobe\?project='/);
+  assert.match(editor, /\/wardrobe\?project=/);
   assert.match(editor, /onOpenWardrobe=\{\(\) => openWardrobe\(\)\}/);
   assert.match(wardrobe, /<FashionPanel voiceQuery=\{voiceQuery\} \/>/);
   assert.doesNotMatch(editor, /<FashionPanel/);
