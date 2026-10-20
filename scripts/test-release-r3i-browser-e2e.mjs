@@ -159,6 +159,7 @@ try {
     .waitFor({ state: 'visible', timeout: 20_000 });
   const projectImage = await waitImage(page, 'Project', 12, 8);
   const initialProjectImageSrc = await projectImage.evaluate(element => element.src);
+  assert.equal(new URL(initialProjectImageSrc).origin, coreOrigin, 'original Project must use canonical Core delivery');
 
   const initialProject = await readProjectState(projectId);
   assert.deepEqual(initialProject.project.objects, [], 'new canonical Project must begin with zero detected/selected objects');
