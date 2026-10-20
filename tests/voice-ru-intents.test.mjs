@@ -130,7 +130,8 @@ test('VI-4 browser Editor wires source-bound voice actions to existing operation
   assert.match(editor,/await redo\(\)/);
   assert.match(editor,/await restoreOriginal\(\)/);
   assert.match(editor,/setEditTab\('fashion'\)/);
-  assert.match(editor,/setEditTab\('outfits'\)/);
+  assert.match(editor,/setEditTab\('fashion'\)/);
+  assert.match(editor,/openWardrobe\(\{query:params\.query,hints:params\.hints\}\)/);
   assert.match(fashion,/voiceQuery/);
   assert.match(tryon,/voiceMatches/);
   assert.doesNotMatch(panel,/coreClient|fetch\(|runTryOnAction|applyEdit\(/);
