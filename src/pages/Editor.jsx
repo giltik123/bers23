@@ -156,7 +156,10 @@ export default function Editor() {
   const [pendingResult, setPendingResult] = useState(null);
   const [committing, setCommitting] = useState(false);
   const [manualTryOnExpanded, setManualTryOnExpanded] = useState(false);
-  const [editTab, setEditTab] = useState('ai');
+  const [outfitsExpanded, setOutfitsExpanded] = useState(false);
+  const [editTab, setEditTab] = useState(() => (
+    new URLSearchParams(window.location.search).get('mode') === 'fashion' ? 'fashion' : 'ai'
+  ));
   const [outfitRevision, setOutfitRevision] = useState(0);
   const notifyOutfitChange = useCallback(() => setOutfitRevision((current) => current + 1), []);
   const openWardrobe = (voiceQuery = null) => navigate(
@@ -1489,9 +1492,10 @@ export default function Editor() {
                 onClose={closeTryOn}
               />
               </details>
-              {!tryOn.state.host.active && <details className="rounded-xl border border-border/70 bg-card p-3">
+              {!tryOn.state.host.active && <details className="rounded-xl border border-border/70 bg-card p-3"
+                open={outfitsExpanded} onToggle={(event) => setOutfitsExpanded(event.currentTarget.open)}>
                 <summary className="cursor-pointer text-sm font-medium">Комплекты одежды · дополнительно</summary>
-                <div className="mt-3"><OutfitPanel onCanonicalChange={notifyOutfitChange} /></div>
+                {outfitsExpanded && <div className="mt-3"><OutfitPanel onCanonicalChange={notifyOutfitChange} /></div>}
               </details>}
             </div>
           ) : editTab === 'agent' ? (
