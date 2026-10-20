@@ -87,7 +87,7 @@ const EDITOR_TABS = [
 
 // Secondary tools are still part of this workspace, not separate pages.
 const EDITOR_EXTRA_TABS = [
-  { id: 'prompt', label: 'Prompt', description: 'Direct text editing.' },
+  { id: 'prompt', label: 'Prompt', description: 'Describe what you want to change, preview the result, then decide whether to save it.' },
   { id: 'creative', label: 'Creative Studio', description: 'Mood boards and concepts.' },
   { id: 'recipes', label: 'Recipes', description: 'Ready-made editing recipes.' },
   { id: 'agent', label: 'AI Agent', description: 'Controlled multistep editing.' },
