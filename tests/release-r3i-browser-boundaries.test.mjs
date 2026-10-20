@@ -53,7 +53,8 @@ test('R3i browser uses built SPA/Core, system Chrome and visible Fashion/Outfit 
   assert.match(harness, /frontendLogs/);
   assert.match(harness, /chromium\.launch\(\{ channel: 'chrome', headless: true \}\)/);
   assert.match(harness, /getByRole\('button', \{ name: 'Fashion', exact: true \}\)/);
-  assert.match(harness, /getByRole\('button', \{ name: 'Outfits', exact: true \}\)/);
+  assert.match(harness, /getByText\('Комплекты одежды · дополнительно'/);
+  assert.match(harness, /getByRole\('button', \{ name: 'Открыть гардероб', exact: true \}\)/);
   assert.match(harness, /getByRole\('region', \{ name: 'Canonical Outfit builder', exact: true \}\)/);
   assert.match(harness, /getByPlaceholder\('New outfit'\)/);
   assert.match(harness, /getByLabel\('Garment to add'\)/);
