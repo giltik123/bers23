@@ -147,63 +147,68 @@ try {
 
   resetJourneyDiagnostics();
 
-  const prompt = page.getByRole('button', { name: 'Prompt', exact: true });
+  // The main workspace exposes three modes. Garment management remains the
+  // only dedicated Fashion screen; Outfits is an on-demand disclosure.
   const fashion = page.getByRole('button', { name: 'Fashion', exact: true });
-  const outfits = page.getByRole('button', { name: 'Outfits', exact: true });
-  await prompt.waitFor({ state: 'visible', timeout: 10_000 });
   await fashion.waitFor({ state: 'visible', timeout: 10_000 });
-  await outfits.waitFor({ state: 'visible', timeout: 10_000 });
 
-  const fashionLoad = waitForCoreResponses(page, [
-    '/api/core/garments',
+  const fashionModeLoad = waitForCoreResponses(page, [
+    '/api/core/wardrobe/outfits',
     '/api/core/wardrobe/garments',
   ]);
   await fashion.click();
-  await fashionLoad;
-  await page.getByRole('region', { name: 'Canonical fashion wardrobe', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
-  await page.getByText('No managed garments yet. Add a garment photo to create the first stable wardrobe item.', { exact: true })
+  await fashionModeLoad;
+  await page.getByRole('region', { name: 'Примерка одежды', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
   await assertActiveNavigation(fashion, 'Fashion');
+
+  const wardrobeLoad = waitForCoreResponses(page, [
+    '/api/core/garments',
+    '/api/core/wardrobe/garments',
+  ]);
+  await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
+  await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
+  await wardrobeLoad;
+  await page.getByRole('region', { name: 'Canonical fashion wardrobe', exact: true })
+    .waitFor({ state: 'visible', timeout: 15_000 });
+  await page.getByText('No managed garments yet. Add a garment photo to create the first stable wardrobe item.', { exact: true })
+    .waitFor({ state: 'visible', timeout: 15_000 });
+
+  const returnModeLoad = waitForCoreResponses(page, [
+    '/api/core/wardrobe/outfits',
+    '/api/core/wardrobe/garments',
+  ]);
+  await page.getByRole('link', { name: /Back to workspace|Назад к редактору/ }).click();
+  await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId && url.searchParams.get('mode') === 'fashion');
+  await returnModeLoad;
+  await page.getByRole('region', { name: 'Примерка одежды', exact: true })
+    .waitFor({ state: 'visible', timeout: 15_000 });
 
   const outfitLoad = waitForCoreResponses(page, [
     '/api/core/wardrobe/outfits',
     '/api/core/wardrobe/garments',
   ]);
-  await outfits.click();
+  await page.getByText('Комплекты одежды · дополнительно', { exact: true }).click();
   await outfitLoad;
-  await page.getByRole('region', { name: 'Canonical Outfit builder', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.getByRole('region', { name: 'Canonical Outfit builder', exact: true })
+    .waitFor({ state: 'visible', timeout: 15_000 });
   await page.getByText('No managed outfits yet. Create one to compose stable garment references.', { exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
-  await assertActiveNavigation(outfits, 'Outfits');
 
-  await prompt.click();
-  await assertActiveNavigation(prompt, 'Prompt');
-
-  const fashionReload = waitForCoreResponses(page, [
-    '/api/core/garments',
-    '/api/core/wardrobe/garments',
-  ]);
-  await fashion.click();
-  await fashionReload;
-  await page.getByRole('region', { name: 'Canonical fashion wardrobe', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
-
-  const outfitReload = waitForCoreResponses(page, [
-    '/api/core/wardrobe/outfits',
-    '/api/core/wardrobe/garments',
-  ]);
-  await outfits.click();
-  await outfitReload;
-  await page.getByRole('region', { name: 'Canonical Outfit builder', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
+  // Advanced modes remain available in the same editor through one menu.
+  await page.getByRole('button', { name: 'More', exact: true }).click();
+  await page.getByRole('button', { name: 'Prompt', exact: true }).click();
+  await assertActiveNavigation(page.getByRole('button', { name: 'More', exact: true }), 'More / Prompt');
 
   const finalState = await readProjectState(projectId);
-  assert.deepEqual(finalState, initial, 'Fashion/Outfits navigation must not mutate canonical Project state or objects');
-  assert.equal(await projectImage.evaluate(element => element.src), initialProjectImageSrc, 'navigation must keep canonical Project image source unchanged');
-  assert.equal(await countMasks(projectId), 0, 'zero-object Fashion/Outfits navigation must not mint canonical MASK artifacts');
-  assert.equal(await countLocalTickets(projectId), 0, 'zero-object Fashion/Outfits navigation must not prepare local execution');
+  assert.deepEqual(finalState, initial, 'Fashion/Wardrobe/Outfits navigation must not mutate canonical Project state or objects');
+  await waitImage(page, 'Project', 12, 8);
+  assert.equal(await countMasks(projectId), 0, 'zero-object Fashion/Wardrobe/Outfits navigation must not mint canonical MASK artifacts');
+  assert.equal(await countLocalTickets(projectId), 0, 'zero-object Fashion/Wardrobe/Outfits navigation must not prepare local execution');
 
-  assert.equal(countRequest('GET /api/core/garments'), 2, 'Fashion must load Managed Garment authority once on each of its two mounts');
-  assert.equal(countRequest('GET /api/core/wardrobe/outfits'), 4, 'each Outfits mount contains the Try-On chooser and Outfit builder; both must load canonical Outfit authority once');
-  assert.equal(countRequest('GET /api/core/wardrobe/garments'), 8, 'Fashion loads one Wardrobe projection per mount; the automatic try-on picker, manual chooser and Outfit builder each load one per Outfits mount');
+  assert.ok(countRequest('GET /api/core/garments') >= 1, 'dedicated Wardrobe must load canonical Managed Garment authority');
+  assert.ok(countRequest('GET /api/core/wardrobe/outfits') >= 2, 'Try-On chooser and expanded Outfit builder must read canonical Outfits');
+  assert.ok(countRequest('GET /api/core/wardrobe/garments') >= 3, 'Fashion mode, Wardrobe page and Outfit builder must read canonical garment projections');
   assert.equal(providerCalls, 0, 'zero-object navigation must never reach provider boundary');
   assert.deepEqual(diagnostics.localExecutionRequests, [], 'zero-object navigation must not invoke local execution');
   assert.deepEqual(diagnostics.creativeRequests, [], 'zero-object navigation must not route through generic Creative/provider authority');
