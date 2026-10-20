@@ -82,7 +82,7 @@ import { isFinalSourceConflict, recoverFinalSourceConflict } from '@/application
 const EDITOR_TABS = [
   { id: 'ai', label: 'AI', description: 'AI-assisted photo editing.' },
   { id: 'fashion', label: 'Fashion', description: 'Try on clothes from your wardrobe.' },
-  { id: 'local', label: 'Local tools', description: 'Edit locally on your device.' },
+  { id: 'local', label: 'Local tools', description: 'No AI, no credits: tune light, color and detail in your browser, compare before/after and download a PNG.' },
 ];
 
 // Secondary tools are still part of this workspace, not separate pages.
@@ -1443,7 +1443,7 @@ export default function Editor() {
               />
             </>
           )}
-          <AdaptiveNavigation items={EDITOR_TABS} extraItems={EDITOR_EXTRA_TABS} compact active={editTab} onChange={(next) => { if (!tryOnActive && !agentActive) setEditTab(next); }} />
+          <AdaptiveNavigation items={EDITOR_TABS} active={editTab} extraItems={EDITOR_EXTRA_TABS} compact onChange={(next) => { if (!tryOnActive && !agentActive) setEditTab(next); }} />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">{language === 'ru' ? t('editorUi.loadingPanel') : 'Loading panel…'}</div>}>
           {editTab === 'ai' ? (
             <AICommandStudio
