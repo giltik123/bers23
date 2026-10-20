@@ -38,8 +38,9 @@ export default function AdaptiveNavigation({ items, extraItems = [], active, onC
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">{language === 'ru' ? t('editorUi.methods') : 'Editing methods'}</p>
         <p className="mt-1 text-sm font-medium text-foreground">{language === 'ru' ? t('editorUi.what') : 'What would you like to do?'}</p>
       </div>}
-      <div className={['flex items-center gap-2 overflow-x-auto pb-1', profile.compact ? 'w-full' : 'flex-wrap'].join(' ')}
-        role="group" aria-label={language === 'ru' ? t('editorUi.chooseMethod') : 'Choose editing method'}>
+      <div className="flex items-start gap-2">
+        <div className={['flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-1', profile.compact ? 'w-full' : 'flex-wrap'].join(' ')}
+          role="group" aria-label={language === 'ru' ? t('editorUi.chooseMethod') : 'Choose editing method'}>
         {items.map((item) => (
           <button key={item.id} type="button" aria-pressed={active === item.id}
             onClick={() => onChange(item.id)}
@@ -48,6 +49,7 @@ export default function AdaptiveNavigation({ items, extraItems = [], active, onC
             {tabLabel(item)}
           </button>
         ))}
+        </div>
         {extraItems.length > 0 && <div ref={moreRef} className="relative shrink-0">
           <button type="button" aria-expanded={moreOpen} aria-haspopup="true"
             aria-controls="bers-extra-editor-modes"
