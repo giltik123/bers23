@@ -132,8 +132,7 @@ try {
 
   await page.getByText('Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.', { exact: true })
     .waitFor({ state: 'visible', timeout: 20_000 });
-  const projectImage = await waitImage(page, 'Project', 12, 8);
-  const initialProjectImageSrc = await projectImage.evaluate(element => element.src);
+  await waitImage(page, 'Project', 12, 8);
 
   const initial = await readProjectState(projectId);
   assert.equal(initial.project.width, 12);
