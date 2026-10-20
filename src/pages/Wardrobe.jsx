@@ -11,7 +11,7 @@ export default function Wardrobe() {
   const { language } = useTranslation();
   const id = new URLSearchParams(location.search).get('project');
   const projectId = typeof id === 'string' && /^[\w-]{1,128}$/.test(id) ? id : null;
-  const backTo = projectId ? `/editor?id=${encodeURIComponent(projectId)}` : '/';
+  const backTo = projectId ? `/editor?id=${encodeURIComponent(projectId)}&mode=fashion` : '/';
   const voiceQuery = location.state?.voiceQuery || null;
 
   return (
