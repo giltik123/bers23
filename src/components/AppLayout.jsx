@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Sparkles, FolderOpen, Images, Workflow, CreditCard, Settings2, Menu, X } from 'lucide-react';
+import { Sparkles, FolderOpen, Images, Workflow, Settings2, Menu, X } from 'lucide-react';
 import ThemeToggle from '@/components/ThemeToggle';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
 import NotificationCenter from '@/components/NotificationCenter';
@@ -60,7 +60,6 @@ export default function AppLayout() {
     { path: '/automations', label: t('automation.title'), icon: Workflow },
   ];
   const accountNavigation = [
-    { path: '/subscription', label: t('billing.subscription'), icon: CreditCard },
     { path: '/settings', label: t('settings.title'), icon: Settings2 },
   ];
   const isActive = (path) => path === '/' ? (location.pathname === '/' || location.pathname === '/editor') : location.pathname === path;
@@ -84,12 +83,10 @@ export default function AppLayout() {
           </nav>
 
           <div className="hidden items-center gap-1 lg:flex" aria-label={t("navUi.account")}>
-            <NavLink {...accountNavigation[0]} active={isActive('/subscription')} />
-            <span className="mx-1 h-7 w-px bg-border" aria-hidden="true" />
             <NotificationCenter />
             <LanguageSwitcher />
             <ThemeToggle showLabel />
-            <NavLink {...accountNavigation[1]} active={isActive('/settings')} />
+            <NavLink {...accountNavigation[0]} active={isActive('/settings')} />
           </div>
 
           <button
