@@ -279,7 +279,9 @@
     "server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql",
     "server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql",
     "server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql",
-    "server/core/fashion/migrations/049_virtual_try_on_final_lineage.sql"
+    "server/core/fashion/migrations/049_virtual_try_on_final_lineage.sql",
+    "server/core/artifacts/migrations/050_cloud_scene_mask_provenance.sql",
+    "server/core/artifacts/migrations/051_global_edit_final_lineage.sql"
   ],
   "supportPaths": [
     ".github/workflows/fashion-execution-ci-policy.yml",
