@@ -1531,6 +1531,14 @@ export default function Editor() {
               onStart={boundedAgent.start}
               onRetry={boundedAgent.retry}
               onCancel={boundedAgent.cancel}
+              onOpenAIStudio={(agentInstruction) => {
+                if (agentBlockedByEditor || !agentInstruction?.trim()) return;
+                setInstruction(agentInstruction);
+                setEditTab('ai');
+              }}
+              onOpenFashion={() => {
+                if (!agentBlockedByEditor) setEditTab('fashion');
+              }}
             />
           ) : editTab === 'recipes' ? (
             <RecipePanel
