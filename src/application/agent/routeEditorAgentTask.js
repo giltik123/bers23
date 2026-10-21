@@ -20,11 +20,11 @@ function admissibleTextTarget(width, height) {
 function reviewedTransformMode(text) {
   const parsed = parseRussianVoiceIntent(text);
   if (parsed?.kind === 'TRANSFORM') return parsed.params.mode;
-  const match = text.match(/^поверни(?:\\s+(?:фото|фотографию|изображение))?\\s+(вправо|влево)$/iu);
+  const match = text.match(/^поверни(?:\s+(?:фото|фотографию|изображение))?\s+(вправо|влево)$/iu);
   return match ? (match[1].toLowerCase() === 'вправо' ? 'ROTATE_90_CW' : 'ROTATE_270_CW') : null;
 }
 function compoundLocalDraft(instruction) {
-  const match = instruction.match(/^(.+?)\\s+(?:и затем|затем|и)\\s+(?:сделай|установи размер)\\s+(\\d{1,5})\\s*(?:на|x|х|×)\\s*(\\d{1,5})(?:\\s*(?:пиксел(?:ей|я|ь|и)|px))?$/iu);
+  const match = instruction.match(/^(.+?)\s+(?:и затем|затем|и)\s+(?:сделай|установи размер)\s+(\d{1,5})\s*(?:на|x|х|×)\s*(\d{1,5})(?:\s*(?:пиксел(?:ей|я|ь|и)|px))?$/iu);
   if (!match) return null;
   const mode = reviewedTransformMode(match[1]);
   if (!mode) return null;
@@ -109,7 +109,7 @@ export function routeEditorAgentTask(rawText) {
     });
   }
   if (interpreted.kind === 'CLARIFY' &&
-      (instruction.length < 3 || /^(?:поверни|отрази|отзеркаль|измени размер|обрежь|сделай\\s+\\d|rotate|resize|flip|crop)(?=\\s|$|[.!?])/iu.test(instruction))) {
+      (instruction.length < 3 || /^(?:поверни|отрази|отзеркаль|измени размер|обрежь|сделай\s+\d|rotate|resize|flip|crop)(?=\s|$|[.!?])/iu.test(instruction))) {
     return Object.freeze({ kind: 'CLARIFY', message: LOCAL_HINT });
   }
   return Object.freeze({
