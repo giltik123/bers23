@@ -557,6 +557,7 @@ try {
   assert.equal(providerCalls, 0, 'manual tonal retouch must never invoke AI providers');
   assert.deepEqual(diagnostics.localExecutionRequests, [], 'manual tonal retouch must never create Core execution tickets');
 
+  await page.getByRole('button', { name: 'More', exact: true }).click();
   await page.getByRole('button', { name: 'Prompt', exact: true }).click();
 
   // Start Selection without invoking Smart Select, switch immediately to deterministic manual Add,

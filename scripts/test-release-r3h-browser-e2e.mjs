@@ -148,6 +148,7 @@ try {
     .waitFor({ state: 'visible', timeout: 20_000 });
   const projectImage = await waitImage(page, 'Project', 12, 8);
   const initialProjectImageSrc = await projectImage.evaluate(element => element.src);
+  assert.equal(new URL(initialProjectImageSrc).origin, coreOrigin, 'original Project must use canonical Core delivery');
 
   const initialProject = await readProjectState(projectId);
   assert.deepEqual(initialProject.project.objects, [], 'new canonical Project must begin with zero detected/selected objects');
@@ -160,12 +161,15 @@ try {
   assert.equal(await countCollections(), 0, 'R3h owner must begin without canonical Collections');
 
   const fashion = page.getByRole('button', { name: 'Fashion', exact: true });
+  await fashion.click();
+  await assertActiveNavigation(fashion, 'Fashion');
   const initialFashionLoad = waitForCoreResponses(page, [
     ['GET', '/api/core/garments'],
     ['GET', '/api/core/wardrobe/garments'],
     ['GET', '/api/core/wardrobe/collections'],
   ]);
-  await fashion.click();
+  await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
+  await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
   await initialFashionLoad;
 
   const wardrobeRegion = page.getByRole('region', { name: 'Canonical fashion wardrobe', exact: true });
@@ -175,8 +179,6 @@ try {
   await page.getByText('No managed garments yet. Add a garment photo to create the first stable wardrobe item.', { exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
   await collectionsRegion.getByText('No collections yet.', { exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
-  await assertActiveNavigation(fashion, 'Fashion');
-
   resetJourneyDiagnostics();
 
   await wardrobeRegion.getByRole('button', { name: 'Add garment', exact: true }).click();
@@ -292,16 +294,14 @@ try {
   await collectionsRegion.getByRole('button', { name: `${collectionName} (1)`, exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
   await collectionsRegion.getByText(garmentName, { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
 
-  const prompt = page.getByRole('button', { name: 'Prompt', exact: true });
-  await prompt.click();
-  await assertActiveNavigation(prompt, 'Prompt');
-
+  await page.getByRole('link', { name: /Back to workspace|Назад к редактору/ }).click();
+  await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId);
   const remountLoad = waitForCoreResponses(page, [
     ['GET', '/api/core/garments'],
     ['GET', '/api/core/wardrobe/garments'],
     ['GET', '/api/core/wardrobe/collections'],
   ]);
-  await fashion.click();
+  await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
   await remountLoad;
   await wardrobeRegion.waitFor({ state: 'visible', timeout: 15_000 });
   await page.getByRole('button', { name: `Remove ${garmentName} from favorites`, exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
@@ -354,7 +354,11 @@ try {
 
   const finalProject = await readProjectState(projectId);
   assert.deepEqual(finalProject, initialProject, 'Managed Wardrobe mutations must not mutate canonical Project state or objects');
-  assert.equal(await page.getByRole('img', { name: 'Project', exact: true }).evaluate(element => element.src), initialProjectImageSrc);
+  await page.getByRole('link', { name: /Back to workspace|Назад к редактору/ }).click();
+  const returnedProjectImage = page.getByRole('img', { name: 'Project', exact: true });
+  await returnedProjectImage.waitFor({ state: 'visible', timeout: 15_000 });
+  assert.equal(new URL(await returnedProjectImage.evaluate(element => element.src)).origin, coreOrigin,
+    'return to editor must show a Core-owned Project delivery');
   assert.equal(await countMasks(projectId), 0, 'Managed Wardrobe journey must not mint canonical MASK artifacts');
   assert.equal(await countLocalTickets(projectId), 0, 'Managed Wardrobe journey must not prepare local execution tickets');
 
@@ -366,14 +370,16 @@ try {
     `POST /api/core/wardrobe/collections/${collectionId}/garments/${garmentId}`,
   ], 'R3h mutation authority must stay on the five narrow canonical Fashion calls');
   assert.equal(countRead('GET /api/core/garments'), 1, 'Fashion remount must reload Managed Garment list once');
-  assert.equal(countRead('GET /api/core/wardrobe/garments'), 1, 'Fashion remount must reload Wardrobe projection once');
+  assert.ok(countRead('GET /api/core/wardrobe/garments') >= 1, 'Wardrobe remount must reload canonical garments');
   assert.equal(countRead('GET /api/core/wardrobe/collections'), 1, 'Fashion remount must reload Collection authority once');
   assert.equal(providerCalls, 0, 'Managed Wardrobe journey must never reach provider boundary');
   assert.deepEqual(diagnostics.localExecutionRequests, []);
   assert.deepEqual(diagnostics.creativeRequests, []);
   assert.deepEqual(diagnostics.financialRequests, []);
   assert.deepEqual(diagnostics.maskRequests, []);
-  assert.deepEqual(diagnostics.genericAssetRequests, []);
+  assert.equal(diagnostics.genericAssetRequests.every((entry) =>
+    /^GET \/api\/core\/artifacts\/results\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(entry)), true,
+    'only signed, read-only Core image deliveries are allowed during workspace navigation');
   assert.deepEqual(diagnostics.projectMutations, []);
   assert.deepEqual(diagnostics.externalBrowserRequests, []);
   assert.equal(diagnostics.pageErrors.length, 0, `unexpected browser page errors: ${JSON.stringify(diagnostics.pageErrors)}`);

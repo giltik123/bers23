@@ -159,6 +159,7 @@ try {
     .waitFor({ state: 'visible', timeout: 20_000 });
   const projectImage = await waitImage(page, 'Project', 12, 8);
   const initialProjectImageSrc = await projectImage.evaluate(element => element.src);
+  assert.equal(new URL(initialProjectImageSrc).origin, coreOrigin, 'original Project must use canonical Core delivery');
 
   const initialProject = await readProjectState(projectId);
   assert.deepEqual(initialProject.project.objects, [], 'new canonical Project must begin with zero detected/selected objects');
@@ -171,18 +172,19 @@ try {
   assert.equal(await countOutfits(), 0, 'R3i owner must begin without canonical Outfits');
 
   const fashion = page.getByRole('button', { name: 'Fashion', exact: true });
+  await fashion.click();
+  await assertActiveNavigation(fashion, 'Fashion');
   const initialFashionLoad = waitForCoreResponses(page, [
     ['GET', '/api/core/garments'],
     ['GET', '/api/core/wardrobe/garments'],
     ['GET', '/api/core/wardrobe/collections'],
   ]);
-  await fashion.click();
+  await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
+  await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
   await initialFashionLoad;
 
   const wardrobeRegion = page.getByRole('region', { name: 'Canonical fashion wardrobe', exact: true });
   await wardrobeRegion.waitFor({ state: 'visible', timeout: 15_000 });
-  await assertActiveNavigation(fashion, 'Fashion');
-
   resetJourneyDiagnostics();
 
   const jacket = await createGarmentThroughUi({
@@ -218,14 +220,15 @@ try {
   assert.equal(Number(durablePants.revision), 2);
   assert.equal(await countGarmentViews(), 2, 'each browser-created garment must persist one immutable initial view');
 
-  const outfitsNav = page.getByRole('button', { name: 'Outfits', exact: true });
+  await page.getByRole('link', { name: /Back to workspace|Назад к редактору/ }).click();
+  await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId);
   const initialOutfitLoad = waitForCoreResponses(page, [
     ['GET', '/api/core/wardrobe/outfits'],
     ['GET', '/api/core/wardrobe/garments'],
   ]);
-  await outfitsNav.click();
+  await page.getByText('Комплекты одежды · дополнительно', { exact: true }).click();
   await initialOutfitLoad;
-  await assertActiveNavigation(outfitsNav, 'Outfits');
+  await assertActiveNavigation(page.getByRole('button', { name: 'Fashion', exact: true }), 'Fashion');
 
   const outfitRegion = page.getByRole('region', { name: 'Canonical Outfit builder', exact: true });
   await outfitRegion.waitFor({ state: 'visible', timeout: 15_000 });
@@ -327,17 +330,17 @@ try {
   assert.equal(await outfitRegion.getByRole('button', { name: `Move ${pantsName} up`, exact: true }).isDisabled(), true);
   assert.equal(await outfitRegion.getByRole('button', { name: `Move ${jacketName} down`, exact: true }).isDisabled(), true);
 
-  const prompt = page.getByRole('button', { name: 'Prompt', exact: true });
-  await prompt.click();
-  await assertActiveNavigation(prompt, 'Prompt');
+  await page.getByRole('button', { name: 'More', exact: true }).click();
+  await page.getByRole('button', { name: 'Prompt', exact: true }).click();
+  await assertActiveNavigation(page.getByRole('button', { name: 'More', exact: true }), 'More / Prompt');
 
   const remountOutfitLoad = waitForCoreResponses(page, [
     ['GET', '/api/core/wardrobe/outfits'],
     ['GET', '/api/core/wardrobe/garments'],
   ]);
-  await outfitsNav.click();
+  await page.getByRole('button', { name: 'Fashion', exact: true }).click();
   await remountOutfitLoad;
-  await assertActiveNavigation(outfitsNav, 'Outfits');
+  await assertActiveNavigation(page.getByRole('button', { name: 'Fashion', exact: true }), 'Fashion');
   await outfitRegion.waitFor({ state: 'visible', timeout: 15_000 });
   await outfitRegion.getByRole('button', { name: `${outfitName} (2)`, exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
   await outfitRegion.getByText(pantsName, { exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
@@ -368,7 +371,8 @@ try {
 
   const finalProject = await readProjectState(projectId);
   assert.deepEqual(finalProject, initialProject, 'Outfit build/reorder must not mutate canonical Project state or objects');
-  assert.equal(await page.getByRole('img', { name: 'Project', exact: true }).evaluate(element => element.src), initialProjectImageSrc);
+  assert.equal(new URL(await page.getByRole('img', { name: 'Project', exact: true }).evaluate(element => element.src)).origin, coreOrigin,
+    'canonical Project image remains Core-delivered after route navigation');
   assert.equal(await countMasks(projectId), 0, 'Outfit journey must not mint canonical MASK artifacts');
   assert.equal(await countLocalTickets(projectId), 0, 'Outfit journey must not prepare local execution tickets');
 
@@ -387,7 +391,9 @@ try {
   assert.deepEqual(diagnostics.creativeRequests, []);
   assert.deepEqual(diagnostics.financialRequests, []);
   assert.deepEqual(diagnostics.maskRequests, []);
-  assert.deepEqual(diagnostics.genericAssetRequests, []);
+  assert.equal(diagnostics.genericAssetRequests.every((entry) =>
+    /^GET \/api\/core\/artifacts\/results\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(entry)), true,
+    'only signed, read-only Core image deliveries are allowed during workspace navigation');
   assert.deepEqual(diagnostics.projectMutations, []);
   assert.deepEqual(diagnostics.externalBrowserRequests, []);
   assert.equal(diagnostics.pageErrors.length, 0, `unexpected browser page errors: ${JSON.stringify(diagnostics.pageErrors)}`);

@@ -53,7 +53,8 @@ test('R3i browser uses built SPA/Core, system Chrome and visible Fashion/Outfit 
   assert.match(harness, /frontendLogs/);
   assert.match(harness, /chromium\.launch\(\{ channel: 'chrome', headless: true \}\)/);
   assert.match(harness, /getByRole\('button', \{ name: 'Fashion', exact: true \}\)/);
-  assert.match(harness, /getByRole\('button', \{ name: 'Outfits', exact: true \}\)/);
+  assert.match(harness, /getByText\('Комплекты одежды · дополнительно'/);
+  assert.match(harness, /getByRole\('button', \{ name: 'Открыть гардероб', exact: true \}\)/);
   assert.match(harness, /getByRole\('region', \{ name: 'Canonical Outfit builder', exact: true \}\)/);
   assert.match(harness, /getByPlaceholder\('New outfit'\)/);
   assert.match(harness, /getByLabel\('Garment to add'\)/);
@@ -97,7 +98,8 @@ test('R3i binds exact Outfit revision sequence and complete stable entry-ID perm
   assert.match(harness, /diagnostics\.creativeRequests, \[\]/);
   assert.match(harness, /diagnostics\.financialRequests, \[\]/);
   assert.match(harness, /diagnostics\.maskRequests, \[\]/);
-  assert.match(harness, /diagnostics\.genericAssetRequests, \[\]/);
+  assert.match(harness, /diagnostics\.genericAssetRequests\.every/);
+  assert.match(harness, /only signed, read-only Core image deliveries are allowed during workspace navigation/);
   assert.match(harness, /diagnostics\.projectMutations, \[\]/);
   assert.match(harness, /diagnostics\.externalBrowserRequests, \[\]/);
   assert.doesNotMatch(harness, /financialAccount|financialTrial|credit_grants|credit_wallets/);
