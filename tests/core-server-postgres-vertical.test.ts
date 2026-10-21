@@ -27,6 +27,7 @@ const tenantId = 'vertical-tenant';
 // Test-only current scope. Each principal below replaces this with a real
 // canonical Project UUID before issuing any Creative request.
 let projectId = '';
+const originalStorageByProject = new Map<string, string>();
 const config: CoreServerConfig = Object.freeze({
   nodeEnv: 'test', port: 8080, databaseUrl, provider: 'FAL', falKey: 'deterministic-fixture',
   falBaseUrl: 'https://provider.vertical.test', jwtSecret, jwtIssuer: 'vertical-test', jwtAudience: 'vertical-core',
@@ -50,21 +51,42 @@ async function fixtureProject(pool: Pool, userId: string, image?: Uint8Array): P
     upload,
     { maxDimension: config.imageMaxDimension, maxPixels: config.imageMaxPixels },
   );
-  return String(project.project_id).toLowerCase();
+  const id = String(project.project_id).toLowerCase();
+  originalStorageByProject.set(id, String(project.original_image_storage_id));
+  return id;
 }
 
 function deterministicProvider() {
   let mode: ProviderMode = 'success';
   const calls: Array<{ prompt: string; imageUrl: string }> = [];
   let originalAssetFetches = 0;
+  let uploads = 0;
   const fetcher: typeof fetch = async (input, init) => {
     const url = String(input);
     if (url.startsWith('https://fal.media/output/')) {
-      return new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { 'content-type': 'image/png' } });
+      const png = await sharp({ create: { width: 2, height: 2, channels: 4,
+        background: { r: 88, g: 99, b: 111, alpha: 1 } } }).png().toBuffer();
+      return new Response(png, { status: 200, headers: { 'content-type': 'image/png' } });
+    }
+    if (url === 'https://rest.alpha.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3') {
+      assert.equal(init?.method, 'POST');
+      const id = ++uploads;
+      return new Response(JSON.stringify({
+        upload_url: `https://upload.vertical.test/${id}`,
+        file_url: `https://fal-cdn.vertical.test/input-${id}.png`,
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.startsWith('https://upload.vertical.test/')) {
+      assert.equal(init?.method, 'PUT');
+      const image = new Uint8Array(await new Response(init?.body).arrayBuffer());
+      assert.equal((await sharp(image).metadata()).format, 'png');
+      return new Response('', { status: 200 });
     }
     if (url === 'https://assets.vertical.test/input.png') originalAssetFetches++;
+    assert.equal(url, `${config.falBaseUrl}/fal-ai/flux-pro/kontext`);
     assert.equal(init?.method, 'POST');
     const body = JSON.parse(String(init?.body)) as { prompt: string; image_url: string };
+    assert.match(body.image_url, /^https:\/\/fal-cdn\.vertical\.test\/input-\d+\.png$/);
     calls.push({ prompt: body.prompt, imageUrl: body.image_url });
     if (mode === 'unknown') throw new DOMException('Accepted request timed out', 'AbortError');
     if (mode === 'failure') return new Response(JSON.stringify({ message: 'deterministic rejection' }), { status: 422, headers: { 'content-type': 'application/json' } });
@@ -82,8 +104,15 @@ function token(userId: string, valid = true, ownerTenant = tenantId): string {
 }
 
 function artifact(userId: string, ownerProject = projectId): string {
-  const payload = Buffer.from(JSON.stringify({ id: `input-${userId}`, url: 'https://assets.vertical.test/input.png', tenantId, userId, projectId: ownerProject, exp: Date.now() + 600_000 })).toString('base64url');
+  const storageId = originalStorageByProject.get(ownerProject);
+  if (!storageId) throw new Error('The fixture must first create a canonical Project ORIGINAL');
+  // Exercise real signed durable ORIGINAL claims, not legacy external URL references.
+  const payload = Buffer.from(JSON.stringify({
+    v: 1, location: 'STORED_ORIGINAL_ID', storageId, tenantId, userId,
+    projectId: ownerProject, role: 'ORIGINAL', lifecycle: 'IMMUTABLE',
+  })).toString('base64url');
   return `${payload}.${createHmac('sha256', artifactSecret).update(payload).digest('base64url')}`;
+
 }
 
 async function start(pool: Pool, provider: ReturnType<typeof deterministicProvider>) {
@@ -187,7 +216,7 @@ test('real Core HTTP server proves PostgreSQL financial lifecycle and safety inv
   assert.equal(successState.reservations[0].operation_id, `creative.execution.${success.body.executionId}`);
   assert.equal(successState.journal.every(row => row.correlation_id === success.body.executionId), true);
   assert.equal(provider.prompts().at(-1), 'success-1');
-  assert.equal(provider.imageUrls().at(-1), 'https://assets.vertical.test/input.png');
+  assert.match(provider.imageUrls().at(-1) ?? '', /^https:\/\/fal-cdn\.vertical\.test\/input-\d+\.png$/);
   assert.equal(provider.originalAssetFetches(), 0);
 
   provider.setMode('failure'); const failedUser = 'vertical-failed'; projectId = await fixtureProject(pool, failedUser); await wallet(pool, failedUser, 10); const beforeFailedCalls = provider.count();
