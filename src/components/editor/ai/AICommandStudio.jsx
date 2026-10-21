@@ -27,7 +27,7 @@ const field = 'w-full accent-primary disabled:opacity-40';
 export default function AICommandStudio({
   project, selectedObject, instruction, onInstructionChange,
   disabled=false, selectionActive=false, pending=false, maskToolsEnabled=false,
-  onSelectRegion, onExecuteAdjustment, onExecuteGenerative, onOpenFashion,
+  onSelectRegion, onExecuteAdjustment, onExecuteGenerative, onPrepareFreeAccount, onOpenFashion,
 }) {
   const plan=useMemo(()=>interpretPhotoCommand(instruction),[instruction]);
   const [parameters,setParameters]=useState(null);
@@ -69,11 +69,17 @@ export default function AICommandStudio({
   };
   const handleGenerate=async()=>{
     const scope = maskToolsEnabled ? generativeScope : 'WHOLE_IMAGE';
-    if(!canEdit||plan.kind!=='GENERATIVE'||!generativeConfirmed||
-       (!maskToolsEnabled && (plan.target==='USER_SELECTED_OBJECT'||plan.warnings.length>0))||
+    // Full-frame generation is an explicit user choice, not a keyword classifier.
+    // Masked generation still follows the narrower verified-intent contract.
+    if(!canEdit||!generativeConfirmed||!plan.instruction||plan.kind==='FASHION'||
+       (maskToolsEnabled&&plan.kind!=='GENERATIVE')||
        (scope==='MASKED'&&(!maskId||!maskConfirmed)))return;
     setSubmitting(true);setExecutionError('');
-    try{await onExecuteGenerative({
+    try{
+      // Idempotent server-owned FREE account setup. No client-supplied balance,
+      // grant amount, subscription, billing override or payment authority.
+      await onPrepareFreeAccount?.();
+      await onExecuteGenerative({
       instruction:plan.instruction,
       mode:scope,
       expectedProjectId:project.id,
@@ -81,7 +87,11 @@ export default function AICommandStudio({
       expectedSelectedObjectId:scope==='MASKED'?selectedObject?.id:null,
       expectedMaskArtifactId:scope==='MASKED'?maskId:null,
     });}
-    catch(error){setExecutionError(error?.message||'Генерация недоступна для данного проекта.');}
+    catch(error){
+      setExecutionError(error?.code==='insufficient_credits'
+        ? 'Бесплатный лимит облачной обработки исчерпан. Платная подписка не требуется и не предлагается.'
+        : (error?.message||'Генерация недоступна для данного проекта.'));
+    }
     finally{setSubmitting(false);}
   };
 
@@ -149,8 +159,7 @@ export default function AICommandStudio({
     // Production intentionally exposes whole-image generation only.
     // Preserve manual Core mask artifacts and controlled-edit capabilities
     // internally without presenting mask controls or silently changing scope.
-    const wholeImageAdmitted = plan.kind === 'GENERATIVE' &&
-      plan.target !== 'USER_SELECTED_OBJECT' && plan.warnings.length === 0;
+    const wholeImageAdmitted = Boolean(plan.instruction) && plan.kind !== 'FASHION';
     return (
       <section className="space-y-4 rounded-2xl border border-border/70 bg-card p-4" aria-label="Генеративное редактирование фотографии">
         <header className="space-y-1">
@@ -167,14 +176,14 @@ export default function AICommandStudio({
         </label>
         {wholeImageAdmitted ? (
           <div className="space-y-3">
-            <p className="text-sm">Генеративное редактирование применяется ко всему изображению через Core.</p>
+            <p className="text-sm">Генеративное редактирование затрагивает весь кадр. Для пользователя оно бесплатно в пределах серверного лимита; подписка не нужна. Перед сохранением сравните результат с оригиналом.</p>
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" checked={generativeConfirmed} disabled={!canEdit}
                 onChange={e=>setGenerativeConfirmed(e.target.checked)} className="mt-1"/>
-              Подтверждаю отправку запроса на обработку всего изображения.
+              Подтверждаю отправку фотографии в облачную модель и создание бесплатного аккаунта обработки при первом запуске. Понимаю, что может измениться весь кадр.
             </label>
             <Button type="button" disabled={!canEdit||!generativeConfirmed} onClick={handleGenerate} className="w-full">
-              <WandSparkles className="mr-2 h-4 w-4"/>Сгенерировать изображение
+              <WandSparkles className="mr-2 h-4 w-4"/>Сгенерировать бесплатно
             </Button>
           </div>
         ) : plan.kind === 'FASHION' ? (
