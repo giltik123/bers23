@@ -43,7 +43,8 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
   const validTarget = useMemo(() => Number.isSafeInteger(width) && Number.isSafeInteger(height)
     && width > 0 && height > 0 && width <= RESIZE_MAX_DIMENSION && height <= RESIZE_MAX_DIMENSION
     && width * height <= RESIZE_MAX_OUTPUT_PIXELS, [width, height]);
-  const canStart = Boolean(project?.current_image_artifact_id) && !disabled && !busy && !active && validTarget;
+  const canPrepare = Boolean(project?.current_image_artifact_id) && !disabled && !busy && !active;
+  const canStart = canPrepare && validTarget;
   const stepLabel = view?.nextAction?.operation === 'ORTHOGONAL_TRANSFORM'
     ? 'Running orthogonal transform'
     : view?.nextAction?.operation === 'RESIZE'
@@ -54,7 +55,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
 
   const invoke = (operation) => { void Promise.resolve().then(operation).catch(() => undefined); };
   const prepareTask = () => {
-    if (!canStart) return;
+    if (!canPrepare) return;
     const proposed = routeEditorAgentTask(taskText);
     setTaskDraft(proposed);
     if (proposed.kind === 'LOCAL_WORKFLOW_DRAFT') {
@@ -86,7 +87,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
             onChange={(event) => { setTaskText(event.target.value); setTaskDraft(null); }}
             className="min-h-24 w-full resize-y rounded-lg border bg-background px-3 py-2 text-sm" />
         </label>
-        <Button type="button" variant="outline" disabled={!canStart || !taskText.trim()}
+        <Button type="button" variant="outline" disabled={!canPrepare || !taskText.trim()}
           onClick={prepareTask}>Подготовить задачу</Button>
         {taskDraft && <div role="status" className="space-y-2 rounded-lg border p-3 text-sm">
           <p>{taskDraft.message}</p>
