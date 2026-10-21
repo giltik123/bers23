@@ -12,7 +12,7 @@ const MODES = Object.freeze([
   ['FLIP_VERTICAL', 'Flip vertical'],
 ]);
 
-export default function AgentPanel({ project, voiceProposal = null, state, busy = false, disabled = false, onStart, onRetry, onCancel, onOpenAIStudio, onOpenFashion }) {
+export default function AgentPanel({ project, voiceProposal = null, state, busy = false, disabled = false, onStart, onRetry, onCancel, onOpenAIStudio, onOpenFashion, onOpenResize, onPreviewTransform }) {
   const [mode, setMode] = useState('ROTATE_90_CW');
   const [width, setWidth] = useState(project?.width ?? 1);
   const [height, setHeight] = useState(project?.height ?? 1);
@@ -91,10 +91,16 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
           onClick={prepareTask}>Подготовить задачу</Button>
         {taskDraft && <div role="status" className="space-y-2 rounded-lg border p-3 text-sm">
           <p>{taskDraft.message}</p>
-          {taskDraft.kind === 'LOCAL_WORKFLOW_DRAFT' && <p className="text-xs text-muted-foreground">{taskDraft.mode} → {taskDraft.width} × {taskDraft.height}. Проверьте поля ниже и нажмите Run bounded workflow.</p>}
-          {taskDraft.kind === 'AI_STUDIO_DRAFT' && <Button type="button" disabled={!canStart}
+          {taskDraft.kind === 'LOCAL_WORKFLOW_DRAFT' && <p className="text-xs text-muted-foreground">{taskDraft.mode} → {taskDraft.width} × {taskDraft.height}. Локально, без облачных вызовов. Проверьте поля ниже и нажмите Run bounded workflow.</p>}
+          {taskDraft.kind === 'RESIZE_DRAFT' && <Button type="button" disabled={!canPrepare}
+            onClick={() => onOpenResize?.({ width: taskDraft.width, height: taskDraft.height })}>
+            Открыть Resize: {taskDraft.width} × {taskDraft.height}</Button>}
+          {taskDraft.kind === 'TRANSFORM_DRAFT' && <Button type="button" disabled={!canPrepare}
+            onClick={() => onPreviewTransform?.(taskDraft.mode)}>
+            Показать предпросмотр поворота/отражения</Button>}
+          {taskDraft.kind === 'AI_STUDIO_DRAFT' && <Button type="button" disabled={!canPrepare}
             onClick={() => onOpenAIStudio?.(taskDraft.instruction)}>Открыть запрос в AI Studio</Button>}
-          {taskDraft.kind === 'FASHION_DRAFT' && <Button type="button" disabled={!canStart}
+          {taskDraft.kind === 'FASHION_DRAFT' && <Button type="button" disabled={!canPrepare}
             onClick={() => onOpenFashion?.()}>Перейти в Fashion</Button>}
         </div>}
         <p className="text-xs text-muted-foreground">Здесь работает ограниченный разбор текста. Он не видит содержимое фото и не запускает модели сам. Все изменения требуют подтверждения в соответствующем инструменте.</p>
