@@ -34,7 +34,7 @@ test('zero-object Prompt remains a canonical whole-image edit without inventing 
   const editor = await readFile(EDITOR, 'utf8');
   const modes = editorModeBlock(editor);
 
-  assert.match(modes, /allowWholeImage=\{objects\.length === 0\}/);
+  assert.match(modes, /allowWholeImage=\{!PRODUCTION_MASK_UI_ENABLED \|\| objects\.length === 0\}/);
   assert.match(modes, /applying=\{editorBusy \|\| committing\}/);
   assert.match(editor, /Automatic object detection is not available in this version\./);
   assert.doesNotMatch(modes, /objects\.length === 0[\s\S]{0,300}(randomUUID|mask_artifact_id|selected:\s*true)/);
@@ -89,7 +89,7 @@ test('unavailable Detect has no action while Fashion, Outfit and Agent remain re
   const detectIndex = editor.indexOf("objects.length === 0 && !pendingResult");
   const navigationIndex = editor.indexOf('<AdaptiveNavigation items={EDITOR_TABS}');
   assert.ok(detectIndex >= 0 && navigationIndex > detectIndex, 'zero-object guidance should coexist with navigation');
-  assert.match(editor, /\{objects\.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && \(/);
+  assert.match(editor, /\{PRODUCTION_MASK_UI_ENABLED && objects\.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && \(/);
   assert.doesNotMatch(editor, /onClick=\{detect\}|segmentationService\.start/);
   assert.doesNotMatch(editor, /objects\.length > 0[\s\S]{0,250}<AdaptiveNavigation/);
 });

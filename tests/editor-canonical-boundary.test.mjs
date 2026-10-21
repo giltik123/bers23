@@ -90,7 +90,7 @@ test('Editor rectangle and ellipse keep raster authority in SelectionApplication
   assert.match(editor, /service\.shapeHandle\(\{ handle, displayPoint: point, view \}\)/);
   assert.match(editor, /service\.nudgeShape\(deltaX, deltaY\)/);
   assert.match(editor, /service\.applyShape\(polygonComposition\)/);
-  assert.match(editor, /onShapeHandlePointer=\{selectionShapeHandlePointer\}/);
+  assert.match(editor, /onShapeHandlePointer=\{PRODUCTION_MASK_UI_ENABLED \? selectionShapeHandlePointer : undefined\}/);
   assert.match(toolbar, /\['RECTANGLE', 'Rectangle'\]/);
   assert.match(toolbar, /\['ELLIPSE', 'Ellipse'\]/);
   assert.match(toolbar, /aria-label="Shape composition"/);
@@ -535,16 +535,16 @@ test('zero-object projects expose canonical whole-image Prompt without an unback
   const bar = await readFile('src/components/editor/InstructionBar.jsx', 'utf8');
   const resolver = await readFile('src/lib/planner/objectResolver.js', 'utf8');
 
-  assert.match(editor, /\{objects\.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && \(/);
+  assert.match(editor, /\{PRODUCTION_MASK_UI_ENABLED && objects\.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && \(/);
   assert.match(editor, /Automatic object detection is not available in this version\./);
   assert.doesNotMatch(editor, /segmentationService|jobManager\.submit|onClick=\{detect\}/);
   assert.match(editor, /<AdaptiveNavigation items=\{EDITOR_TABS\} active=\{editTab\}/);
   assert.match(editor, /onChange=\{\(next\) => \{\s*if \(!tryOnActive && !agentActive\) setEditTab\(next\);\s*\}\}/);
-  assert.match(editor, /allowWholeImage=\{objects\.length === 0\}/);
+  assert.match(editor, /allowWholeImage=\{!PRODUCTION_MASK_UI_ENABLED \|\| objects\.length === 0\}/);
   assert.match(editor, /applying=\{editorBusy \|\| committing\}/);
   assert.doesNotMatch(editor, /\) : objects\.length === 0 \? \(/);
-  assert.match(editor, /selectedObjectIds: guardedScope\s*\? guardedScope\.selectedObjectIds\s*: objects\.filter\(\(object\) => object\.selected\)\.map\(\(object\) => object\.id\)/);
-  assert.match(editor, /maskArtifactIds: guardedScope\s*\? guardedScope\.maskArtifactIds\s*: objects\.filter\(\(object\) => object\.selected && object\.mask_artifact_id\)\.map\(\(object\) => object\.mask_artifact_id\)/);
+  assert.match(editor, /selectedObjectIds: guardedScope\s*\? guardedScope\.selectedObjectIds\s*: PRODUCTION_MASK_UI_ENABLED \? objects\.filter\(\(object\) => object\.selected\)\.map\(\(object\) => object\.id\) : \[\]/);
+  assert.match(editor, /maskArtifactIds: guardedScope\s*\? guardedScope\.maskArtifactIds\s*: PRODUCTION_MASK_UI_ENABLED \? objects\.filter\(\(object\) => object\.selected && object\.mask_artifact_id\)\.map\(\(object\) => object\.mask_artifact_id\) : \[\]/);
 
   assert.match(bar, /allowWholeImage = false/);
   assert.match(bar, /const canEdit = Boolean\(selectedObject \|\| allowWholeImage\)/);
@@ -576,5 +576,25 @@ test('canonical Scene Mask Editor integrates with accessible UX and Core-owned r
   assert.match(canvas,/maskArtifactId=\{selectedMaskId\}/);
   assert.match(canvas,/maskOverlayVisible && selectedMaskId/);
   assert.match(objects,/aria-label=\{obj\.selected \? 'Deselect '/);
-  assert.match(panel,/const CLOUD_SAM3_UI_ADMITTED=false/);
+  assert.ok(panel.includes('coreClient.scene.capability()'));
+  assert.ok(panel.includes('currentRequest===0 || requested.sourceKey!==sourceKey'));
+  assert.ok(panel.includes('window.confirm('));
+});
+
+test('production Editor does not expose mask controls or pass stale masks into whole-frame fal.ai edits', async () => {
+  const [editor, studio] = await Promise.all([
+    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/components/editor/ai/AICommandStudio.jsx', 'utf8'),
+  ]);
+  assert.ok(editor.includes('const [maskToolsOpen, setMaskToolsOpen] = useState(false)'));
+  assert.ok(editor.includes('const PRODUCTION_MASK_UI_ENABLED = maskToolsOpen'));
+  assert.ok(editor.includes('aria-expanded={PRODUCTION_MASK_UI_ENABLED}'));
+  assert.ok(editor.includes('{PRODUCTION_MASK_UI_ENABLED && <AutoSceneMasksPanel'));
+  assert.ok(editor.includes('{PRODUCTION_MASK_UI_ENABLED && !cropInteractionActive && !resizeInteractionActive && <SelectionToolbar'));
+  assert.ok(editor.includes('maskOverlayVisible={PRODUCTION_MASK_UI_ENABLED && maskOverlayVisible}'));
+  assert.ok(editor.includes('maskToolsEnabled={PRODUCTION_MASK_UI_ENABLED}'));
+  assert.ok(editor.includes('allowWholeImage={!PRODUCTION_MASK_UI_ENABLED || objects.length === 0}'));
+  assert.ok(studio.includes('if (!maskToolsEnabled)'));
+  assert.ok(studio.includes("const scope = maskToolsEnabled ? generativeScope : 'WHOLE_IMAGE'"));
+  assert.ok(studio.includes("plan.target !== 'USER_SELECTED_OBJECT'"));
 });

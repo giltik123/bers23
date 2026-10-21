@@ -154,7 +154,7 @@ test('Core rejection of missing or wrong-source MASK aborts all Object publishin
   ])assert.throws(()=>invalid(result,source,'id'));
 });
 
-test('Editor mounts a source-bound status panel, not a legacy detection/synthetic-mask fallback',async()=>{
+test('Editor exposes source-bound masks only on explicit request, without legacy detection fallback',async()=>{
   const [editor,panel,transport,store] = await Promise.all([
     readFile('src/pages/Editor.jsx','utf8'),
     readFile('src/components/editor/AutoSceneMasksPanel.jsx','utf8'),
@@ -172,9 +172,12 @@ test('Editor mounts a source-bound status panel, not a legacy detection/syntheti
   assert.match(store,/project_source_conflict/);
 });
 
-test('SAM3 cloud UI stays disabled until Core admits durable producer provenance', async () => {
+test('SAM3 cloud UI stays gated by Core capability and explicit confirmation', async () => {
   const panel=await readFile('src/components/editor/AutoSceneMasksPanel.jsx','utf8');
-  assert.match(panel,/const CLOUD_SAM3_UI_ADMITTED=false/);
+  assert.ok(panel.includes('const CLOUD_SAM3_UI_ADMITTED=cloudCapability.available;'));
+  assert.ok(panel.includes('coreClient.scene.capability()'));
+  assert.ok(panel.includes('currentRequest===0 || requested.sourceKey!==sourceKey'));
+  assert.ok(panel.includes('window.confirm('));
   assert.match(panel,/disabled=\{disabled \|\| running \|\| !sourceKey \|\| !CLOUD_SAM3_UI_ADMITTED\}/);
   assert.match(panel,/disabled=\{disabled\|\|running\|\|!CLOUD_SAM3_UI_ADMITTED\}/);
   assert.match(panel,/SAM3 · недоступно/);

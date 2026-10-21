@@ -131,6 +131,7 @@ try {
   const projectId = new URL(page.url()).searchParams.get('id');
   assert(projectId, 'Projects upload must navigate to Editor with canonical project id');
 
+  await page.getByRole('button', { name: 'Маски и SAM3 · по запросу' }).click();
   await page.getByText('Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.', { exact: true })
     .waitFor({ state: 'visible', timeout: 20_000 });
   await waitImage(page, 'Project', 12, 8);
@@ -563,7 +564,13 @@ try {
   // Start Selection without invoking Smart Select, switch immediately to deterministic manual Add,
   // and use Playwright's locator pointer action against the real Project image. A single brush dot
   // is sufficient for the release-floor MASK while preserving normal actionability and pointer events.
-  await page.getByRole('button', { name: 'Smart Select', exact: true }).click();
+  const smartSelect = page.getByRole('button', { name: 'Smart Select', exact: true });
+  if (!(await smartSelect.isVisible())) {
+    await page.getByRole('button', { name: 'Маски и SAM3 · по запросу', exact: true }).click();
+    await smartSelect.waitFor({ state: 'visible', timeout: 10_000 });
+  }
+  assert.deepEqual(diagnostics.segmentationRequests, [], 'opening mask tools must not run segmentation');
+  await smartSelect.click();
   await page.getByRole('region', { name: 'Selection tools' }).waitFor({ state: 'visible', timeout: 10_000 });
   await page.getByRole('button', { name: 'Add', exact: true }).click();
   await page.getByLabel('Brush Size').fill('96');
