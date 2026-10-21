@@ -67,8 +67,10 @@ jobs:
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 49) throw new Error(`Expected 49 contiguous migrations, got ${migrations.length}`);
-          if (migrations[48]?.name !== '049_virtual_try_on_final_lineage.sql' || migrations[48]?.source !== 'server/core/fashion/migrations/049_virtual_try_on_final_lineage.sql') throw new Error('049 Virtual Try-On lineage must be the exact global tail in Fashion authority');
+          if (migrations.length !== 51) throw new Error(`Expected 51 contiguous migrations, got ${migrations.length}`);
+          if (migrations[48]?.name !== '049_virtual_try_on_final_lineage.sql' || migrations[48]?.source !== 'server/core/fashion/migrations/049_virtual_try_on_final_lineage.sql') throw new Error('049 Virtual Try-On lineage must retain its globally ordered position');
+          if (migrations[49]?.name !== '050_cloud_scene_mask_provenance.sql' || migrations[49]?.source !== 'server/core/artifacts/migrations/050_cloud_scene_mask_provenance.sql') throw new Error('050 cloud SAM3 source-bound MASK migration missing');
+          if (migrations[50]?.name !== '051_global_edit_final_lineage.sql' || migrations[50]?.source !== 'server/core/artifacts/migrations/051_global_edit_final_lineage.sql') throw new Error('051 full-frame image FINAL migration missing');
           if (migrations[42]?.name !== '043_aee_admitted_plan_graphs.sql') throw new Error('043 AEE admitted-plan migration moved');
           if (migrations[43]?.name !== '044_canonical_project_revision.sql') throw new Error('044 Project revision migration moved');
           if (migrations[43]?.source !== 'server/core/projects/migrations/044_canonical_project_revision.sql') throw new Error('044 Project revision migration moved outside Project authority');
