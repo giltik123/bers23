@@ -13,7 +13,7 @@ import { DurableArtifactLineageResolver } from '../artifacts/durableArtifactLine
 import { PostgresMaskArtifactStore } from '../artifacts/postgresMaskArtifactStore.ts';
 import { checkMaskArtifactSchema } from '../artifacts/maskArtifactSchema.ts';
 import { checkImageArtifactSchema } from '../artifacts/imageArtifactSchema.ts';
-import { checkFinalImageLineageSchema, migrateFinalImageLineageSchema } from '../artifacts/finalImageLineageSchema.ts';
+import { checkFinalImageLineageSchema, migrateFinalImageLineageSchema, checkGlobalEditFinalLineageSchema, migrateGlobalEditFinalLineageSchema } from '../artifacts/finalImageLineageSchema.ts';
 import { checkLocalExecutionUploadSchema, migrateLocalExecutionUploadSchema } from '../artifacts/localExecutionUploadSchema.ts';
 import { PostgresImageArtifactStore } from '../artifacts/postgresImageArtifactStore.ts';
 import type { LocalExecutionExecutorBinding, LocalExecutionModelBinding } from '../../../src/platform/creative/canonical/localExecution.ts';
@@ -158,6 +158,8 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
     if (config.nodeEnv === 'test') {
       await migrateVirtualTryOnSchema(transactions.pool);
     } else await checkVirtualTryOnSchema(transactions.pool);
+    if (config.nodeEnv === 'test') await migrateGlobalEditFinalLineageSchema(transactions.pool);
+    else await checkGlobalEditFinalLineageSchema(transactions.pool);
     const ownsArtifacts = (scope: Parameters<ArtifactAuthority['owns']>[0], ids: readonly string[]) => artifacts.owns(scope, ids);
     const resolveArtifactReplayIdentities = async (scope: Parameters<ArtifactAuthority['owns']>[0], ids: readonly string[]) => Object.freeze(ids.map(id => externalArtifacts.resolveReplayIdentity(id, scope)));
     const hydrateArtifacts = (scope: Parameters<CanonicalArtifactHydrator['hydrate']>[0], original: string, masks: readonly string[]) => hydrator.hydrate(scope, original, masks);
