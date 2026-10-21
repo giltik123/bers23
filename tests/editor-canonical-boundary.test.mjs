@@ -581,7 +581,7 @@ test('canonical Scene Mask Editor integrates with accessible UX and Core-owned r
   assert.ok(panel.includes('window.confirm('));
 });
 
-test('production Editor hides mask UI and only sends explicit whole-image fal.ai requests', async () => {
+test('production Editor does not expose mask controls or pass stale masks into whole-frame fal.ai edits', async () => {
   const [editor, studio] = await Promise.all([
     readFile('src/pages/Editor.jsx', 'utf8'),
     readFile('src/components/editor/ai/AICommandStudio.jsx', 'utf8'),
@@ -593,6 +593,7 @@ test('production Editor hides mask UI and only sends explicit whole-image fal.ai
   assert.ok(editor.includes('{PRODUCTION_MASK_UI_ENABLED && !cropInteractionActive && !resizeInteractionActive && <SelectionToolbar'));
   assert.ok(editor.includes('maskOverlayVisible={PRODUCTION_MASK_UI_ENABLED && maskOverlayVisible}'));
   assert.ok(editor.includes('maskToolsEnabled={PRODUCTION_MASK_UI_ENABLED}'));
+  assert.ok(editor.includes('allowWholeImage={!PRODUCTION_MASK_UI_ENABLED || objects.length === 0}'));
   assert.ok(studio.includes('if (!maskToolsEnabled)'));
   assert.ok(studio.includes("const scope = maskToolsEnabled ? generativeScope : 'WHOLE_IMAGE'"));
   assert.ok(studio.includes("plan.target !== 'USER_SELECTED_OBJECT'"));
