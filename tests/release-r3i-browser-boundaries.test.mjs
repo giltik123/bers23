@@ -98,7 +98,8 @@ test('R3i binds exact Outfit revision sequence and complete stable entry-ID perm
   assert.match(harness, /diagnostics\.creativeRequests, \[\]/);
   assert.match(harness, /diagnostics\.financialRequests, \[\]/);
   assert.match(harness, /diagnostics\.maskRequests, \[\]/);
-  assert.match(harness, /diagnostics\.genericAssetRequests, \[\]/);
+  assert.match(harness, /diagnostics\.genericAssetRequests\.every/);
+  assert.match(harness, /only signed, read-only Core image deliveries are allowed during workspace navigation/);
   assert.match(harness, /diagnostics\.projectMutations, \[\]/);
   assert.match(harness, /diagnostics\.externalBrowserRequests, \[\]/);
   assert.doesNotMatch(harness, /financialAccount|financialTrial|credit_grants|credit_wallets/);
