@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import ThemeToggle from '@/components/ThemeToggle';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
 import { useTranslation } from '@/lib/i18n/TranslationProvider';
-import SubscriptionSettingsCard from '@/components/subscription/SubscriptionSettingsCard';
 const PerformanceSettings = lazy(() => import('@/components/settings/PerformanceSettings'));
 
 export default function Settings() {
@@ -45,7 +44,6 @@ export default function Settings() {
           </div>
           <LanguageSwitcher />
         </div>
-        <SubscriptionSettingsCard />
         <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">{t('settings.loadingPerformance')}</div>}><PerformanceSettings /></Suspense>
       </div>
 
