@@ -193,7 +193,7 @@ jobs:
           test -f dist-server/migrations/047_canonical_masked_white_balance_final_lineage.sql
           test -f dist-server/migrations/048_canonical_masked_levels_final_lineage.sql
           test -f dist-server/migrations/049_virtual_try_on_final_lineage.sql
-          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 49
+          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 51
           npm run db:migrate:transactions
           npm run db:check:transactions
       - name: Prove real PostgreSQL lease crash replay fairness immutability and HTTP scope
