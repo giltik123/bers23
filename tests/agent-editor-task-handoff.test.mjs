@@ -62,3 +62,61 @@ test('Agent text UI keeps Core execution, confirmation, and canonical boundaries
   assert.match(runner, /ticket\.policy !== 'LOCAL_ONLY'/);
   assert.match(parser, /AGENT_INTENT_PARSING_NOT_WIRED/);
 });
+
+test('single-step local operations are reviewed in native canonical tools', () => {
+  const resize = routeEditorAgentTask('Сделай 1600 на 900');
+  assert.deepEqual({ kind: resize.kind, width: resize.width, height: resize.height },
+    { kind: 'RESIZE_DRAFT', width: 1600, height: 900 });
+  assert.match(resize.message, /отдельно запустите предпросмотр/);
+
+  const rotate = routeEditorAgentTask('Поверни фото на 90 градусов вправо');
+  assert.deepEqual({ kind: rotate.kind, mode: rotate.mode },
+    { kind: 'TRANSFORM_DRAFT', mode: 'ROTATE_90_CW' });
+  const flip = routeEditorAgentTask('Отрази фото по горизонтали');
+  assert.deepEqual({ kind: flip.kind, mode: flip.mode },
+    { kind: 'TRANSFORM_DRAFT', mode: 'FLIP_HORIZONTAL' });
+  assert.match(rotate.message, /сохранение требует Accept/);
+});
+
+test('agent can draft strictly recognized compound rotations or flips and exact resize', () => {
+  for (const [text, expectedMode, width, height] of [
+    ['Поверни фото на 180 и затем сделай 1024x768', 'ROTATE_180', 1024, 768],
+    ['Отрази фото по горизонтали и затем сделай 1200 на 800', 'FLIP_HORIZONTAL', 1200, 800],
+    ['Поверни фотографию влево и затем сделай 1080 × 1920', 'ROTATE_270_CW', 1080, 1920],
+  ]) {
+    const draft = routeEditorAgentTask(text);
+    assert.deepEqual(
+      {kind: draft.kind, mode: draft.mode, width: draft.width, height: draft.height},
+      {kind: 'LOCAL_WORKFLOW_DRAFT', mode: expectedMode, width, height},
+    );
+  }
+});
+
+test('malformed geometric goals and over-limit geometries fail closed, never cloud-route', () => {
+  for (const input of [
+    'Поверни фото на 180 и затем сделай 16384 на 16384',
+    'Отрази фото по вертикали и затем сделай 0 на 0',
+    'Поверни фото вправо и затем сделай 10000x10000',
+    'поверни фото кое-как и затем сделай 200 на 200',
+    'обрежь фотографию',
+  ]) {
+    assert.equal(routeEditorAgentTask(input).kind, 'CLARIFY', input);
+  }
+});
+
+test('reviewed single-step Agent controls never execute without a user click', async () => {
+  const [panel, editor] = await Promise.all([
+    readFile('src/components/editor/agent/AgentPanel.jsx', 'utf8'),
+    readFile('src/pages/Editor.jsx', 'utf8'),
+  ]);
+  assert.match(panel, /taskDraft.kind === 'RESIZE_DRAFT'/);
+  assert.match(panel, /taskDraft.kind === 'TRANSFORM_DRAFT'/);
+  assert.match(panel, /onOpenResize\?\.\(\{ width: taskDraft.width, height: taskDraft.height \}\)/);
+  assert.match(panel, /onPreviewTransform\?\.\(taskDraft.mode\)/);
+  assert.match(editor, /onOpenResize=\{\(target\) => \{/);
+  assert.match(editor, /exactResizeTarget\(target\)/);
+  assert.match(editor, /setResizeAspectLocked\(false\)/);
+  assert.match(editor, /setResizeDraft\(normalized\)/);
+  assert.match(editor, /onPreviewTransform=\{\(mode\) => \{/);
+  assert.match(editor, /void applyOrthogonalTransform\(mode\)/);
+});
