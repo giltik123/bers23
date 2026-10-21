@@ -178,8 +178,8 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       const auth = authenticatedOwnerScope(principal);
       // Production model work is explicitly opt-in, server-owned and bounded.
       // Fail closed even when SAM3 env opt-in and FAL credentials exist:
-      // cloud-produced masks have no honest admitted durable producer yet.
-      // The free CLASSICAL path keeps LOCAL_SEGMENTATION authority.
+      // Cloud SAM3 requires admitted durable provenance, billing and explicit
+      // operator opt-in. Free CLASSICAL keeps LOCAL_SEGMENTATION authority.
       const sceneEnabled=process.env.BERS_AUTO_SCENE_SAM3_ENABLED==='true'
         && input.config.provider==='FAL' && Boolean(input.config.falKey)
         && CLOUD_SCENE_MASK_PROVENANCE_ADMITTED && Boolean(input.sceneBillableOperations);
@@ -223,6 +223,16 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         if(current.current_image_storage_id!==storageId ||
            Number(current.revision)!==body.expectedRevision)
           return sendError(response,409,'project_source_conflict','Scene source changed before analysis',correlationId,false);
+        // Reject unsupported full-resolution SAM3 geometry before reserving
+        // credits. Preprocessing/downscaling the provider input never changes
+        // the canonical mask geometry or its 8M pixel safety bound.
+        if(sceneMode==='SAM3' &&
+           (!Number.isSafeInteger(Number(current.width)) ||
+            !Number.isSafeInteger(Number(current.height)) ||
+            Number(current.width)*Number(current.height)>8_000_000 ||
+            Number(current.width)<1 || Number(current.height)<1))
+          return sendError(response,422,'scene_source_too_large',
+            'SAM3 supports source photographs up to 8 megapixels',correlationId,false);
         // Reopening the same image must not rebill the provider and duplicate
         // masks. Every reused MASK still passes Core signature/lineage checks.
         const retainedAuto=(Array.isArray(current.objects)?current.objects:[])
