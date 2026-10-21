@@ -67,7 +67,7 @@ export async function startCoreServer() {
     }
   } catch (error) { await production.close(); throw error; }
   const ready = async () => { try { await production.transactions.pool.query('SELECT 1'); await checkGarmentSchema(production.transactions.pool); await checkExecutionRunSchema(production.transactions.pool); await checkAutomationDefinitionSchema(production.transactions.pool); await checkAutomationInvocationSchema(production.transactions.pool); await checkAutomationScheduleSchema(production.transactions.pool); return true; } catch { return false; } };
-  const adapter = createCanonicalNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready, accepting: () => accepting });
+  const adapter = createCanonicalNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, sceneBillableOperations: production.transactions.billableOperations, config, ready, accepting: () => accepting });
   const garments = new PostgresGarmentStore(production.transactions.pool);
   const wardrobe = new PostgresGarmentWardrobeStore(production.transactions.pool);
   const collections = new PostgresGarmentCollectionStore(production.transactions.pool);

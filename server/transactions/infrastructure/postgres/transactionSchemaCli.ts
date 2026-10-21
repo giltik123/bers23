@@ -3,7 +3,7 @@ import { Pool } from 'pg';
 import { checkTransactionSchema, migrateTransactionSchema } from './transactionSchemaMigrator.ts';
 import { checkMaskArtifactSchema, migrateMaskArtifactSchema } from '../../../core/artifacts/maskArtifactSchema.ts';
 import { checkImageArtifactSchema, migrateImageArtifactSchema } from '../../../core/artifacts/imageArtifactSchema.ts';
-import { checkFinalImageLineageSchema, migrateFinalImageLineageSchema } from '../../../core/artifacts/finalImageLineageSchema.ts';
+import { checkFinalImageLineageSchema, migrateFinalImageLineageSchema, checkGlobalEditFinalLineageSchema, migrateGlobalEditFinalLineageSchema } from '../../../core/artifacts/finalImageLineageSchema.ts';
 import { checkProjectSchema, migrateProjectSchema } from '../../../core/projects/projectSchema.ts';
 import { checkAuthSchema, migrateAuthSchema } from '../../../core/auth/authSchema.ts';
 import { checkLocalExecutionUploadSchema, migrateLocalExecutionUploadSchema } from '../../../core/artifacts/localExecutionUploadSchema.ts';
@@ -49,6 +49,7 @@ try {
     await migrateAutomationScheduleSchema(pool);
     await migrateAeeAdmittedPlanSchema(pool);
     await migrateVirtualTryOnSchema(pool);
+    await migrateGlobalEditFinalLineageSchema(pool);
     console.info(JSON.stringify({ scope: 'transaction_schema', version: result.version, status: result.status }));
   } else if (command === 'check') {
     await checkTransactionSchema(pool);
@@ -71,6 +72,7 @@ try {
     await checkAutomationScheduleSchema(pool);
     await checkAeeAdmittedPlanSchema(pool);
     await checkVirtualTryOnSchema(pool);
+    await checkGlobalEditFinalLineageSchema(pool);
     console.info(JSON.stringify({ scope: 'transaction_schema', status: 'ready' }));
   } else {
     throw new Error('expected migrate or check command');

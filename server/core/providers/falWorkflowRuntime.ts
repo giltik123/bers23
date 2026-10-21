@@ -25,7 +25,46 @@ export function createFalWorkflowRuntime(input: Readonly<{ apiKey: string; baseU
         if (request.operation.type === 'VIRTUAL_TRY_ON') return await virtualTryOn(request, provider, materializer, input.timeoutMs, signal);
         if (request.operation.type !== 'image-edit' && request.operation.type !== 'CONTROLLED_LOCAL_EDIT') throw new Error(`Unsupported FAL workflow operation type: ${request.operation.type}`);
         if (request.operation.type === 'CONTROLLED_LOCAL_EDIT') return await controlled(request, provider, materializer, input.timeoutMs, signal);
-        const source = request.artifacts[0]; if (!source) throw new Error('A canonical input artifact is required');
+        const source = request.artifacts.find(artifact => artifact.id === request.operation.input?.sourceArtifactId)
+          ?? request.artifacts[0];
+        if (!source) throw new Error('A canonical input artifact is required');
+        if (isPixelImage(source.value)) {
+          // Full-frame generation/editing uses canonical pixels, never an opaque
+          // stored-image token or an untrusted browser-provided provider URL.
+          const original = source.value;
+          if (original.width * original.height > 16_777_216)
+            throw new Error('Cloud full-frame editing supports up to 16 megapixels');
+          const sourcePng = await encodeTryOnInput(original);
+          const uploaded = await materializer.materialize({
+            bytes:sourcePng,mimeType:'image/png',purpose:'roi',scope:request.scope,
+          },signal);
+          throwIfCancelled(signal);
+          const completed = await provider.execute({
+            id:`${request.workflowId}:${request.operation.id}`,scope:request.scope,
+            capability:'image-edit',prompt:String(request.operation.input?.prompt ?? ''),
+            imageUrl:uploaded.url,timeoutMs:input.timeoutMs,metadata:providerMetadata(request),
+          },signal);
+          throwIfCancelled(signal);
+          if(completed.artifacts.length!==1 || !completed.artifacts[0].bytes)
+            throw new Error('Full-frame FAL editing must return one trusted image');
+          const meta=await sharp(completed.artifacts[0].bytes,{limitInputPixels:16_777_216}).metadata();
+          if(!meta.width||!meta.height||
+             Math.abs((meta.width/meta.height)/(original.width/original.height)-1)>0.03)
+            throw new Error('Generated image changed the source aspect ratio');
+          const decoded=await sharp(completed.artifacts[0].bytes,{limitInputPixels:16_777_216})
+            .resize(original.width,original.height,{fit:'fill'})
+            .ensureAlpha().toColourspace('srgb').raw().toBuffer({resolveWithObject:true});
+          throwIfCancelled(signal);
+          const image:PixelImage={width:original.width,height:original.height,
+            data:new Uint8ClampedArray(decoded.data),format:'RGBA8',orientation:1,colorSpace:'srgb'};
+          return {artifacts:[{id:`${request.workflowId}-global-final`,kind:'image',value:image,
+            scope:request.scope,metadata:{lifecycle:'FINAL',artifactRole:'COMPOSITE',
+              producerOperation:'GLOBAL_EDIT',parentArtifactIds:[source.id],
+              sourceArtifactId:source.id,
+              integrityMetrics:{verificationOutcome:'PASS',
+                assessment:'DECODED_STRUCTURE_ONLY_NOT_VISUAL_QUALITY'}}}],
+            latencyMs:completed.metrics.latencyMs};
+        }
         const trusted = input.artifacts.resolve(source.id, request.scope);
         const result = await provider.execute({ id: `${request.workflowId}:${request.operation.id}`, scope: request.scope, capability: 'image-edit', prompt: String(request.operation.input?.prompt ?? ''), imageUrl: trusted.url, timeoutMs: input.timeoutMs, metadata: providerMetadata(request) }, signal);
         throwIfCancelled(signal);

@@ -1,13 +1,8 @@
 import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 
-/**
- * The 48-migration production Artifact schema accepts only local segmentation
- * producer provenance. Cloud masks MUST NOT claim LOCAL_SEGMENTATION.
- * Separate CLOUD producer persistence, schema, lineage checks and migration
- * closure require an independently reviewed release change.
- */
-export const CLOUD_SCENE_MASK_PROVENANCE_ADMITTED=false;
+/** Cloud masks are admitted only with migration 050 and their own source-bound producer. */
+export const CLOUD_SCENE_MASK_PROVENANCE_ADMITTED=true;
 
 const GROUP_BY_CATEGORY: Readonly<Record<string,string>>=Object.freeze({
   FACE:'FACE',CLOTHING_GENERIC:'CLOTHING',CLOTHING_UPPER:'CLOTHING',CLOTHING_LOWER:'CLOTHING',
@@ -66,16 +61,17 @@ export async function assertCanonicalSceneObjectPublication(input: Readonly<{
        box.x<0 || box.y<0 || box.w<=0 || box.h<=0 ||
        box.x+box.w>1.00000001 || box.y+box.h>1.00000001)
       throw denied('Scene Object bounding box is not in normalized image coordinates');
-    // A valid signature or local-producer claim cannot launder cloud SAM3
-    // inference into a canonical LOCAL_SEGMENTATION artifact.
-    if(obj.metadata.modelId==='fal-ai/sam-3/image')
-      throw denied('Cloud SAM3 MASK lacks admitted producer provenance');
+    const cloudSam3=obj.metadata.modelId==='fal-ai/sam-3/image';
+    if(cloudSam3 && (!CLOUD_SCENE_MASK_PROVENANCE_ADMITTED ||
+      obj.metadata.modelVersion!=='sam3-semantic-v1' ||
+      !present(obj.metadata.promptKey,100)))
+      throw denied('Cloud SAM3 MASK lacks approved model provenance');
     let maskClaim;
     try {maskClaim=input.artifacts.external.resolveStoredMask(obj.mask_artifact_id,input.scope);}
     catch {throw denied('Scene Object MASK signature or scope is invalid');}
     const stored=await input.artifacts.masks.load(maskClaim.storageId,input.scope);
     if(!stored || stored.sourceImageStorageId!==input.sourceStorageId ||
-       stored.producerOperation!=='LOCAL_SEGMENTATION' ||
+       stored.producerOperation!==(cloudSam3?'CLOUD_SEGMENTATION':'LOCAL_SEGMENTATION') ||
        stored.width!==source.width || stored.height!==source.height)
       throw denied('Scene Object MASK is not bound to the exact canonical photo');
     seenMasks.add(obj.mask_artifact_id);

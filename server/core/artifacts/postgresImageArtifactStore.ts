@@ -54,6 +54,12 @@ export type OrthogonalTransformFinalImageLineage = Readonly<{
   producerOperation: 'ORTHOGONAL_TRANSFORM';
 }>;
 
+export type GlobalEditFinalImageLineage = Readonly<{
+  sourceImageStorageId: string;
+  maskStorageId?: undefined;
+  producerOperation: 'GLOBAL_EDIT';
+}>;
+
 export type VirtualTryOnFinalImageLineage = Readonly<{
   sourceImageStorageId: string;
   maskStorageId?: undefined;
@@ -80,6 +86,7 @@ export type FinalImageLineage =
   | ResizeFinalImageLineage
   | OrthogonalTransformFinalImageLineage
   | VirtualTryOnFinalImageLineage
+  | GlobalEditFinalImageLineage
   | GarmentTextureCompositeFinalImageLineage
   | GarmentAppearanceRefinementFinalImageLineage;
 
@@ -96,6 +103,7 @@ type NormalizedFinalImageLineage =
   | ResizeFinalImageLineage
   | OrthogonalTransformFinalImageLineage
   | VirtualTryOnFinalImageLineage
+  | GlobalEditFinalImageLineage
   | NormalizedGarmentTextureCompositeFinalImageLineage
   | GarmentAppearanceRefinementFinalImageLineage;
 
@@ -115,7 +123,7 @@ export type StoredFinalImage = Readonly<{
   bytes: Uint8Array;
   sourceImageStorageId?: string;
   maskStorageId?: string;
-  producerOperation?: 'BACKGROUND_ISOLATION' | 'MASKED_EXPOSURE' | 'MASKED_WHITE_BALANCE' | 'MASKED_LEVELS' | 'CROP' | 'RESIZE' | 'ORTHOGONAL_TRANSFORM' | 'VIRTUAL_TRY_ON' | 'GARMENT_TEXTURE_COMPOSITE' | 'GARMENT_APPEARANCE_REFINEMENT';
+  producerOperation?: 'BACKGROUND_ISOLATION' | 'MASKED_EXPOSURE' | 'MASKED_WHITE_BALANCE' | 'MASKED_LEVELS' | 'CROP' | 'RESIZE' | 'ORTHOGONAL_TRANSFORM' | 'VIRTUAL_TRY_ON' | 'GLOBAL_EDIT' | 'GARMENT_TEXTURE_COMPOSITE' | 'GARMENT_APPEARANCE_REFINEMENT';
   garmentWarpLayerId?: string;
   garmentWarpLayerSha256?: string;
   producerParameters?: GarmentTextureCompositeProducerParametersV1;
@@ -160,7 +168,7 @@ export class PostgresImageArtifactStore {
     // already committed durable row before any INSERT can reach the source-current
     // trigger. Divergent bytes/lineage still fail exact binding, and only a truly
     // absent F5 execution is allowed to attempt a new INSERT/current-source check.
-    if (normalizedLineage?.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT' || normalizedLineage?.producerOperation === 'VIRTUAL_TRY_ON') {
+    if (normalizedLineage?.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT' || normalizedLineage?.producerOperation === 'VIRTUAL_TRY_ON' || normalizedLineage?.producerOperation === 'GLOBAL_EDIT') {
       const existing = (await this.pool.query(`SELECT * FROM canonical_image_artifacts
         WHERE execution_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_id=$4
           AND role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL`, [
@@ -402,6 +410,10 @@ function normalizeLineage(value: FinalImageLineage): NormalizedFinalImageLineage
     if (value.maskStorageId !== undefined) throw new Error('Canonical Resize FINAL must not carry MASK lineage');
     return Object.freeze({ sourceImageStorageId, producerOperation: 'RESIZE' as const });
   }
+  if (value.producerOperation === 'GLOBAL_EDIT') {
+    if (value.maskStorageId !== undefined) throw new Error('Global edit cannot carry MASK lineage');
+    return Object.freeze({ sourceImageStorageId, producerOperation: 'GLOBAL_EDIT' as const });
+  }
   if (value.producerOperation === 'VIRTUAL_TRY_ON') {
     if (value.maskStorageId !== undefined) throw new Error('Virtual Try-On cannot carry MASK lineage');
     return Object.freeze({ sourceImageStorageId, producerOperation: 'VIRTUAL_TRY_ON' as const });
@@ -583,7 +595,7 @@ function lineageFieldsFromRow(row: any): Pick<
     return { sourceImageStorageId, maskStorageId, producerOperation };
   }
   if (maskStorageId) throw new Error('Canonical deterministic FINAL unexpectedly carries MASK lineage');
-  if (producerOperation === 'CROP' || producerOperation === 'RESIZE' || producerOperation === 'ORTHOGONAL_TRANSFORM' || producerOperation === 'VIRTUAL_TRY_ON') {
+  if (producerOperation === 'CROP' || producerOperation === 'RESIZE' || producerOperation === 'ORTHOGONAL_TRANSFORM' || producerOperation === 'VIRTUAL_TRY_ON' || producerOperation === 'GLOBAL_EDIT') {
     return { sourceImageStorageId, producerOperation };
   }
   throw new Error('Canonical FINAL producer operation is unsupported');

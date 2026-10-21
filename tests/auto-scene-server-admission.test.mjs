@@ -93,23 +93,40 @@ test('manual objects are allowed alongside verified auto objects, but never repl
   await assert.rejects(()=>assertCanonicalSceneObjectPublication(g.input),/one to 64/);
 });
 
-test('cloud SAM3 cannot masquerade as locally produced canonical MASK even with a valid signature',async()=>{
-  const f=fixture();
+test('cloud SAM3 can publish only with real CLOUD_SEGMENTATION source provenance',async()=>{
+  const f=fixture({producerOperation:'CLOUD_SEGMENTATION'});
   f.input.objects=[{...object,metadata:{
     ...object.metadata,modelId:'fal-ai/sam-3/image',
     modelVersion:'sam3-semantic-v1',promptKey:'face',
   }}];
-  await assert.rejects(
-    ()=>assertCanonicalSceneObjectPublication(f.input),
-    /Cloud SAM3 MASK lacks admitted producer provenance/,
-  );
+  await assert.doesNotReject(()=>assertCanonicalSceneObjectPublication(f.input));
+  assert.equal(f.getMaskLoads(),1);
 });
 
-test('SAM3 env opt-in cannot bypass the unadmitted cloud producer schema; CLASSICAL remains enabled',()=>{
-  assert.equal(CLOUD_SCENE_MASK_PROVENANCE_ADMITTED,false);
+test('cloud SAM3 cannot masquerade as local masks, or omit model provenance',async()=>{
+  const f=fixture({producerOperation:'LOCAL_SEGMENTATION'});
+  f.input.objects=[{...object,metadata:{
+    ...object.metadata,modelId:'fal-ai/sam-3/image',
+    modelVersion:'sam3-semantic-v1',promptKey:'face',
+  }}];
+  await assert.rejects(()=>assertCanonicalSceneObjectPublication(f.input),/exact canonical photo/);
+  const g=fixture({producerOperation:'CLOUD_SEGMENTATION'});
+  g.input.objects=[{...object,metadata:{
+    ...object.metadata,modelId:'fal-ai/sam-3/image',
+    modelVersion:'incorrect',promptKey:'face',
+  }}];
+  await assert.rejects(()=>assertCanonicalSceneObjectPublication(g.input),/approved model provenance/);
+  const h=fixture({producerOperation:'CLOUD_SEGMENTATION'});
+  await assert.rejects(()=>assertCanonicalSceneObjectPublication(h.input),/exact canonical photo/);
+});
+
+test('SAM3 requires feature opt-in, canonical billing and cloud-mask migration',()=>{
+  assert.equal(CLOUD_SCENE_MASK_PROVENANCE_ADMITTED,true);
   const adapter=readFileSync('server/core/http/nodeHttpAdapter.ts','utf8');
-  assert.match(adapter,/&& CLOUD_SCENE_MASK_PROVENANCE_ADMITTED;/u);
-  assert.match(adapter,/if\(sceneMode==='SAM3'&&!sceneEnabled\)/u);
+  const sql=readFileSync('server/core/artifacts/migrations/050_cloud_scene_mask_provenance.sql','utf8');
+  assert.ok(adapter.includes('&& CLOUD_SCENE_MASK_PROVENANCE_ADMITTED && Boolean(input.sceneBillableOperations)'));
+  assert.ok(adapter.includes('sceneBillableOperations!.execute'));
+  assert.ok(adapter.includes("producerOperation:sceneMode==='SAM3'?'CLOUD_SEGMENTATION':'LOCAL_SEGMENTATION'"));
   assert.match(adapter,/supportsClassicalSegmentation:true/u);
-  assert.match(adapter,/producerOperation:'LOCAL_SEGMENTATION'/u);
+  assert.match(sql,/producer_operation = 'CLOUD_SEGMENTATION'/u);
 });

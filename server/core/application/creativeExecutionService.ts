@@ -171,7 +171,7 @@ export class CreativeExecutionService {
     const estimatedCredits = this.dependencies.creditsPerEdit ?? 1; const hardBudgetCredits = this.dependencies.hardBudgetCredits ?? estimatedCredits;
     const controlled = Boolean(command.maskArtifactIds?.length && command.selectedObjectIds?.length);
     const garment = await reference;
-    const hydrated = (controlled || garment) && this.dependencies.hydrateArtifacts
+    const hydrated = (controlled || garment || Boolean(this.dependencies.persistFinal)) && this.dependencies.hydrateArtifacts
       ? await this.dependencies.hydrateArtifacts(scope, command.inputArtifactId, command.maskArtifactIds ?? [])
       : artifacts.map((id, index) => ({ id, kind: 'image', value: { artifactId: id }, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: index ? 'MASK' : 'ORIGINAL' } as CreativeArtifact));
     const request: CreativeRequest = { id: executionId, intent: command.instruction, scope, inputArtifacts: garment ? [...hydrated, garment.artifact] : hydrated, budget: { credits: hardBudgetCredits, aiCalls: 1, latencyMs: 120_000, ramMb: 2048, gpuMs: 120_000, retries: 0 }, metadata: { idempotencyKey: command.clientRequestId, estimatedCredits, requestId: requestCorrelationId, correlationId: requestCorrelationId, ...(garment ? { virtualTryOnCategory: garment.category } : {}), editCapability: garment ? 'VIRTUAL_TRY_ON' : controlled ? 'CONTROLLED_LOCAL_EDIT' : 'GLOBAL_EDIT', preserveMode: command.preserveMode ?? 'STRICT', selectedObjectIds: command.selectedObjectIds ?? [], maskArtifactIds: command.maskArtifactIds ?? [] } };
@@ -222,7 +222,7 @@ export class CreativeExecutionService {
         throw new DOMException('Creative execution cancelled', 'AbortError');
       }
       let outcome = await this.#platform.execute(executionId);
-      if ((controlled || garment) && outcome.status === 'SUCCESS' && outcome.verification.valid && this.dependencies.persistFinal) {
+      if ((controlled || garment || this.dependencies.hydrateArtifacts) && outcome.status === 'SUCCESS' && outcome.verification.valid && this.dependencies.persistFinal) {
         const composite = outcome.artifacts.find(artifact => artifact.role === 'COMPOSITE' && artifact.state === 'FINAL');
         if (!composite) throw new Error('Verified FINAL COMPOSITE is missing');
         const durable = await this.dependencies.persistFinal(scope, executionId, composite);
