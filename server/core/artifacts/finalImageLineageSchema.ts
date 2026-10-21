@@ -68,3 +68,28 @@ async function readMigration(name: string): Promise<string> {
     return readFile(resolve(process.cwd(), `server/core/artifacts/migrations/${name}`), 'utf8');
   }
 }
+/** Fail closed unless migration 051 admits a source-bound, immutable GLOBAL_EDIT FINAL. */
+export async function checkGlobalEditFinalLineageSchema(pool: Pool): Promise<void> {
+  const result=await pool.query(`SELECT
+    EXISTS(SELECT 1 FROM pg_constraint
+      WHERE conrelid=to_regclass('canonical_image_artifacts')
+        AND conname='canonical_image_artifacts_lineage_shape_check'
+        AND position('GLOBAL_EDIT' in pg_get_constraintdef(oid))>0) AS shape,
+    EXISTS(SELECT 1 FROM pg_trigger
+      WHERE tgrelid=to_regclass('canonical_image_artifacts')
+        AND tgname='canonical_image_artifacts_global_edit_source'
+        AND NOT tgisinternal) AS source_guard,
+    EXISTS(SELECT 1 FROM pg_trigger
+      WHERE tgrelid=to_regclass('canonical_image_artifacts')
+        AND tgname='canonical_image_artifacts_global_edit_immutable'
+        AND NOT tgisinternal) AS immutable_guard`);
+  if(!result.rows[0]?.shape||!result.rows[0]?.source_guard||!result.rows[0]?.immutable_guard)
+    throw new Error('GLOBAL_EDIT FINAL lineage is incomplete; apply migration 051');
+}
+
+export async function migrateGlobalEditFinalLineageSchema(pool: Pool): Promise<void> {
+  try { await checkGlobalEditFinalLineageSchema(pool); return; }
+  catch { /* test-only migration after the Fashion lineage schema exists */ }
+  await pool.query(await readMigration('051_global_edit_final_lineage.sql'));
+  await checkGlobalEditFinalLineageSchema(pool);
+}
