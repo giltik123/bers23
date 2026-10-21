@@ -107,6 +107,7 @@ try {
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/editor' && Boolean(url.searchParams.get('id')), { timeout: 20_000 });
   const projectId = new URL(page.url()).searchParams.get('id');
   assert(projectId);
+  await page.getByRole('button', { name: 'Маски и SAM3 · по запросу' }).click();
   await page.getByText('Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.', { exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
   await ensureCsrf(page);
 
