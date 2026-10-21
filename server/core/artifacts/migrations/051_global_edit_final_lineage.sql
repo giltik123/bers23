@@ -4,6 +4,7 @@ BEGIN;
 -- untrusted provider URLs. Bind each generated image to the current Project.
 DO $migration$
 DECLARE previous text;
+DECLARE refinement_guard text := '';
 BEGIN
   SELECT pg_get_expr(conbin, conrelid) INTO previous
   FROM pg_constraint
@@ -12,6 +13,16 @@ BEGIN
   IF previous IS NULL THEN
     RAISE EXCEPTION 'Existing FINAL image lineage constraint is required';
   END IF;
+  -- Older production-test schemas predate Fashion refinement columns.
+  -- Keep the extra NULL guards when those columns exist without demanding them
+  -- from a historical schema that has not reached the refinement migration.
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name='canonical_image_artifacts'
+      AND column_name='refinement_parent_image_storage_id') THEN
+    refinement_guard := ' AND refinement_parent_image_storage_id IS NULL
+      AND refinement_parent_image_sha256 IS NULL
+      AND refinement_profile IS NULL AND refinement_contract_version IS NULL';
+  END IF;
   IF position('GLOBAL_EDIT' in previous)=0 THEN
     ALTER TABLE canonical_image_artifacts
       DROP CONSTRAINT canonical_image_artifacts_lineage_shape_check;
@@ -19,11 +30,7 @@ BEGIN
       producer_operation = ''GLOBAL_EDIT'' AND source_image_storage_id IS NOT NULL
       AND mask_storage_id IS NULL
       AND garment_warp_layer_id IS NULL AND garment_warp_layer_sha256 IS NULL
-      AND producer_parameters IS NULL AND producer_parameters_sha256 IS NULL
-      AND refinement_parent_image_storage_id IS NULL
-      AND refinement_parent_image_sha256 IS NULL
-      AND refinement_profile IS NULL AND refinement_contract_version IS NULL
-    ))';
+      AND producer_parameters IS NULL AND producer_parameters_sha256 IS NULL\n    ' || refinement_guard || '))';
   END IF;
 END
 $migration$;
