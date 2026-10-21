@@ -1539,6 +1539,21 @@ export default function Editor() {
               onOpenFashion={() => {
                 if (!agentBlockedByEditor) setEditTab('fashion');
               }}
+              onOpenResize={(target) => {
+                if (agentBlockedByEditor || !project?.current_image_artifact_id) return;
+                const normalized = exactResizeTarget(target);
+                if (!normalized) {
+                  setAiError('Resize: размеры превышают серверные ограничения.');
+                  return;
+                }
+                setAiError(null);
+                setResizeAspectLocked(false);
+                setResizeDraft(normalized);
+              }}
+              onPreviewTransform={(mode) => {
+                if (agentBlockedByEditor || !project?.current_image_artifact_id) return;
+                void applyOrthogonalTransform(mode);
+              }}
             />
           ) : editTab === 'recipes' ? (
             <RecipePanel
