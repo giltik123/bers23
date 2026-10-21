@@ -72,7 +72,9 @@ jobs:
           test -f dist-server/migrations/047_canonical_masked_white_balance_final_lineage.sql
           test -f dist-server/migrations/048_canonical_masked_levels_final_lineage.sql
           test -f dist-server/migrations/049_virtual_try_on_final_lineage.sql
-          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 49
+          test -f dist-server/migrations/050_cloud_scene_mask_provenance.sql
+          test -f dist-server/migrations/051_global_edit_final_lineage.sql
+          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 51
           test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.down.sql' | wc -l)" -eq 0
       - name: Prove bundled migrator on a clean PostgreSQL database
         env:
