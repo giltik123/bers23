@@ -26,7 +26,7 @@ const field = 'w-full accent-primary disabled:opacity-40';
 
 export default function AICommandStudio({
   project, selectedObject, instruction, onInstructionChange,
-  disabled=false, selectionActive=false, pending=false,
+  disabled=false, selectionActive=false, pending=false, maskToolsEnabled=false,
   onSelectRegion, onExecuteAdjustment, onExecuteGenerative, onOpenFashion,
 }) {
   const plan=useMemo(()=>interpretPhotoCommand(instruction),[instruction]);
@@ -36,7 +36,7 @@ export default function AICommandStudio({
   const [generativeScope,setGenerativeScope]=useState('MASKED');
   const [executionError,setExecutionError]=useState('');
   const [submitting,setSubmitting]=useState(false);
-  const maskId=selectedObject?.mask_artifact_id||null;
+  const maskId=maskToolsEnabled ? (selectedObject?.mask_artifact_id||null) : null;
   const canEdit=!disabled&&!selectionActive&&!pending&&!submitting&&Boolean(project?.current_image_artifact_id);
 
   useEffect(()=>{
@@ -68,16 +68,18 @@ export default function AICommandStudio({
     }finally{setSubmitting(false);}
   };
   const handleGenerate=async()=>{
+    const scope = maskToolsEnabled ? generativeScope : 'WHOLE_IMAGE';
     if(!canEdit||plan.kind!=='GENERATIVE'||!generativeConfirmed||
-       (generativeScope==='MASKED'&&(!maskId||!maskConfirmed)))return;
+       (!maskToolsEnabled && (plan.target==='USER_SELECTED_OBJECT'||plan.warnings.length>0))||
+       (scope==='MASKED'&&(!maskId||!maskConfirmed)))return;
     setSubmitting(true);setExecutionError('');
     try{await onExecuteGenerative({
       instruction:plan.instruction,
-      mode:generativeScope,
+      mode:scope,
       expectedProjectId:project.id,
       expectedSourceArtifactId:project.current_image_artifact_id,
-      expectedSelectedObjectId:generativeScope==='MASKED'?selectedObject?.id:null,
-      expectedMaskArtifactId:generativeScope==='MASKED'?maskId:null,
+      expectedSelectedObjectId:scope==='MASKED'?selectedObject?.id:null,
+      expectedMaskArtifactId:scope==='MASKED'?maskId:null,
     });}
     catch(error){setExecutionError(error?.message||'Генерация недоступна для данного проекта.');}
     finally{setSubmitting(false);}
@@ -142,6 +144,53 @@ export default function AICommandStudio({
       </p>
     </section>
   );
+
+  if (!maskToolsEnabled) {
+    // Production intentionally exposes whole-image generation only.
+    // Preserve manual Core mask artifacts and controlled-edit capabilities
+    // internally without presenting mask controls or silently changing scope.
+    const wholeImageAdmitted = plan.kind === 'GENERATIVE' &&
+      plan.target !== 'USER_SELECTED_OBJECT' && plan.warnings.length === 0;
+    return (
+      <section className="space-y-4 rounded-2xl border border-border/70 bg-card p-4" aria-label="Генеративное редактирование фотографии">
+        <header className="space-y-1">
+          <h2 className="flex items-center gap-2 font-semibold"><Sparkles className="h-5 w-5" />BERS · Редактирование изображения</h2>
+          <p className="text-sm text-muted-foreground">Опишите изменение всего кадра. Перед сохранением проверьте результат.</p>
+        </header>
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">Что изменить на фотографии?</span>
+          <textarea aria-label="Команда редактирования" rows={3} maxLength={850}
+            value={instruction} disabled={disabled||pending||submitting}
+            placeholder="Например: сделай освещение теплее для всей фотографии"
+            onChange={e=>onInstructionChange(e.target.value)}
+            className="w-full min-h-24 rounded-xl border border-input bg-background px-3 py-2 text-sm resize-y"/>
+        </label>
+        {wholeImageAdmitted ? (
+          <div className="space-y-3">
+            <p className="text-sm">Генеративное редактирование применяется ко всему изображению через Core.</p>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" checked={generativeConfirmed} disabled={!canEdit}
+                onChange={e=>setGenerativeConfirmed(e.target.checked)} className="mt-1"/>
+              Подтверждаю отправку запроса на обработку всего изображения.
+            </label>
+            <Button type="button" disabled={!canEdit||!generativeConfirmed} onClick={handleGenerate} className="w-full">
+              <WandSparkles className="mr-2 h-4 w-4"/>Сгенерировать изображение
+            </Button>
+          </div>
+        ) : plan.kind === 'FASHION' ? (
+          <Button type="button" disabled={!canEdit} onClick={onOpenFashion} className="w-full">
+            <Shirt className="mr-2 h-4 w-4"/>Открыть Fashion
+          </Button>
+        ) : (
+          <p role="status" className="text-sm text-muted-foreground">
+            {plan.kind === 'CLARIFY' ? plan.explanation :
+              'Для этой команды недоступна обработка отдельного участка. Попробуйте изменить весь кадр или используйте локальные инструменты.'}
+          </p>
+        )}
+        {executionError&&<p role="alert" className="text-sm text-destructive">{executionError}</p>}
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-4 rounded-2xl border border-border/70 bg-card p-4"

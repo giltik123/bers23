@@ -79,6 +79,10 @@ import { CoreMaskArtifactPort } from '@/application/selection/CoreMaskArtifactPo
 import { finalizeAcceptedResult } from '@/application/editor/finalizeAcceptedResult';
 import { isFinalSourceConflict, recoverFinalSourceConflict } from '@/application/editor/recoverFinalSourceConflict';
 
+// Masks and selection remain preserved in Core but are not exposed in the production editor.
+// Explicit product approval is required before restoring either UI or automatic SAM3.
+const PRODUCTION_MASK_UI_ENABLED = false;
+
 const EDITOR_TABS = [
   { id: 'ai', label: 'AI', description: 'AI-assisted photo editing.' },
   { id: 'fashion', label: 'Fashion', description: 'Try on clothes from your wardrobe.' },
@@ -800,7 +804,7 @@ export default function Editor() {
   // Every edit request goes through the AI Planner before anything executes.
   const plan = useMemo(() => {
     if (!project || !instruction.trim()) return null;
-    return aiPlanner.plan({ project, instruction, objects, selectedObject: selected });
+    return aiPlanner.plan({ project, instruction, objects: PRODUCTION_MASK_UI_ENABLED ? objects : [], selectedObject: PRODUCTION_MASK_UI_ENABLED ? selected : null });
   }, [project, instruction, objects, selected]);
 
   // Single AI edits cross the application boundary; the Core canonical platform is execution authority.
@@ -826,7 +830,7 @@ export default function Editor() {
     // requests. Explicitly scoped AI Studio commands instead pass the bounded
     // generative interpreter + source/mask binding, then Core server admission.
     const usedPlan = aiScope ? null : instructionOverride
-      ? aiPlanner.plan({ project, instruction: usedInstruction, objects, selectedObject: selected })
+      ? aiPlanner.plan({ project, instruction: usedInstruction, objects: PRODUCTION_MASK_UI_ENABLED ? objects : [], selectedObject: PRODUCTION_MASK_UI_ENABLED ? selected : null })
       : plan;
     if (!aiScope && (!usedPlan || usedPlan.status !== 'ready')) {
       if (instructionOverride) throw new Error('Core Creative Edit: команда пока не проходит проверку маршрута генерации. Уточните объект, маску или сам запрос.');
@@ -853,11 +857,11 @@ export default function Editor() {
         instruction: usedInstruction,
         selectedObjectIds: guardedScope
           ? guardedScope.selectedObjectIds
-          : objects.filter((object) => object.selected).map((object) => object.id),
+          : PRODUCTION_MASK_UI_ENABLED ? objects.filter((object) => object.selected).map((object) => object.id) : [],
         inputArtifactId: guardedScope?.sourceArtifactId ?? project.current_image_artifact_id,
         maskArtifactIds: guardedScope
           ? guardedScope.maskArtifactIds
-          : objects.filter((object) => object.selected && object.mask_artifact_id).map((object) => object.mask_artifact_id),
+          : PRODUCTION_MASK_UI_ENABLED ? objects.filter((object) => object.selected && object.mask_artifact_id).map((object) => object.mask_artifact_id) : [],
         preserveMode: styleLock.isEnabled(project.id) ? 'locked' : 'standard',
         clientRequestId: globalThis.crypto.randomUUID(),
       });
@@ -1242,7 +1246,7 @@ export default function Editor() {
 
       <GenerationProgress />
 
-      <SegmentationProgress />
+      {PRODUCTION_MASK_UI_ENABLED && <SegmentationProgress />}
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(19rem,23rem)]">
         <section className="min-w-0 space-y-3 rounded-3xl border border-border/70 bg-card p-3 shadow-sm sm:p-4" aria-label="Image canvas">
@@ -1259,20 +1263,20 @@ export default function Editor() {
         sourceArtifactId={project.current_image_artifact_id}
         imageWidth={project.width}
         imageHeight={project.height}
-        objects={objects}
-        selectedId={selected?.id}
+        objects={PRODUCTION_MASK_UI_ENABLED ? objects : []}
+        selectedId={PRODUCTION_MASK_UI_ENABLED ? selected?.id : undefined}
         hiddenObjectIds={hiddenObjectIds}
         onSelect={(obj) => selectObject(obj?.id ?? null)}
         busy={editorBusy}
         onUndo={undo}
         onRedo={redo}
-        selection={selection}
-        onSelectionPointer={selectionPointer}
-        maskOverlayVisible={maskOverlayVisible}
+        selection={PRODUCTION_MASK_UI_ENABLED ? selection : null}
+        onSelectionPointer={PRODUCTION_MASK_UI_ENABLED ? selectionPointer : undefined}
+        maskOverlayVisible={PRODUCTION_MASK_UI_ENABLED && maskOverlayVisible}
         maskOverlayColor={maskOverlayColor}
         maskOverlayOpacity={maskOverlayOpacity}
         brushSize={brushSize}
-        onShapeHandlePointer={selectionShapeHandlePointer}
+        onShapeHandlePointer={PRODUCTION_MASK_UI_ENABLED ? selectionShapeHandlePointer : undefined}
         crop={cropRect ? { ...cropRect, sourceWidth: project.width, sourceHeight: project.height } : null}
         cropSource={cropInteractionActive ? { sourceWidth: project.width, sourceHeight: project.height } : null}
         onCropPointer={cropPointer}
@@ -1325,7 +1329,7 @@ export default function Editor() {
           </div>
         </details>}
 
-        {!cropInteractionActive && !resizeInteractionActive && <SelectionToolbar
+        {PRODUCTION_MASK_UI_ENABLED && !cropInteractionActive && !resizeInteractionActive && <SelectionToolbar
         selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} brushHardness={brushHardness} onBrushHardness={setBrushHardness}
         brushOpacity={brushOpacity} onBrushOpacity={setBrushOpacity}
         maskOverlayVisible={maskOverlayVisible} onMaskOverlayVisible={setMaskOverlayVisible}
@@ -1384,13 +1388,13 @@ export default function Editor() {
         onApplyLevels={() => applyMaskedLevels()}
       />}
       </section>}
-        <AutoSceneMasksPanel
+        {PRODUCTION_MASK_UI_ENABLED && <AutoSceneMasksPanel
           project={project}
           disabled={editorBusy || committing || Boolean(pendingResult) || Boolean(selection) || cropInteractionActive || resizeInteractionActive}
           onComplete={reload}
           onManualSelect={startSelection}
-        />
-        {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && (
+        />}
+        {PRODUCTION_MASK_UI_ENABLED && objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && (
           <AdaptivePanel title={language === 'ru' ? t('editorUi.masks') : 'Masks & objects'}>
             <ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj?.id ?? null)} hidden={hiddenObjectIds} onToggleHidden={toggleHiddenObject} />
           </AdaptivePanel>
@@ -1400,7 +1404,7 @@ export default function Editor() {
 
 
 
-      {objects.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && (
+      {PRODUCTION_MASK_UI_ENABLED && objects.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && (
         <p className="text-[11px] text-muted-foreground text-center">{language === 'ru' ? t('editorUi.noObjects') : 'Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.'}</p>
       )}
 
@@ -1448,14 +1452,15 @@ export default function Editor() {
           {editTab === 'ai' ? (
             <AICommandStudio
               project={project}
-              selectedObject={selected}
+              selectedObject={PRODUCTION_MASK_UI_ENABLED ? selected : null}
+              maskToolsEnabled={PRODUCTION_MASK_UI_ENABLED}
               instruction={instruction}
               onInstructionChange={setInstruction}
               disabled={editorBusy || committing || Boolean(pendingResult)
                 || cropInteractionActive || resizeInteractionActive || Boolean(driftWarning)}
               selectionActive={Boolean(selection)}
               pending={Boolean(pendingResult)}
-              onSelectRegion={startSelection}
+              onSelectRegion={PRODUCTION_MASK_UI_ENABLED ? startSelection : undefined}
               onExecuteAdjustment={executeAIAdjustment}
               onExecuteGenerative={(command) => applyEdit(false, { instructionOverride: command.instruction, aiScope: command })}
               onOpenFashion={() => setEditTab('fashion')}
@@ -1463,7 +1468,7 @@ export default function Editor() {
           ) : editTab === 'local' ? (
             <LocalAdjustmentsPanel key={project.current_image_artifact_id || project.id} imageUrl={project.current_image_url} projectName={project.name} />
           ) : editTab === 'creative' ? (
-            <CreativeStudioPanel project={project} objects={objects} disabled={editorBusy} />
+            <CreativeStudioPanel project={project} objects={PRODUCTION_MASK_UI_ENABLED ? objects : []} disabled={editorBusy} />
           ) : editTab === 'fashion' ? (
             <div className="space-y-3">
               {!tryOn.state.host.active && <VirtualTryOnPanel
@@ -1528,8 +1533,8 @@ export default function Editor() {
               )}
               {plan && <PlanPreview plan={plan} />}
               <InstructionBar
-                selectedObject={selected}
-                allowWholeImage={objects.length === 0}
+                selectedObject={PRODUCTION_MASK_UI_ENABLED ? selected : null}
+                allowWholeImage={!PRODUCTION_MASK_UI_ENABLED || objects.length === 0}
                 instruction={instruction}
                 onInstructionChange={setInstruction}
                 onApply={() => applyEdit(false)}
@@ -1549,14 +1554,14 @@ export default function Editor() {
           <PipelineStatusBar width={project.width} height={project.height} />
           <CreditsBar estimate={!pendingResult && plan?.status === 'ready' ? (plan.credits?.credits ?? 0) : 0} />
           <AdaptivePanel title={language === 'ru' ? t('editorUi.sceneMemory') : 'Scene Memory'}><SceneMemoryPanel project={project} /></AdaptivePanel>
-          <EditorStatusBar
+          {PRODUCTION_MASK_UI_ENABLED && <EditorStatusBar
             objectCount={objects.length}
             selectionCount={objects.filter((o) => o.selected).length}
             selectionMode="single"
             maskedCount={objects.filter((o) => o.mask_url).length}
             segmentationStatus={objects.length ? 'completed' : 'idle'}
             cacheStatus="empty"
-          />
+          />}
         </div>
       </details>
     </AdaptiveLayout>
