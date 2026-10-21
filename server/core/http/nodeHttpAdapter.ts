@@ -21,6 +21,7 @@ import {
 } from './browserSessionCookie.ts';
 import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import type { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
+import type { BillableOperationService } from '../../transactions/application/billableOperationService.ts';
 import { assertCanonicalSceneObjectPublication, CLOUD_SCENE_MASK_PROVENANCE_ADMITTED } from '../projects/sceneObjectAdmission.ts';
 import { runFalSam3Scene, findSam3ScenePrompt } from '../scene/falSam3SemanticInstances.ts';
 import { runClassicalSceneSegmentation } from '../scene/classicalSceneSegmentation.ts';
@@ -55,7 +56,7 @@ export function nodeHttpAdapter(handler: (request: Request) => Promise<Response>
 }
 
 /** Production Node transport with health, CORS, authentication and request limits. */
-export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicationCore; artifacts: ArtifactAuthority; projects: PostgresProjectStore; auth: HttpAuthAuthority; config: CoreServerConfig; ready: () => Promise<boolean>; accepting: () => boolean; now?: () => number }>) {
+export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicationCore; artifacts: ArtifactAuthority; projects: PostgresProjectStore; auth: HttpAuthAuthority; sceneBillableOperations?: BillableOperationService; config: CoreServerConfig; ready: () => Promise<boolean>; accepting: () => boolean; now?: () => number }>) {
   const now = input.now ?? Date.now;
   const trustedProxyPolicy = compileTrustedProxyClientIpPolicy({
     headerMode: input.config.trustedProxyHeaderMode,
@@ -181,7 +182,7 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       // The free CLASSICAL path keeps LOCAL_SEGMENTATION authority.
       const sceneEnabled=process.env.BERS_AUTO_SCENE_SAM3_ENABLED==='true'
         && input.config.provider==='FAL' && Boolean(input.config.falKey)
-        && CLOUD_SCENE_MASK_PROVENANCE_ADMITTED;
+        && CLOUD_SCENE_MASK_PROVENANCE_ADMITTED && Boolean(input.sceneBillableOperations);
       if(path==='/api/core/scene/capability'&&request.method==='GET'){
         return send(response,200,{supportsSemanticInstances:sceneEnabled,
           supportsClassicalSegmentation:true,classicalModelId:'bers-classical-cv',
@@ -263,71 +264,105 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
             return send(response,200,{status:'ALREADY_AVAILABLE',
               objects:already,message:'Scene MASKs already exist for this exact image.'});
           }
-        const source=await input.artifacts.images.loadSource(storageId,scope);
-        if(!source||source.width!==Number(current.width)||source.height!==Number(current.height))
-          return sendError(response,409,'project_source_conflict','Scene source is unavailable',correlationId,false);
-        const {instances}=sceneMode==='CLASSICAL'
-          ? await runClassicalSceneSegmentation({
-              imagePng:new Uint8Array(source.bytes),width:source.width,height:source.height,
-            })
-          : await runFalSam3Scene({
-              imagePng:new Uint8Array(source.bytes),
-              width:source.width,height:source.height,falKey:input.config.falKey!,
-              promptKey:chosenPrompt!.prompt,
-              signal:AbortSignal.timeout(Math.min(input.config.requestTimeoutMs,120_000)),
+        const analyzeAndPublish=async()=>{
+          const source=await input.artifacts.images.loadSource(storageId,scope);
+          if(!source||source.width!==Number(current.width)||source.height!==Number(current.height))
+            throw Object.assign(new Error('Scene source is unavailable'),{status:409,code:'project_source_conflict'});
+          const {instances}=sceneMode==='CLASSICAL'
+            ? await runClassicalSceneSegmentation({
+                imagePng:new Uint8Array(source.bytes),width:source.width,height:source.height,
+              })
+            : await runFalSam3Scene({
+                imagePng:new Uint8Array(source.bytes),
+                width:source.width,height:source.height,falKey:input.config.falKey!,
+                promptKey:chosenPrompt!.prompt,
+                signal:AbortSignal.timeout(Math.min(input.config.requestTimeoutMs,120_000)),
+              });
+          const latest=await input.projects.get(principal,id);
+          if(!latest||latest.current_image_storage_id!==storageId||
+             Number(latest.revision)!==body.expectedRevision)
+            throw Object.assign(new Error('Scene changed during analysis'),{status:409,code:'project_source_conflict'});
+          if(!instances.length)return {status:'NO_OBJECTS',objects:[],
+            message:sceneMode==='CLASSICAL'
+              ? 'Классический алгоритм не нашёл цветовых областей.'
+              : 'SAM3 returned no verified scene masks'};
+          const additions=[];
+          for(const instance of instances){
+            const stored=await input.artifacts.masks.persistManual(
+              scope,source.width,source.height,instance.alpha,
+              {sourceImageStorageId:storageId,
+               producerOperation:sceneMode==='SAM3'?'CLOUD_SEGMENTATION':'LOCAL_SEGMENTATION'},
+            );
+            let x0=source.width,y0=source.height,x1=-1,y1=-1;
+            for(let k=0;k<instance.alpha.length;k++){
+              if(instance.alpha[k]===0)continue;
+              const x=k%source.width,y=Math.floor(k/source.width);
+              if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y;
+            }
+            if(x1<0||y1<0)continue;
+            additions.push({
+              id:randomUUID(),type:'object',label:instance.label,
+              category:instance.category,group:instance.group,
+              confidence:instance.confidence,selected:false,editable:true,
+              parent_object:null,children:[],
+              box:{x:x0/source.width,y:y0/source.height,
+                w:(x1-x0+1)/source.width,h:(y1-y0+1)/source.height},
+              mask_artifact_id:input.artifacts.external.issueStoredMask(stored.storageId,scope),
+              mask_url:null,
+              metadata:{segmentation:'AUTO',modelId:instance.modelId,
+                modelVersion:instance.modelVersion,sourceArtifactId:token,
+                ...(sceneMode==='SAM3'?{promptKey:chosenPrompt!.prompt}:{}),
+                maskState:'CORE_PERSISTED_UNREVIEWED'},
             });
-        const latest=await input.projects.get(principal,id);
-        if(!latest||latest.current_image_storage_id!==storageId||
-           Number(latest.revision)!==body.expectedRevision)
-          return sendError(response,409,'project_source_conflict','Scene changed during analysis',correlationId,false);
-        if(!instances.length)return send(response,200,{status:'NO_OBJECTS',objects:[],
-          message:sceneMode==='CLASSICAL'?'Классический алгоритм не нашёл цветовых областей.':'SAM3 returned no verified scene masks'});
-        const additions=[];
-        for(const instance of instances){
-          const stored=await input.artifacts.masks.persistManual(
-            scope,source.width,source.height,instance.alpha,
-            {sourceImageStorageId:storageId,producerOperation:'LOCAL_SEGMENTATION'},
-          );
-          let x0=source.width,y0=source.height,x1=-1,y1=-1;
-          for(let k=0;k<instance.alpha.length;k++){
-            if(instance.alpha[k]===0)continue;
-            const x=k%source.width,y=Math.floor(k/source.width);
-            if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y;
           }
-          if(x1<0||y1<0)continue;
-          additions.push({
-            id:randomUUID(),type:'object',label:instance.label,
-            category:instance.category,group:instance.group,
-            confidence:instance.confidence,selected:false,editable:true,
-            parent_object:null,children:[],
-            box:{x:x0/source.width,y:y0/source.height,
-              w:(x1-x0+1)/source.width,h:(y1-y0+1)/source.height},
-            mask_artifact_id:input.artifacts.external.issueStoredMask(stored.storageId,scope),
-            mask_url:null,
-            metadata:{segmentation:'AUTO',modelId:instance.modelId,
-              modelVersion:instance.modelVersion,sourceArtifactId:token,
-              ...(sceneMode==='SAM3'?{promptKey:chosenPrompt!.prompt}:{}),
-              maskState:'CORE_PERSISTED_UNREVIEWED'},
+          const prior=Array.isArray(latest.objects)?latest.objects:[];
+          const retained=prior.filter((item:any)=>
+            item?.metadata?.segmentation!=='AUTO' ||
+            item?.metadata?.modelId!==requestedModel ||
+            (sceneMode==='SAM3'&&item?.metadata?.promptKey!==chosenPrompt?.prompt));
+          const next=[...retained,...additions];
+          await assertCanonicalSceneObjectPublication({
+            objects:next,sourceArtifactId:token,sourceStorageId:storageId,
+            scope,artifacts:input.artifacts,
           });
-        }
-        const prior=Array.isArray(latest.objects)?latest.objects:[];
-        // Preserve manual selections, free classical masks and all *other*
-        // SAM3 categories. Re-running FACE only replaces the old FACE masks.
-        const retained=prior.filter((item:any)=>
-          item?.metadata?.segmentation!=='AUTO' ||
-          item?.metadata?.modelId!==requestedModel ||
-          (sceneMode==='SAM3'&&item?.metadata?.promptKey!==chosenPrompt?.prompt));
-        const next=[...retained,...additions];
-        await assertCanonicalSceneObjectPublication({
-          objects:next,sourceArtifactId:token,sourceStorageId:storageId,
-          scope,artifacts:input.artifacts,
-        });
-        const updated=await input.projects.update(principal,id,{objects:next},{
-          expectedSourceStorageId:storageId,expectedRevision:body.expectedRevision,
-        });
-        return send(response,200,{status:'COMPLETED',objects:additions,
-          updatedRevision:Number(updated.revision),
-          message:sceneMode==='CLASSICAL'?`Без ИИ: создано ${additions.length} цветовых масок (без распознавания объектов).`:`SAM3 created ${additions.length} canonical object masks. Review required.`});
+          const updated=await input.projects.update(principal,id,{objects:next},{
+            expectedSourceStorageId:storageId,expectedRevision:body.expectedRevision,
+          });
+          return {status:'COMPLETED',objects:additions,
+            updatedRevision:Number(updated.revision),
+            message:sceneMode==='CLASSICAL'
+              ? `Без ИИ: создано ${additions.length} цветовых масок (без распознавания объектов).`
+              : `SAM3 created ${additions.length} canonical object masks. Review required.`};
+        };
+        if(sceneMode==='CLASSICAL')return send(response,200,await analyzeAndPublish());
+        // A cloud inference is always a paid, server-owned transaction. Never
+        // dispatch SAM3 outside the canonical reserve/commit/recovery authority.
+        if(typeof body.clientRequestId!=='string' ||
+           !/^[A-Za-z0-9._:-]{16,128}$/.test(body.clientRequestId))
+          return sendError(response,400,'invalid_scene_request_id',
+            'A stable clientRequestId (16-128 safe characters) is required',correlationId,false);
+        const settlement=await input.sceneBillableOperations!.execute(
+          {user:{id:auth.userId},project:{id,created_by_id:auth.userId},
+           operation:{operation_id:'sam3.segment',version:1,provider:'fal',
+             credit_cost:input.config.creditsPerEdit}},
+          {idempotency_key:body.clientRequestId,
+           payload:{projectId:id,sourceStorageId:storageId,
+             revision:body.expectedRevision,promptKey:chosenPrompt!.prompt}},
+          {execute:async()=>analyzeAndPublish()},
+        );
+        if(settlement.kind==='completed')return send(response,200,settlement.value);
+        if(settlement.kind==='provider_outcome_pending')
+          return send(response,202,{status:'PENDING',objects:[],
+            message:'Previous SAM3 attempt is pending financial/provider reconciliation; no duplicate request was sent.'});
+        // A committed replay cannot run the paid provider a second time.
+        const replayProject=await input.projects.get(principal,id);
+        const replayObjects=(Array.isArray(replayProject?.objects)?replayProject.objects:[])
+          .filter((obj:any)=>obj?.metadata?.segmentation==='AUTO' &&
+            obj?.metadata?.sourceArtifactId===token &&
+            obj?.metadata?.modelId===requestedModel &&
+            obj?.metadata?.promptKey===chosenPrompt!.prompt);
+        return send(response,200,{status:replayObjects.length?'ALREADY_AVAILABLE':'NO_OBJECTS',
+          objects:replayObjects,message:'SAM3 request already settled; no second provider call.'});
         } finally {
           await releaseSceneLease();
         }
