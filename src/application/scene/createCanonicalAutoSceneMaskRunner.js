@@ -36,8 +36,10 @@ export function createCanonicalAutoSceneMaskRunner(provider) {
             projectId:source.id,
             sourceArtifactId:source.current_image_artifact_id,
             expectedRevision:source.revision,force,mode,promptKey,
+            ...(mode==='SAM3' ? { clientRequestId:globalThis.crypto.randomUUID() } : {}),
           });
           if(ticket!==sequence)return {status:'CANCELLED',objects:[]};
+          if(result?.status==='PENDING') return {status:'IN_PROGRESS',objects:[],message:result.message};
           if(!['COMPLETED','NO_OBJECTS','ALREADY_AVAILABLE'].includes(result?.status))
             throw new Error('Scene Core response is not an admitted result');
           return result;
