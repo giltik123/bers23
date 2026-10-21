@@ -34,7 +34,7 @@ function compoundLocalDraft(instruction) {
   }
   return Object.freeze({
     kind: 'LOCAL_WORKFLOW_DRAFT', mode, width, height,
-    message: 'Подготовлен двухшаговый локальный сценарий. Проверьте поворот и размеры, затем отдельно подтвердите запуск.',
+    message: 'Подготовлен двухшаговый локальный сценарий. Проверьте параметры поворота и размера, затем отдельно подтвердите запуск.',
   });
 }
 
