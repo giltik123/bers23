@@ -147,6 +147,26 @@ export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
           || !Array.isArray(parents) || parents.length !== 2 || !operation.requiredArtifacts.every(id => parents.includes(id))) return invalid(operation.id, 'VIRTUAL_TRY_ON_OUTPUT_INVALID');
       return freezeResult({ stepId: operation.id, valid: true, checks: ['VIRTUAL_TRY_ON_DECODED_IMAGE', 'VIRTUAL_TRY_ON_INPUT_LINEAGE', 'HUMAN_VISUAL_REVIEW_REQUIRED'], errors: [] });
     }
+    if (operation.type === 'image-edit' && artifacts[0]?.metadata?.producerOperation === 'GLOBAL_EDIT') {
+      const artifact=artifacts[0];
+      const image=artifact.value as {width?:number;height?:number;data?:Uint8ClampedArray};
+      const parents=artifact.metadata?.parentArtifactIds;
+      if(operation.executionRoute!=='PROVIDER' || operation.providerId!=='fal'
+        || artifacts.length!==1 || artifact.kind!=='image'
+        || artifact.metadata?.artifactRole!=='COMPOSITE'
+        || artifact.metadata?.lifecycle!=='FINAL'
+        || !Number.isSafeInteger(image?.width) || !Number.isSafeInteger(image?.height)
+        || Number(image.width)<1 || Number(image.height)<1
+        || Number(image.width)*Number(image.height)>16_777_216
+        || !(image.data instanceof Uint8ClampedArray)
+        || image.data.length!==Number(image.width)*Number(image.height)*4
+        || !Array.isArray(parents) || parents.length!==1
+        || !operation.requiredArtifacts?.includes(parents[0]))
+        return invalid(operation.id,'GLOBAL_EDIT_FINAL_INVALID');
+      return freezeResult({stepId:operation.id,valid:true,
+        checks:['GLOBAL_EDIT_DECODED_IMAGE','GLOBAL_EDIT_SOURCE_LINEAGE',
+          'HUMAN_VISUAL_REVIEW_REQUIRED'],errors:[]});
+    }
     if (operation.type === 'CONTROLLED_LOCAL_EDIT') return invalid(operation.id, ERRORS.controlledOwned);
     if (operation.type !== 'image-edit') return invalid(operation.id, ERRORS.unsupported);
     if (artifacts.length === 0) return invalid(operation.id, ERRORS.outputRequired, [CHECKS.supported]);
