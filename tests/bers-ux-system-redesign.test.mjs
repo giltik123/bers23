@@ -116,3 +116,28 @@ test('object list actions are independent keyboard-reachable buttons, not clicka
   assert.match(panel, /onClick=\{\(\) => onSelect\(obj\.selected \? null : obj\)\}/);
   assert.doesNotMatch(panel, /className=\{\x60flex items-center gap-2 px-2 py-1\.5 rounded-lg cursor-pointer/);
 });
+
+
+test('Free generation uses explicit consent, server-owned account setup and no billing navigation', async () => {
+  const [app, layout, settings, studio, editor, plan, review] = await Promise.all([
+    read('src/App.jsx'),
+    read('src/components/AppLayout.jsx'),
+    read('src/pages/Settings.jsx'),
+    read('src/components/editor/ai/AICommandStudio.jsx'),
+    read('src/pages/Editor.jsx'),
+    read('src/components/editor/PlanPreview.jsx'),
+    read('src/components/editor/ResultCompare.jsx'),
+  ]);
+  assert.match(app, /path="\\/subscription" element=\\{<Navigate to="\\/settings" replace \\/>\\}/);
+  assert.match(app, /path="\\/billing" element=\\{<Navigate to="\\/settings" replace \\/>\\}/);
+  assert.doesNotMatch(layout, /path: '\\/subscription'/);
+  assert.doesNotMatch(settings, /<SubscriptionSettingsCard/);
+  assert.doesNotMatch(plan, /\\bCoins\\b|credits/);
+  assert.doesNotMatch(review, /creditLabel/);
+  assert.doesNotMatch(editor, /<CreditsBar/);
+  assert.match(studio, /const wholeImageAdmitted = Boolean\\(plan.instruction\\) && plan.kind !== 'FASHION'/);
+  assert.match(studio, /await onPrepareFreeAccount\\?\\.\\(\\)/);
+  assert.match(studio, /generativeConfirmed/);
+  assert.match(studio, /бесплатно в пределах серверного лимита/);
+  assert.match(editor, /onPrepareFreeAccount=\\{\\(\\) => creativeEditApplicationService\\.prepareAccount\\(\\)\\}/);
+});
