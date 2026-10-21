@@ -30,7 +30,8 @@ BEGIN
       producer_operation = ''GLOBAL_EDIT'' AND source_image_storage_id IS NOT NULL
       AND mask_storage_id IS NULL
       AND garment_warp_layer_id IS NULL AND garment_warp_layer_sha256 IS NULL
-      AND producer_parameters IS NULL AND producer_parameters_sha256 IS NULL\n    ' || refinement_guard || '))';
+      AND producer_parameters IS NULL AND producer_parameters_sha256 IS NULL
+    ' || refinement_guard || '))';
   END IF;
 END
 $migration$;
