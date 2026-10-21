@@ -171,7 +171,7 @@ export class CreativeExecutionService {
     const estimatedCredits = this.dependencies.creditsPerEdit ?? 1; const hardBudgetCredits = this.dependencies.hardBudgetCredits ?? estimatedCredits;
     const controlled = Boolean(command.maskArtifactIds?.length && command.selectedObjectIds?.length);
     const garment = await reference;
-    const hydrated = this.dependencies.hydrateArtifacts
+    const hydrated = (controlled || garment || Boolean(this.dependencies.persistFinal)) && this.dependencies.hydrateArtifacts
       ? await this.dependencies.hydrateArtifacts(scope, command.inputArtifactId, command.maskArtifactIds ?? [])
       : artifacts.map((id, index) => ({ id, kind: 'image', value: { artifactId: id }, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: index ? 'MASK' : 'ORIGINAL' } as CreativeArtifact));
     const request: CreativeRequest = { id: executionId, intent: command.instruction, scope, inputArtifacts: garment ? [...hydrated, garment.artifact] : hydrated, budget: { credits: hardBudgetCredits, aiCalls: 1, latencyMs: 120_000, ramMb: 2048, gpuMs: 120_000, retries: 0 }, metadata: { idempotencyKey: command.clientRequestId, estimatedCredits, requestId: requestCorrelationId, correlationId: requestCorrelationId, ...(garment ? { virtualTryOnCategory: garment.category } : {}), editCapability: garment ? 'VIRTUAL_TRY_ON' : controlled ? 'CONTROLLED_LOCAL_EDIT' : 'GLOBAL_EDIT', preserveMode: command.preserveMode ?? 'STRICT', selectedObjectIds: command.selectedObjectIds ?? [], maskArtifactIds: command.maskArtifactIds ?? [] } };
