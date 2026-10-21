@@ -187,7 +187,8 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         return send(response,200,{supportsSemanticInstances:sceneEnabled,
           supportsClassicalSegmentation:true,classicalModelId:'bers-classical-cv',
           modelId:sceneEnabled?'fal-ai/sam-3/image':null,
-          cloudProcessing:sceneEnabled,reviewRequired:true});
+          cloudProcessing:sceneEnabled,reviewRequired:true,
+          sam3Credits:sceneEnabled?input.config.creditsPerEdit:null});
       }
       if(path==='/api/core/scene/analyze'&&request.method==='POST'){
         assertBrowserMutationAllowed(request,input.config);
