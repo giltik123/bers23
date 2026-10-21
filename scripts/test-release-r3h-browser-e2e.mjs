@@ -377,7 +377,9 @@ try {
   assert.deepEqual(diagnostics.creativeRequests, []);
   assert.deepEqual(diagnostics.financialRequests, []);
   assert.deepEqual(diagnostics.maskRequests, []);
-  assert.deepEqual(diagnostics.genericAssetRequests, []);
+  assert.equal(diagnostics.genericAssetRequests.every((entry) =>
+    /^GET \/api\/core\/artifacts\/results\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(entry)), true,
+    'only signed, read-only Core image deliveries are allowed during workspace navigation');
   assert.deepEqual(diagnostics.projectMutations, []);
   assert.deepEqual(diagnostics.externalBrowserRequests, []);
   assert.equal(diagnostics.pageErrors.length, 0, `unexpected browser page errors: ${JSON.stringify(diagnostics.pageErrors)}`);
