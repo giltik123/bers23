@@ -3,9 +3,10 @@ import { Loader2, ScanSearch, RefreshCcw, AlertCircle } from 'lucide-react';
 import { SCENE_GROUPS, SCENE_LABELS, sceneSourceKey, supportsClassicalSceneGeometry } from '@/application/scene/autoSceneMaskContract';
 import { createCanonicalAutoSceneMaskRunner } from '@/application/scene/createCanonicalAutoSceneMaskRunner';
 import { Button } from '@/components/ui/button';
+import { coreClient } from '@/api/coreClient';
 
-// This is a UI affordance guard only; Core independently denies unadmitted cloud provenance.
-const CLOUD_SAM3_UI_ADMITTED=false;
+// Only Core can admit billed SAM3 and source-bound MASK provenance.
+// This panel never sends a model request until the user confirms a click.
 const CLOUD_TARGETS=Object.freeze([
   ['face','Лицо'],['shirt','Рубашка'],['jacket','Куртка'],
   ['pants','Брюки'],['dress','Платье'],['shoes','Обувь'],
@@ -22,9 +23,9 @@ const MESSAGE = Object.freeze({
 });
 
 /**
- * Runs once per immutable Core image identity, including after a newly
- * accepted FINAL. This is a capability-gated control surface, not a fake
- * segmentation preview. Providers must be admitted independently.
+ * Runs ONLY on an explicit manual/classical or confirmed SAM3 request.
+ * Opening the editor, mounting this panel, changing source image or restoring
+ * a Project never launches free or paid segmentation.
  */
 export default function AutoSceneMasksPanel({
   project, provider = null, disabled = false, onComplete, onManualSelect,
@@ -40,6 +41,8 @@ export default function AutoSceneMasksPanel({
     sourceKey:null,mode:'CLASSICAL',request:0,force:false,promptKey:null,
   });
   const [selectedCloudTarget,setSelectedCloudTarget] = useState('face');
+  const [cloudCapability,setCloudCapability] = useState({available:false,credits:null});
+  const CLOUD_SAM3_UI_ADMITTED=cloudCapability.available;
   const currentMode=requested.sourceKey===sourceKey?requested.mode:'CLASSICAL';
   const classicalGeometrySupported=supportsClassicalSceneGeometry(project);
   const currentRequest=requested.sourceKey===sourceKey?requested.request:0;
@@ -48,7 +51,18 @@ export default function AutoSceneMasksPanel({
   const attemptedRef = useRef(null);
 
   useEffect(() => {
-    if (!sourceKey || !project) return undefined;
+    let active=true;
+    coreClient.scene.capability().then(capability => {
+      if(active)setCloudCapability({available:capability?.supportsSemanticInstances===true,
+        credits:typeof capability?.sam3Credits==='number'?capability.sam3Credits:null});
+    }).catch(() => {
+      if(active)setCloudCapability({available:false,credits:null});
+    });
+    return () => { active=false; };
+  }, [sourceKey]);
+
+  useEffect(() => {
+    if (!sourceKey || !project || currentRequest===0 || requested.sourceKey!==sourceKey) return undefined;
     if (disabled) {
       setState({ sourceKey,status:'PAUSED',
         message:'Анализ сцены начнётся, когда завершится текущее редактирование.' });
@@ -82,12 +96,12 @@ export default function AutoSceneMasksPanel({
       runner.cancel();
       if(!finished && attemptedRef.current===attemptKey)attemptedRef.current=null;
     };
-  // Re-run on image identity, explicit retry or when the editor becomes idle.
+  // Only continue an explicitly clicked request when editor becomes idle.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[sourceKey,currentMode,currentRequest,currentPromptKey,currentForce,runner,disabled,classicalGeometrySupported]);
 
   const matching = state.sourceKey === sourceKey ? state : {
-    status:'RUNNING',message:'Ожидание проверки новой фотографии',
+    status:'IDLE',message:'Нажмите нужную кнопку, чтобы создать маски. Автозапуск выключен.',
   };
   const running = matching.status==='RUNNING';
   const detected = (Array.isArray(project?.objects)?project.objects:[])
@@ -97,7 +111,7 @@ export default function AutoSceneMasksPanel({
       object.mask_artifact_id.length>0);
 
   return (
-    <section aria-label="Автоматическая сегментация сцены"
+    <section id="bers-mask-tools" aria-label="Сегментация сцены по запросу"
       className="rounded-xl border border-border bg-card p-3 space-y-3">
       <div className="flex items-center gap-2">
         {running ? <Loader2 className="h-4 w-4 animate-spin" /> :
@@ -150,7 +164,7 @@ export default function AutoSceneMasksPanel({
         </label>
         <Button type="button" variant="outline" size="sm"
           disabled={disabled || running || !sourceKey || !CLOUD_SAM3_UI_ADMITTED}
-          title="Облачная SAM3 недоступна: происхождение масок не допущено в Core"
+          title={CLOUD_SAM3_UI_ADMITTED ? 'Выполнить один подтверждённый облачный запрос SAM3' : 'Облачная SAM3 ещё не подключена на сервере'}
           onClick={()=>{
             if(!window.confirm('Отправить фото в SAM3 для одного выбранного объекта? Это один облачный API-вызов.'))return;
             setRequested(prev=>({
@@ -160,7 +174,7 @@ export default function AutoSceneMasksPanel({
               promptKey:selectedCloudTarget,
             }));
           }}>
-          SAM3 · недоступно
+          {CLOUD_SAM3_UI_ADMITTED ? `SAM3 · по запросу${cloudCapability.credits != null ? ` (до ${cloudCapability.credits} кредитов)` : ''}` : 'SAM3 · недоступно'}
         </Button>
         <Button type="button" variant="outline" size="sm"
           disabled={disabled||!sourceKey||typeof onManualSelect!=='function'}

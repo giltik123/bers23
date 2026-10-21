@@ -79,9 +79,8 @@ import { CoreMaskArtifactPort } from '@/application/selection/CoreMaskArtifactPo
 import { finalizeAcceptedResult } from '@/application/editor/finalizeAcceptedResult';
 import { isFinalSourceConflict, recoverFinalSourceConflict } from '@/application/editor/recoverFinalSourceConflict';
 
-// Masks and selection remain preserved in Core but are not exposed in the production editor.
-// Explicit product approval is required before restoring either UI or automatic SAM3.
-const PRODUCTION_MASK_UI_ENABLED = false;
+// Masks and SAM3 are available only after the user opens their tools.
+// Never start any segmentation automatically on Editor mount or source change.
 
 const EDITOR_TABS = [
   { id: 'ai', label: 'AI', description: 'AI-assisted photo editing.' },
@@ -195,6 +194,8 @@ export default function Editor() {
   });
   const [driftWarning, setDriftWarning] = useState(null);
   const [selection, setSelection] = useState(null);
+  const [maskToolsOpen, setMaskToolsOpen] = useState(false);
+  const PRODUCTION_MASK_UI_ENABLED = maskToolsOpen;
   const [hiddenObjectIds, setHiddenObjectIds] = useState(() => new Set());
   const [brushSize, setBrushSize] = useState(24);
   const [brushHardness, setBrushHardness] = useState(75);
@@ -1329,6 +1330,21 @@ export default function Editor() {
           </div>
         </details>}
 
+        <Button type="button" size="sm" variant="outline"
+          aria-expanded={PRODUCTION_MASK_UI_ENABLED}
+          aria-controls="bers-mask-tools"
+          disabled={editorBusy || Boolean(pendingResult) || cropInteractionActive || resizeInteractionActive}
+          onClick={() => {
+            if (PRODUCTION_MASK_UI_ENABLED) {
+              selectionServiceRef.current?.cancel();
+              selectionServiceRef.current = null;
+              setSelection(null);
+              selectObject(null);
+            }
+            setMaskToolsOpen(open => !open);
+          }}>
+          {PRODUCTION_MASK_UI_ENABLED ? 'Скрыть маски' : 'Маски и SAM3 · по запросу'}
+        </Button>
         {PRODUCTION_MASK_UI_ENABLED && !cropInteractionActive && !resizeInteractionActive && <SelectionToolbar
         selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} brushHardness={brushHardness} onBrushHardness={setBrushHardness}
         brushOpacity={brushOpacity} onBrushOpacity={setBrushOpacity}
