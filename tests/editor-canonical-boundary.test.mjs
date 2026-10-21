@@ -576,7 +576,9 @@ test('canonical Scene Mask Editor integrates with accessible UX and Core-owned r
   assert.match(canvas,/maskArtifactId=\{selectedMaskId\}/);
   assert.match(canvas,/maskOverlayVisible && selectedMaskId/);
   assert.match(objects,/aria-label=\{obj\.selected \? 'Deselect '/);
-  assert.match(panel,/const CLOUD_SAM3_UI_ADMITTED=false/);
+  assert.ok(panel.includes('coreClient.scene.capability()'));
+  assert.ok(panel.includes('currentRequest===0 || requested.sourceKey!==sourceKey'));
+  assert.ok(panel.includes('window.confirm('));
 });
 
 test('production Editor hides mask UI and only sends explicit whole-image fal.ai requests', async () => {
@@ -584,7 +586,9 @@ test('production Editor hides mask UI and only sends explicit whole-image fal.ai
     readFile('src/pages/Editor.jsx', 'utf8'),
     readFile('src/components/editor/ai/AICommandStudio.jsx', 'utf8'),
   ]);
-  assert.match(editor, /const PRODUCTION_MASK_UI_ENABLED = false/);
+  assert.ok(editor.includes('const [maskToolsOpen, setMaskToolsOpen] = useState(false)'));
+  assert.ok(editor.includes('const PRODUCTION_MASK_UI_ENABLED = maskToolsOpen'));
+  assert.ok(editor.includes('aria-expanded={PRODUCTION_MASK_UI_ENABLED}'));
   assert.ok(editor.includes('{PRODUCTION_MASK_UI_ENABLED && <AutoSceneMasksPanel'));
   assert.ok(editor.includes('{PRODUCTION_MASK_UI_ENABLED && !cropInteractionActive && !resizeInteractionActive && <SelectionToolbar'));
   assert.ok(editor.includes('maskOverlayVisible={PRODUCTION_MASK_UI_ENABLED && maskOverlayVisible}'));
