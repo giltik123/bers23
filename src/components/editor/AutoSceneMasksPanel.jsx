@@ -3,9 +3,8 @@ import { Loader2, ScanSearch, RefreshCcw, AlertCircle } from 'lucide-react';
 import { SCENE_GROUPS, SCENE_LABELS, sceneSourceKey, supportsClassicalSceneGeometry } from '@/application/scene/autoSceneMaskContract';
 import { createCanonicalAutoSceneMaskRunner } from '@/application/scene/createCanonicalAutoSceneMaskRunner';
 import { Button } from '@/components/ui/button';
+import { coreClient } from '@/api/coreClient';
 
-// This is a UI affordance guard only; Core independently denies unadmitted cloud provenance.
-const CLOUD_SAM3_UI_ADMITTED=false;
 const CLOUD_TARGETS=Object.freeze([
   ['face','Лицо'],['shirt','Рубашка'],['jacket','Куртка'],
   ['pants','Брюки'],['dress','Платье'],['shoes','Обувь'],
@@ -40,6 +39,18 @@ export default function AutoSceneMasksPanel({
     sourceKey:null,mode:'CLASSICAL',request:0,force:false,promptKey:null,
   });
   const [selectedCloudTarget,setSelectedCloudTarget] = useState('face');
+  const [cloudCapability,setCloudCapability] = useState({available:false,credits:null});
+  useEffect(()=>{
+    let live=true;
+    setCloudCapability({available:false,credits:null});
+    if(sourceKey)coreClient.scene.capability().then(data=>{
+      if(live)setCloudCapability({
+        available:data?.supportsSemanticInstances===true && data?.cloudProcessing===true,
+        credits:Number.isSafeInteger(data?.sam3Credits)?data.sam3Credits:null,
+      });
+    }).catch(()=>{if(live)setCloudCapability({available:false,credits:null});});
+    return ()=>{live=false;};
+  },[sourceKey]);
   const currentMode=requested.sourceKey===sourceKey?requested.mode:'CLASSICAL';
   const classicalGeometrySupported=supportsClassicalSceneGeometry(project);
   const currentRequest=requested.sourceKey===sourceKey?requested.request:0;
@@ -143,16 +154,16 @@ export default function AutoSceneMasksPanel({
             value={selectedCloudTarget}
             onChange={event=>setSelectedCloudTarget(event.target.value)}
             className="rounded-md border bg-background p-1"
-            disabled={disabled||running||!CLOUD_SAM3_UI_ADMITTED}>
+            disabled={disabled||running||!cloudCapability.available}>
             {CLOUD_TARGETS.map(([key,label])=>
               <option key={key} value={key}>{label}</option>)}
           </select>
         </label>
         <Button type="button" variant="outline" size="sm"
-          disabled={disabled || running || !sourceKey || !CLOUD_SAM3_UI_ADMITTED}
-          title="Облачная SAM3 недоступна: происхождение масок не допущено в Core"
+          disabled={disabled || running || !sourceKey || !cloudCapability.available}
+          title={cloudCapability.available?'Запустить сегментацию SAM3 через защищённый Core':'SAM3 недоступна: проверьте FAL_KEY, биллинг и настройки Core'}
           onClick={()=>{
-            if(!window.confirm('Отправить фото в SAM3 для одного выбранного объекта? Это один облачный API-вызов.'))return;
+            if(!window.confirm(`Отправить текущую фотографию в fal.ai SAM3 для одного выбранного объекта? Это платный облачный API-вызов${cloudCapability.credits!==null?` (${cloudCapability.credits} кредитов)`:''}.`))return;
             setRequested(prev=>({
               sourceKey,mode:'SAM3',request:prev.request+1,
               force:prev.sourceKey===sourceKey&&prev.mode==='SAM3'&&
@@ -160,7 +171,7 @@ export default function AutoSceneMasksPanel({
               promptKey:selectedCloudTarget,
             }));
           }}>
-          SAM3 · недоступно
+          {cloudCapability.available?'SAM3 · сегментировать':'SAM3 · недоступно'}
         </Button>
         <Button type="button" variant="outline" size="sm"
           disabled={disabled||!sourceKey||typeof onManualSelect!=='function'}
