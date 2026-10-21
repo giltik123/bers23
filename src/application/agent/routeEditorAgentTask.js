@@ -7,6 +7,37 @@ const DIRECT_HINT = 'Эта команда требует отдельного �
 const MAX_TEXT = 850;
 const FORBIDDEN_CONTROL = /[\x00-\x08\x0e-\x1f\x7f]/u;
 
+
+// This recognition is advisory, with the same broad geometry ceiling as the
+// Voice draft parser. Core performs its own authoritative bounds verification.
+const TEXT_MAX_DIMENSION = 16_384;
+const TEXT_MAX_PIXELS = 24_000_000;
+function admissibleTextTarget(width, height) {
+  return Number.isSafeInteger(width) && Number.isSafeInteger(height) &&
+    width > 0 && height > 0 && width <= TEXT_MAX_DIMENSION &&
+    height <= TEXT_MAX_DIMENSION && width * height <= TEXT_MAX_PIXELS;
+}
+function reviewedTransformMode(text) {
+  const parsed = parseRussianVoiceIntent(text);
+  if (parsed?.kind === 'TRANSFORM') return parsed.params.mode;
+  const match = text.match(/^поверни(?:\\s+(?:фото|фотографию|изображение))?\\s+(вправо|влево)$/iu);
+  return match ? (match[1].toLowerCase() === 'вправо' ? 'ROTATE_90_CW' : 'ROTATE_270_CW') : null;
+}
+function compoundLocalDraft(instruction) {
+  const match = instruction.match(/^(.+?)\\s+(?:и затем|затем|и)\\s+(?:сделай|установи размер)\\s+(\\d{1,5})\\s*(?:на|x|х|×)\\s*(\\d{1,5})(?:\\s*(?:пиксел(?:ей|я|ь|и)|px))?$/iu);
+  if (!match) return null;
+  const mode = reviewedTransformMode(match[1]);
+  if (!mode) return null;
+  const width = Number(match[2]), height = Number(match[3]);
+  if (!admissibleTextTarget(width, height)) {
+    return Object.freeze({ kind: 'CLARIFY', message: 'Размеры выходят за ограничения BERS: до 16384 пикселей по стороне и 24 Мп.' });
+  }
+  return Object.freeze({
+    kind: 'LOCAL_WORKFLOW_DRAFT', mode, width, height,
+    message: 'Подготовлен двухшаговый локальный сценарий. Проверьте поворот и размеры, затем отдельно подтвердите запуск.',
+  });
+}
+
 /**
  * Read-only UX task router, NOT the production Agent/AEE authority.
  * It never creates execution tickets, runs models, charges credits or edits
@@ -18,6 +49,8 @@ export function routeEditorAgentTask(rawText) {
     return Object.freeze({ kind: 'CLARIFY', message: INVALID_TEXT });
   }
   const instruction = rawText.trim();
+  const compound = compoundLocalDraft(instruction);
+  if (compound) return compound;
   let voiceIntent;
   try {
     voiceIntent = parseRussianVoiceIntent(instruction);
@@ -35,6 +68,23 @@ export function routeEditorAgentTask(rawText) {
       });
     }
     return Object.freeze({ kind: 'CLARIFY', message: LOCAL_HINT });
+  }
+
+  if (voiceIntent?.kind === 'RESIZE') {
+    const { width, height } = voiceIntent.params;
+    if (!admissibleTextTarget(width, height)) {
+      return Object.freeze({ kind: 'CLARIFY', message: 'Некорректный размер для редактора BERS.' });
+    }
+    return Object.freeze({
+      kind: 'RESIZE_DRAFT', width, height,
+      message: 'Подготовлен размер для штатного инструмента Resize. Откройте параметры, проверьте размер и отдельно запустите предпросмотр.',
+    });
+  }
+  if (voiceIntent?.kind === 'TRANSFORM') {
+    return Object.freeze({
+      kind: 'TRANSFORM_DRAFT', mode: voiceIntent.params.mode,
+      message: 'Подготовлен одиночный локальный поворот/отражение. Только по отдельному нажатию создаётся предпросмотр; сохранение требует Accept.',
+    });
   }
 
   if (voiceIntent?.kind === 'TRYON_SELECT_PROPOSAL' || voiceIntent?.kind === 'WARDROBE_QUERY' ||
@@ -59,7 +109,7 @@ export function routeEditorAgentTask(rawText) {
     });
   }
   if (interpreted.kind === 'CLARIFY' &&
-      (instruction.length < 3 || /^(?:поверни|отрази|измени размер|обрежь|rotate|resize|flip|crop)\b/iu.test(instruction))) {
+      (instruction.length < 3 || /^(?:поверни|отрази|отзеркаль|измени размер|обрежь|сделай\\s+\\d|rotate|resize|flip|crop)(?=\\s|$|[.!?])/iu.test(instruction))) {
     return Object.freeze({ kind: 'CLARIFY', message: LOCAL_HINT });
   }
   return Object.freeze({
