@@ -37,7 +37,8 @@ export function routeEditorAgentTask(rawText) {
     return Object.freeze({ kind: 'CLARIFY', message: LOCAL_HINT });
   }
 
-  if (voiceIntent?.kind === 'TRYON_SELECT_PROPOSAL') {
+  if (voiceIntent?.kind === 'TRYON_SELECT_PROPOSAL' || voiceIntent?.kind === 'WARDROBE_QUERY' ||
+      (voiceIntent?.kind === 'NAVIGATE' && voiceIntent.params.tab === 'fashion')) {
     return Object.freeze({
       kind: 'FASHION_DRAFT',
       message: 'Откройте Fashion и выберите реальную вещь из гардероба. Примерка запускается только после подтверждения.',
@@ -46,7 +47,7 @@ export function routeEditorAgentTask(rawText) {
   if (voiceIntent?.kind === 'AMBIGUOUS') {
     return Object.freeze({ kind: 'CLARIFY', message: voiceIntent.params.reason || LOCAL_HINT });
   }
-  if (voiceIntent && voiceIntent.kind !== 'WARDROBE_QUERY') {
+  if (voiceIntent) {
     return Object.freeze({ kind: 'CLARIFY', message: DIRECT_HINT });
   }
 
