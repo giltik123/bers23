@@ -596,5 +596,7 @@ test('production Editor does not expose mask controls or pass stale masks into w
   assert.ok(editor.includes('allowWholeImage={!PRODUCTION_MASK_UI_ENABLED || objects.length === 0}'));
   assert.ok(studio.includes('if (!maskToolsEnabled)'));
   assert.ok(studio.includes("const scope = maskToolsEnabled ? generativeScope : 'WHOLE_IMAGE'"));
-  assert.ok(studio.includes("plan.target !== 'USER_SELECTED_OBJECT'"));
+  assert.ok(studio.includes("const wholeImageAdmitted = Boolean(plan.instruction) && plan.kind !== 'FASHION'"));
+  assert.ok(studio.includes("await onPrepareFreeAccount?.()"));
+  assert.ok(studio.includes("Понимаю, что может измениться весь кадр"));
 });
