@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Bot, Loader2, RotateCw, ShieldCheck, SquareArrowOutUpRight, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS } from '@/platform/creative/deterministic/ResizeIdentity';
+import { routeEditorAgentTask } from '@/application/agent/routeEditorAgentTask';
 
 const MODES = Object.freeze([
   ['ROTATE_90_CW', 'Rotate 90° clockwise'],
@@ -11,13 +12,15 @@ const MODES = Object.freeze([
   ['FLIP_VERTICAL', 'Flip vertical'],
 ]);
 
-export default function AgentPanel({ project, voiceProposal = null, state, busy = false, disabled = false, onStart, onRetry, onCancel }) {
+export default function AgentPanel({ project, voiceProposal = null, state, busy = false, disabled = false, onStart, onRetry, onCancel, onOpenAIStudio, onOpenFashion }) {
   const [mode, setMode] = useState('ROTATE_90_CW');
   const [width, setWidth] = useState(project?.width ?? 1);
   const [height, setHeight] = useState(project?.height ?? 1);
   const [voiceReview,setVoiceReview]=useState(false);
+  const [taskText, setTaskText] = useState('');
+  const [taskDraft, setTaskDraft] = useState(null);
   const active = Boolean(state?.active);
-  useEffect(()=>{setVoiceReview(false);},[project?.current_image_artifact_id]);
+  useEffect(()=>{setVoiceReview(false);setTaskDraft(null);},[project?.current_image_artifact_id]);
   const view = state?.view;
 
   useEffect(() => {
@@ -50,6 +53,16 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
         : view?.state || 'Ready';
 
   const invoke = (operation) => { void Promise.resolve().then(operation).catch(() => undefined); };
+  const prepareTask = () => {
+    if (!canStart) return;
+    const proposed = routeEditorAgentTask(taskText);
+    setTaskDraft(proposed);
+    if (proposed.kind === 'LOCAL_WORKFLOW_DRAFT') {
+      setMode(proposed.mode);
+      setWidth(proposed.width);
+      setHeight(proposed.height);
+    }
+  };
 
   return (
     <section className="space-y-4 rounded-2xl border border-border/60 p-4">
@@ -63,6 +76,28 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
         </div>
         <ShieldCheck className="h-4 w-4 text-muted-foreground" aria-label="Core-owned workflow" />
       </div>
+
+      {!active && <section className="space-y-3 rounded-xl border bg-card p-3" aria-label="Текстовая задача AI Agent">
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium">Что хотите сделать с фотографией?</span>
+          <textarea rows={3} maxLength={850} value={taskText}
+            disabled={disabled || busy}
+            placeholder="Поверни фото вправо и затем сделай 1024 на 1024"
+            onChange={(event) => { setTaskText(event.target.value); setTaskDraft(null); }}
+            className="min-h-24 w-full resize-y rounded-lg border bg-background px-3 py-2 text-sm" />
+        </label>
+        <Button type="button" variant="outline" disabled={!canStart || !taskText.trim()}
+          onClick={prepareTask}>Подготовить задачу</Button>
+        {taskDraft && <div role="status" className="space-y-2 rounded-lg border p-3 text-sm">
+          <p>{taskDraft.message}</p>
+          {taskDraft.kind === 'LOCAL_WORKFLOW_DRAFT' && <p className="text-xs text-muted-foreground">{taskDraft.mode} → {taskDraft.width} × {taskDraft.height}. Проверьте поля ниже и нажмите Run bounded workflow.</p>}
+          {taskDraft.kind === 'AI_STUDIO_DRAFT' && <Button type="button" disabled={!canStart}
+            onClick={() => onOpenAIStudio?.(taskDraft.instruction)}>Открыть запрос в AI Studio</Button>}
+          {taskDraft.kind === 'FASHION_DRAFT' && <Button type="button" disabled={!canStart}
+            onClick={() => onOpenFashion?.()}>Перейти в Fashion</Button>}
+        </div>}
+        <p className="text-xs text-muted-foreground">Здесь работает ограниченный разбор текста. Он не видит содержимое фото и не запускает модели сам. Все изменения требуют подтверждения в соответствующем инструменте.</p>
+      </section>}
 
       {voiceReview&&!active&&(
         <p role="status" className="text-xs rounded-md border p-2">
