@@ -576,7 +576,5 @@ test('canonical Scene Mask Editor integrates with accessible UX and Core-owned r
   assert.match(canvas,/maskArtifactId=\{selectedMaskId\}/);
   assert.match(canvas,/maskOverlayVisible && selectedMaskId/);
   assert.match(objects,/aria-label=\{obj\.selected \? 'Deselect '/);
-  assert.ok(panel.includes('coreClient.scene.capability()'));
-  assert.ok(panel.includes('disabled={disabled || running || !sourceKey || !cloudCapability.available}'));
-  assert.ok(panel.includes('window.confirm('));
+  assert.match(panel,/const CLOUD_SAM3_UI_ADMITTED=false/);
 });
