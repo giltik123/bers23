@@ -174,8 +174,10 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
         const image = artifact.value as PixelImage;
         if (artifact.role !== 'COMPOSITE' || artifact.state !== 'FINAL' || metrics?.verificationOutcome !== 'PASS' || !(image?.data instanceof Uint8ClampedArray)) throw new Error('Only a verified FINAL COMPOSITE may be persisted');
         const sourceId = artifact.metadata?.sourceArtifactId;
-        const lineage = artifact.metadata?.producerOperation === 'VIRTUAL_TRY_ON'
-          ? { producerOperation: 'VIRTUAL_TRY_ON' as const, sourceImageStorageId: resolveStoredImageStorageId(externalArtifacts, String(sourceId), scope) } : undefined;
+        const lineage = artifact.metadata?.producerOperation === 'VIRTUAL_TRY_ON' || artifact.metadata?.producerOperation === 'GLOBAL_EDIT'
+          ? { producerOperation: artifact.metadata.producerOperation as 'VIRTUAL_TRY_ON' | 'GLOBAL_EDIT',
+              sourceImageStorageId: resolveStoredImageStorageId(externalArtifacts, String(sourceId), scope) }
+          : undefined;
         const stored = await artifacts.images.persistFinal(scope, executionId, artifact.producerOperationId, image, lineage);
         const artifactId = externalArtifacts.issueStoredFinal(stored.storageId, scope);
         return Object.freeze({ ...artifact, id: artifactId, value: Object.freeze({ artifactId }), image: { width: stored.width, height: stored.height, format: stored.encoding, orientation: 1 as const, colorSpace: 'srgb', alpha: true }, metadata: Object.freeze({ ...artifact.metadata, storageId: stored.storageId, executionId, operationId: stored.operationId, contentType: stored.contentType, encoding: stored.encoding, parentArtifactIds: artifact.metadata?.parentArtifactIds }) });
