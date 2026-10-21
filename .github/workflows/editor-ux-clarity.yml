@@ -4,6 +4,9 @@ on:
     branches: ["main"]
     paths:
       - 'src/pages/Editor.jsx'
+      - 'src/components/editor/agent/AgentPanel.jsx'
+      - 'src/application/agent/routeEditorAgentTask.js'
+      - 'tests/agent-editor-task-handoff.test.mjs'
       - 'src/components/editor/local/AdvancedLocalControls.jsx'
       - 'src/lib/local-editor/localAdvanced.js'
       - 'tests/local-advanced-adjustments.test.mjs'
@@ -115,6 +118,7 @@ jobs:
             tests/local-device-draft-editor-wiring.test.mjs \
             tests/editor-canonical-boundary.test.mjs \
             tests/editor-zero-object-navigation.test.mjs \
+            tests/agent-editor-task-handoff.test.mjs \
             tests/editor-orthogonal-transform-ui.test.mjs \
             tests/realesrgan-editor-boundary.test.mjs
       - name: Deterministic local photo and export authority regression
