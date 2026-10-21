@@ -128,16 +128,16 @@ test('Free generation uses explicit consent, server-owned account setup and no b
     read('src/components/editor/PlanPreview.jsx'),
     read('src/components/editor/ResultCompare.jsx'),
   ]);
-  assert.match(app, /path="\\/subscription" element=\\{<Navigate to="\\/settings" replace \\/>\\}/);
-  assert.match(app, /path="\\/billing" element=\\{<Navigate to="\\/settings" replace \\/>\\}/);
-  assert.doesNotMatch(layout, /path: '\\/subscription'/);
-  assert.doesNotMatch(settings, /<SubscriptionSettingsCard/);
-  assert.doesNotMatch(plan, /\\bCoins\\b|credits/);
-  assert.doesNotMatch(review, /creditLabel/);
-  assert.doesNotMatch(editor, /<CreditsBar/);
-  assert.match(studio, /const wholeImageAdmitted = Boolean\\(plan.instruction\\) && plan.kind !== 'FASHION'/);
-  assert.match(studio, /await onPrepareFreeAccount\\?\\.\\(\\)/);
-  assert.match(studio, /generativeConfirmed/);
-  assert.match(studio, /бесплатно в пределах серверного лимита/);
-  assert.match(editor, /onPrepareFreeAccount=\\{\\(\\) => creativeEditApplicationService\\.prepareAccount\\(\\)\\}/);
+  assert.ok(app.includes('path="/subscription" element={<Navigate to="/settings" replace />}'));
+  assert.ok(app.includes('path="/billing" element={<Navigate to="/settings" replace />}'));
+  assert.ok(!layout.includes("path: '/subscription'"));
+  assert.ok(!settings.includes('<SubscriptionSettingsCard'));
+  assert.ok(!plan.includes('Coins') && !plan.includes(' credits'));
+  assert.ok(!review.includes('creditLabel'));
+  assert.ok(!editor.includes('<CreditsBar'));
+  assert.ok(studio.includes("const wholeImageAdmitted = Boolean(plan.instruction) && plan.kind !== 'FASHION'"));
+  assert.ok(studio.includes('await onPrepareFreeAccount?.()'));
+  assert.ok(studio.includes('generativeConfirmed'));
+  assert.ok(studio.includes('бесплатно в пределах серверного лимита'));
+  assert.ok(editor.includes('onPrepareFreeAccount={() => creativeEditApplicationService.prepareAccount()}'));
 });
