@@ -50,7 +50,7 @@ test('F4b.5b PostgreSQL closure manifest is exact, normalized and prefix-free', 
   assert.equal(manifest.version, 1);
   assert.equal(manifest.profile, POSTGRES);
   assert.equal(manifest.bundleInputs.length, 93);
-  assert.equal(manifest.migrationPaths.length, 32);
+  assert.equal(manifest.migrationPaths.length, 34);
   assert.equal(manifest.supportPaths.length, 20);
 
   const paths = [...manifest.bundleInputs, ...manifest.migrationPaths, ...manifest.supportPaths];
@@ -66,6 +66,10 @@ test('F4b.5b PostgreSQL closure manifest is exact, normalized and prefix-free', 
   assert.equal(manifest.migrationPaths.includes('server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql'), true);
   assert.equal(manifest.migrationPaths.includes('server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql'), true);
   assert.equal(manifest.migrationPaths.includes('server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql'), true);
+  for (const required of [
+    'server/core/artifacts/migrations/050_cloud_scene_mask_provenance.sql',
+    'server/core/artifacts/migrations/051_global_edit_final_lineage.sql',
+  ]) assert.equal(manifest.migrationPaths.includes(required), true, required);
   for (const excluded of [
     'server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql',
     'server/core/auth/migrations/008_canonical_auth_identity_sessions.sql',
@@ -87,7 +91,7 @@ test('accepted F4b.5b service bundle exactly equals PostgreSQL classifier bundle
   console.log(`F4B5B_POSTGRES_CLASSIFIER_BUNDLE_INPUTS=${actual.length}`);
 });
 
-test('bundle-derived migration authority exactly equals the 32-path classifier SQL set', async () => {
+test('bundle-derived migration authority exactly equals the 34-path classifier SQL set', async () => {
   const manifest = await readManifest();
   const metafile = await buildMetafile();
   const closure = await collectBundleMigrationReferences([metafile]);
