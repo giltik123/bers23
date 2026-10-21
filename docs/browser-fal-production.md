@@ -1,6 +1,6 @@
-# Browser production: fal.ai image editing and SAM3
+# Browser production: fal.ai image editing; automatic SAM3 remains disabled
 
-These features **execute on the Core server**, not inside the browser:
+The image-edit path executes on the Core server, not inside the browser. Automatic SAM3 segmentation stays disabled until explicitly requested in a future release:
 - Full-frame prompt-driven image editing uses `fal-ai/flux-pro/kontext` via the existing canonical Creative endpoint. The trusted output PNG is decoded, validated, and persisted as a source-linked `GLOBAL_EDIT` FINAL that the user can review and accept.
 - SAM3 calls `fal-ai/sam-3/image` for one explicitly chosen semantic target, stores verified original-space MASK pixels as `CLOUD_SEGMENTATION`, and publishes source-bound candidate objects only after canonical validation.
 
@@ -9,9 +9,9 @@ These features **execute on the Core server**, not inside the browser:
 1. Deploy the backend database migrations `050_cloud_scene_mask_provenance.sql` and `051_global_edit_final_lineage.sql` **before** enabling the new server build. The existing production migration runner applies the contiguous migration inventory (001–051).
 2. Keep `CREATIVE_PROVIDER=FAL` and the real `FAL_KEY` on the server (never in `VITE_*`, browser JS, HTML, or logging).
 3. Configure the normal Core auth, PostgreSQL and billing services; the SAM3 route requires the canonical `BillableOperationService`. Account credits and the configured `CREDITS_PER_EDIT` policy are applied to each SAM3 call. No free provider dispatch is possible.
-4. Set **server-only** `BERS_AUTO_SCENE_SAM3_ENABLED=true` after the migration has completed. This feature flag remains explicitly opt-in because cloud segmentation transfers image content and incurs a provider charge.
+4. Keep **server-only** `BERS_AUTO_SCENE_SAM3_ENABLED=false`. The original editor panel continues to show **SAM3 · недоступно**, and free classical segmentation is unchanged. **Do not enable SAM3 as part of this release**. A separate future approval is required, because cloud segmentation transfers image content and incurs a provider charge.
 5. Build and deploy **both** Core and Vite frontend. The frontend reads `/api/core/scene/capability`; it never reads the FAL key. Use the canonical same-origin Core API/reverse proxy and configured `ALLOWED_WEB_ORIGINS`.
-6. Verify a signed-in Project: run a global prompt edit, review the new image and accept it; open **Маски сцены**, select an object target, confirm the cost, run SAM3, verify the cloud mask and review. Check balances, image history and project revision after refresh.
+6. Verify a signed-in Project: run a global prompt edit, review the new image and accept it; verify **Маски сцены** retains its original classical behavior and the SAM3 action remains unavailable. Check balances, image history and project revision after refresh.
 
 ## Failure behavior
 
