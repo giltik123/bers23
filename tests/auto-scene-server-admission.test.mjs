@@ -124,9 +124,9 @@ test('SAM3 requires feature opt-in, canonical billing and cloud-mask migration',
   assert.equal(CLOUD_SCENE_MASK_PROVENANCE_ADMITTED,true);
   const adapter=readFileSync('server/core/http/nodeHttpAdapter.ts','utf8');
   const sql=readFileSync('server/core/artifacts/migrations/050_cloud_scene_mask_provenance.sql','utf8');
-  assert.match(adapter,/&& CLOUD_SCENE_MASK_PROVENANCE_ADMITTED && Boolean\(input.sceneBillableOperations\)/u);
-  assert.match(adapter,/sceneBillableOperations!\.execute/u);
-  assert.match(adapter,/producerOperation:sceneMode==='SAM3'\?'CLOUD_SEGMENTATION':'LOCAL_SEGMENTATION'/u);
+  assert.ok(adapter.includes('&& CLOUD_SCENE_MASK_PROVENANCE_ADMITTED && Boolean(input.sceneBillableOperations)'));
+  assert.ok(adapter.includes('sceneBillableOperations!.execute'));
+  assert.ok(adapter.includes("producerOperation:sceneMode==='SAM3'?'CLOUD_SEGMENTATION':'LOCAL_SEGMENTATION'"));
   assert.match(adapter,/supportsClassicalSegmentation:true/u);
   assert.match(sql,/producer_operation = 'CLOUD_SEGMENTATION'/u);
 });
