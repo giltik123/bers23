@@ -68,7 +68,6 @@ import AdaptiveToolbar from '@/components/adaptive/AdaptiveToolbar';
 import AdaptivePanel from '@/components/adaptive/AdaptivePanels';
 import AdaptiveNavigation from '@/components/adaptive/AdaptiveNavigation';
 import { usePlatformProfile } from '@/lib/platform/PlatformManager';
-import CreditsBar from '@/components/editor/credits/CreditsBar';
 import JobQueuePanel from '@/components/editor/jobs/JobQueuePanel';
 import { notificationCenter } from '@/lib/notifications/notificationCenter';
 import { sessionRecovery } from '@/lib/performance/sessionRecovery';
@@ -813,8 +812,10 @@ export default function Editor() {
     const usedInstruction = instructionOverride || instruction;
     // AI Studio may execute only the scope the user explicitly reviewed. Legacy
     // prompt routes retain their existing Core behavior until independently migrated.
-    if (aiScope && interpretPhotoCommand(usedInstruction).kind !== 'GENERATIVE') {
-      throw new Error('AI Studio разрешает здесь только генеративные команды.');
+    if (aiScope && (!usedInstruction.trim() ||
+        interpretPhotoCommand(usedInstruction).kind === 'FASHION' ||
+        (aiScope.mode === 'MASKED' && interpretPhotoCommand(usedInstruction).kind !== 'GENERATIVE'))) {
+      throw new Error('AI Studio: выберите допустимый запрос и подтверждённую область обработки.');
     }
     const guardedScope = aiScope ? bindGenerativeScope({
       instruction: usedInstruction,
@@ -1479,6 +1480,7 @@ export default function Editor() {
               onSelectRegion={PRODUCTION_MASK_UI_ENABLED ? startSelection : undefined}
               onExecuteAdjustment={executeAIAdjustment}
               onExecuteGenerative={(command) => applyEdit(false, { instructionOverride: command.instruction, aiScope: command })}
+              onPrepareFreeAccount={() => creativeEditApplicationService.prepareAccount()}
               onOpenFashion={() => setEditTab('fashion')}
             />
           ) : editTab === 'local' ? (
@@ -1568,7 +1570,6 @@ export default function Editor() {
           <AdaptivePanel title={language === 'ru' ? t('editorUi.workspace') : 'Workspace'}><WorkspaceBar projectId={project.id} /></AdaptivePanel>
           <AdaptivePanel title={language === 'ru' ? t('editorUi.jobCenter') : 'Job Center'}><JobQueuePanel /></AdaptivePanel>
           <PipelineStatusBar width={project.width} height={project.height} />
-          <CreditsBar estimate={!pendingResult && plan?.status === 'ready' ? (plan.credits?.credits ?? 0) : 0} />
           <AdaptivePanel title={language === 'ru' ? t('editorUi.sceneMemory') : 'Scene Memory'}><SceneMemoryPanel project={project} /></AdaptivePanel>
           {PRODUCTION_MASK_UI_ENABLED && <EditorStatusBar
             objectCount={objects.length}

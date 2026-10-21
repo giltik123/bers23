@@ -125,8 +125,6 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
   const inspectedCanvas = nativeInspectionCanvasSize(naturalSize, zoom)
     || { width: '100%', height: 340 };
   const executionLabel = result?.provider || 'Local / Core preview';
-  const creditLabel = Number.isFinite(result?.credits_used) && result.credits_used > 0
-    ? ` · ${result.credits_used} credits` : '';
   const durationLabel = Number.isFinite(result?.generation_time_ms) && result.generation_time_ms > 0
     ? ` · ${(result.generation_time_ms / 1000).toFixed(1)}s` : '';
 
@@ -147,7 +145,7 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
             className={`px-3 py-1.5 disabled:opacity-40 ${mode === 'split' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>{language === 'ru' ? t('editControls.split') : 'Split'}</button>
         </div>
         <span className="text-[11px] text-muted-foreground">
-          {executionLabel}{creditLabel}{durationLabel}
+          {executionLabel}{durationLabel}
         </span>
       </div>
 

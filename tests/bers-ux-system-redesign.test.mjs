@@ -6,9 +6,10 @@ const read = (path) => readFile(path, 'utf8');
 
 test('BERS navigation names every destination and shows the current section', async () => {
   const app = await read('src/components/AppLayout.jsx');
-  for (const route of ["/", "/assets", "/automations", "/subscription", "/settings"]) {
+  for (const route of ["/", "/assets", "/automations", "/settings"]) {
     assert.ok(app.includes("path: '" + route + "'"), 'navigation route missing: ' + route);
   }
+  assert.doesNotMatch(app, /path: '\/subscription'/);
   assert.match(app, /function NavLink\(\{ path, label, icon: Icon, active/);
   assert.match(app, /aria-current=\{active \? 'page' : undefined\}/);
   assert.match(app, /navUi\.main/);
@@ -114,4 +115,29 @@ test('object list actions are independent keyboard-reachable buttons, not clicka
   assert.match(panel, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onToggleHidden\(obj\.id\); \}\}/);
   assert.match(panel, /onClick=\{\(\) => onSelect\(obj\.selected \? null : obj\)\}/);
   assert.doesNotMatch(panel, /className=\{\x60flex items-center gap-2 px-2 py-1\.5 rounded-lg cursor-pointer/);
+});
+
+
+test('Free generation uses explicit consent, server-owned account setup and no billing navigation', async () => {
+  const [app, layout, settings, studio, editor, plan, review] = await Promise.all([
+    read('src/App.jsx'),
+    read('src/components/AppLayout.jsx'),
+    read('src/pages/Settings.jsx'),
+    read('src/components/editor/ai/AICommandStudio.jsx'),
+    read('src/pages/Editor.jsx'),
+    read('src/components/editor/PlanPreview.jsx'),
+    read('src/components/editor/ResultCompare.jsx'),
+  ]);
+  assert.ok(app.includes('path="/subscription" element={<Navigate to="/settings" replace />}'));
+  assert.ok(app.includes('path="/billing" element={<Navigate to="/settings" replace />}'));
+  assert.ok(!layout.includes("path: '/subscription'"));
+  assert.ok(!settings.includes('<SubscriptionSettingsCard'));
+  assert.ok(!plan.includes('Coins') && !plan.includes(' credits'));
+  assert.ok(!review.includes('creditLabel'));
+  assert.ok(!editor.includes('<CreditsBar'));
+  assert.ok(studio.includes("const wholeImageAdmitted = Boolean(plan.instruction) && plan.kind !== 'FASHION'"));
+  assert.ok(studio.includes('await onPrepareFreeAccount?.()'));
+  assert.ok(studio.includes('generativeConfirmed'));
+  assert.ok(studio.includes('бесплатно в пределах серверного лимита'));
+  assert.ok(editor.includes('onPrepareFreeAccount={() => creativeEditApplicationService.prepareAccount()}'));
 });

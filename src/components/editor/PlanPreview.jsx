@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, AlertTriangle, HelpCircle, Coins, Clock } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, HelpCircle, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 const STATUS = {
@@ -21,7 +21,6 @@ export default function PlanPreview({ plan }) {
           <Icon className="w-4 h-4" /> {s.label}
         </span>
         <span className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1"><Coins className="w-3.5 h-3.5" />{plan.credits.credits} credits</span>
           <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />~{plan.executionPlan.estimatedDurationSeconds}s</span>
         </span>
       </div>
