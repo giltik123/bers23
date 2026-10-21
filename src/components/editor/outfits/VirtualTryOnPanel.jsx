@@ -31,7 +31,7 @@ export default function VirtualTryOnPanel({ disabled, needsAccountSetup, onPrepa
     <p className="text-xs text-muted-foreground">Закрытая телом одежда, несколько людей и необычные ракурсы могут ухудшить результат. Перед сохранением проверьте лицо, руки и посадку в сравнении «До / После».</p>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {needsAccountSetup && <div className="space-y-2" role="status">
-      <p className="text-sm">Для первого облачного запуска нужно подготовить аккаунт. Бесплатный лимит назначает сервер. После подготовки нажмите «Примерить».</p>
+      <p className="text-sm">Для первой бесплатной облачной примерки нужна подготовка аккаунта. Покупать подписку или кредиты не нужно. Доступность ограничена серверным бесплатным лимитом. После подготовки нажмите «Примерить».</p>
       <Button variant="outline" disabled={disabled} onClick={onPrepareAccount}>Подготовить облачную обработку</Button>
     </div>}
     <Button disabled={disabled || needsAccountSetup || loading || !garmentId || !consent} onClick={() => onRun({ garmentId, tryOnConsent: consent })}>Примерить</Button>
