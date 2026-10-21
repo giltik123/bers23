@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '@/lib/i18n/TranslationProvider';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, ExternalLink, Download, Pencil, Maximize2, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useProject from '@/hooks/useProject';
@@ -58,7 +58,6 @@ import { workspaceHistory } from '@/lib/workspace/workspaceHistory';
 import WorkspaceBar from '@/components/editor/workspace/WorkspaceBar';
 import WorkspaceToolbar from '@/components/editor/workspace/WorkspaceToolbar';
 import WorkspaceRecommendations from '@/components/editor/workspace/WorkspaceRecommendations';
-const FashionPanel = lazy(() => import('@/components/editor/fashion/FashionPanel'));
 const VirtualTryOnPanel = lazy(() => import('@/components/editor/outfits/VirtualTryOnPanel'));
 const OutfitPanel = lazy(() => import('@/components/editor/outfits/OutfitPanel'));
 const CanonicalTryOnRunnerPanel = lazy(() => import('@/components/editor/outfits/CanonicalTryOnRunnerPanel'));
@@ -81,14 +80,17 @@ import { finalizeAcceptedResult } from '@/application/editor/finalizeAcceptedRes
 import { isFinalSourceConflict, recoverFinalSourceConflict } from '@/application/editor/recoverFinalSourceConflict';
 
 const EDITOR_TABS = [
-  { id: 'ai', label: 'AI Studio', description: 'Build a bounded text plan, choose an actual Core mask and confirm the edit before execution.' },
+  { id: 'ai', label: 'AI', description: 'AI-assisted photo editing.' },
+  { id: 'fashion', label: 'Fashion', description: 'Try on clothes from your wardrobe.' },
   { id: 'local', label: 'Local tools', description: 'No AI, no credits: tune light, color and detail in your browser, compare before/after and download a PNG.' },
+];
+
+// Secondary tools are still part of this workspace, not separate pages.
+const EDITOR_EXTRA_TABS = [
   { id: 'prompt', label: 'Prompt', description: 'Describe what you want to change, preview the result, then decide whether to save it.' },
-  { id: 'creative', label: 'Creative Studio', description: 'Explore visual ideas and mood boards. This section plans ideas; it does not edit your photo.' },
-  { id: 'recipes', label: 'Recipes', description: 'Choose a ready-made editing recipe and adapt it to your image.' },
-  { id: 'agent', label: 'AI Agent', description: 'Build a controlled sequence of editing steps and review the result.' },
-  { id: 'fashion', label: 'Fashion', description: 'Organize garments and wardrobe assets.' },
-  { id: 'outfits', label: 'Outfits', description: 'Arrange outfits and explore available try-on operations.' },
+  { id: 'creative', label: 'Creative Studio', description: 'Mood boards and concepts.' },
+  { id: 'recipes', label: 'Recipes', description: 'Ready-made editing recipes.' },
+  { id: 'agent', label: 'AI Agent', description: 'Controlled multistep editing.' },
 ];
 
 function disposePendingPreview(pending) {
@@ -136,6 +138,7 @@ function proportionalResizeDimension(value, sourceSame, sourceOther) {
 
 export default function Editor() {
   const { t, language } = useTranslation();
+  const navigate = useNavigate();
   const projectId = new URLSearchParams(window.location.search).get('id')?.trim() || null;
   const {
     project, loading, error, reload,
@@ -153,10 +156,16 @@ export default function Editor() {
   const [pendingResult, setPendingResult] = useState(null);
   const [committing, setCommitting] = useState(false);
   const [manualTryOnExpanded, setManualTryOnExpanded] = useState(false);
-  const [editTab, setEditTab] = useState('ai');
+  const [outfitsExpanded, setOutfitsExpanded] = useState(false);
+  const [editTab, setEditTab] = useState(() => (
+    new URLSearchParams(window.location.search).get('mode') === 'fashion' ? 'fashion' : 'ai'
+  ));
   const [outfitRevision, setOutfitRevision] = useState(0);
   const notifyOutfitChange = useCallback(() => setOutfitRevision((current) => current + 1), []);
-  const [voiceWardrobeQuery,setVoiceWardrobeQuery]=useState(null);
+  const openWardrobe = (voiceQuery = null) => navigate(
+    `/wardrobe?project=${encodeURIComponent(projectId || '')}`,
+    voiceQuery ? { state: { voiceQuery } } : undefined,
+  );
   const [voiceTryOnQuery,setVoiceTryOnQuery]=useState(null);
   const [voiceAgentProposal,setVoiceAgentProposal]=useState(null);
   const [activeRecipe, setActiveRecipe] = useState(null);
@@ -1111,17 +1120,16 @@ export default function Editor() {
     });
     const {kind,params}=admitted;
     if(kind==='NAVIGATE'){
-      setEditTab(params.tab);
+      setEditTab(params.tab === 'outfits' ? 'fashion' : params.tab);
       return;
     }
     if(kind==='WARDROBE_QUERY'){
-      setVoiceWardrobeQuery({query:params.query,hints:params.hints});
-      setEditTab('fashion');
+      openWardrobe({query:params.query,hints:params.hints});
       return;
     }
     if(kind==='TRYON_SELECT_PROPOSAL'){
       setVoiceTryOnQuery({query:params.query,hints:params.hints});
-      setEditTab('outfits');
+      setEditTab('fashion');
       return;
     }
     if(kind==='AGENT_PROPOSAL'){
@@ -1435,7 +1443,7 @@ export default function Editor() {
               />
             </>
           )}
-          <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={(next) => { if (!tryOnActive && !agentActive) setEditTab(next); }} />
+          <AdaptiveNavigation items={EDITOR_TABS} active={editTab} extraItems={EDITOR_EXTRA_TABS} compact onChange={(next) => { if (!tryOnActive && !agentActive) setEditTab(next); }} />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">{language === 'ru' ? t('editorUi.loadingPanel') : 'Loading panel…'}</div>}>
           {editTab === 'ai' ? (
             <AICommandStudio
@@ -1450,13 +1458,13 @@ export default function Editor() {
               onSelectRegion={startSelection}
               onExecuteAdjustment={executeAIAdjustment}
               onExecuteGenerative={(command) => applyEdit(false, { instructionOverride: command.instruction, aiScope: command })}
-              onOpenFashion={() => setEditTab('outfits')}
+              onOpenFashion={() => setEditTab('fashion')}
             />
           ) : editTab === 'local' ? (
             <LocalAdjustmentsPanel key={project.current_image_artifact_id || project.id} imageUrl={project.current_image_url} projectName={project.name} />
           ) : editTab === 'creative' ? (
             <CreativeStudioPanel project={project} objects={objects} disabled={editorBusy} />
-          ) : editTab === 'outfits' ? (
+          ) : editTab === 'fashion' ? (
             <div className="space-y-3">
               {!tryOn.state.host.active && <VirtualTryOnPanel
                 key={project.current_image_artifact_id}
@@ -1464,7 +1472,7 @@ export default function Editor() {
                 onRun={runVirtualTryOn}
                 needsAccountSetup={virtualTryOnNeedsAccountSetup}
                 onPrepareAccount={prepareVirtualTryOnAccount}
-                onOpenWardrobe={() => setEditTab('fashion')}
+                onOpenWardrobe={() => openWardrobe()}
               />}
               <details open={tryOn.state.host.active || manualTryOnExpanded} onToggle={event => setManualTryOnExpanded(event.currentTarget.open)}>
                 <summary className="text-sm cursor-pointer">Ручной перенос текстуры и комплекты (дополнительно)</summary>
@@ -1484,10 +1492,12 @@ export default function Editor() {
                 onClose={closeTryOn}
               />
               </details>
-              {!tryOn.state.host.active && <OutfitPanel onCanonicalChange={notifyOutfitChange} />}
+              {!tryOn.state.host.active && <details className="rounded-xl border border-border/70 bg-card p-3"
+                open={outfitsExpanded} onToggle={(event) => setOutfitsExpanded(event.currentTarget.open)}>
+                <summary className="cursor-pointer text-sm font-medium">Комплекты одежды · дополнительно</summary>
+                {outfitsExpanded && <div className="mt-3"><OutfitPanel onCanonicalChange={notifyOutfitChange} /></div>}
+              </details>}
             </div>
-          ) : editTab === 'fashion' ? (
-            <FashionPanel voiceQuery={voiceWardrobeQuery} />
           ) : editTab === 'agent' ? (
             <AgentPanel
               project={project}

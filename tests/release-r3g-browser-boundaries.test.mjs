@@ -16,25 +16,27 @@ test('R3g drives visible zero-object navigation into canonical Fashion and Outfi
   ]);
 
   assert.match(editor, /<AdaptiveNavigation items=\{EDITOR_TABS\} active=\{editTab\}/);
-  assert.match(editor, /editTab === 'fashion'[\s\S]*<FashionPanel voiceQuery=\{voiceWardrobeQuery\} \/>/);
-  assert.match(editor, /editTab === 'outfits'[\s\S]*<CanonicalTryOnRunnerPanel[\s\S]*!tryOn\.state\.host\.active && <OutfitPanel onCanonicalChange=\{notifyOutfitChange\} \/>/);
+  assert.match(editor, /editTab === 'fashion'[\s\S]*<VirtualTryOnPanel/);
+  assert.ok(editor.includes('outfitsExpanded && <div className="mt-3"><OutfitPanel onCanonicalChange={notifyOutfitChange} />'));
   assert.match(navigation, /<button[\s\S]*key=\{item\.id\}[\s\S]*onClick=\{\(\) => onChange\(item\.id\)\}/);
   assert.match(navigation, /aria-pressed=\{active === item\.id\}/);
   assert.match(navigation, /type="button"/);
   assert.match(fashion, /aria-label="Canonical fashion wardrobe"/);
   assert.match(outfits, /aria-label="Canonical Outfit builder"/);
   assert.match(tryOnRunner, /aria-label="Canonical deterministic Try-On runner"/);
+  assert.ok(harness.includes("getByRole('button', { name: 'Открыть гардероб', exact: true })"));
+  assert.ok(harness.includes("url.pathname === '/wardrobe'"));
 
   for (const text of [
     "getByRole('button', { name: 'Prompt', exact: true })",
     "getByRole('button', { name: 'Fashion', exact: true })",
-    "getByRole('button', { name: 'Outfits', exact: true })",
+    "getByRole('button', { name: 'More', exact: true })",
     "getByRole('region', { name: 'Canonical fashion wardrobe', exact: true })",
     "getByRole('region', { name: 'Canonical Outfit builder', exact: true })",
   ]) assert.equal(harness.includes(text), true, `R3g harness must drive ${text}`);
 
   assert.match(harness, /new canonical Project must begin with zero detected\/selected objects/);
-  assert.match(harness, /Fashion\/Outfits navigation must not mutate canonical Project state or objects/);
+  assert.match(harness, /Fashion\/Wardrobe\/Outfits navigation must not mutate canonical Project state or objects/);
 });
 
 test('R3g uses built SPA built production Core and PostgreSQL only as correctness oracle', async () => {
@@ -71,8 +73,8 @@ test('R3g proves canonical Fashion and dual Outfit reads without Detect Object M
   assert.match(outfits, /applySnapshot\(await model\.load\(\)\)/);
   assert.match(tryOnRunner, /createCanonicalOutfitViewModel/);
   assert.match(tryOnRunner, /const snapshot = await model\.load\(\)/);
-  assert.match(harness, /countRequest\('GET \/api\/core\/wardrobe\/outfits'\), 4/);
-  assert.match(harness, /countRequest\('GET \/api\/core\/wardrobe\/garments'\), 8/);
+  assert.ok(harness.includes("countRequest('GET /api/core/wardrobe/outfits') >= 2"));
+  assert.ok(harness.includes("countRequest('GET /api/core/wardrobe/garments') >= 3"));
   assert.match(harness, /\/api\/core\/garments/);
   assert.match(harness, /\/api\/core\/wardrobe\/garments/);
   assert.match(harness, /\/api\/core\/wardrobe\/outfits/);

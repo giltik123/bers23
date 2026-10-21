@@ -201,6 +201,7 @@ try {
   assert.equal(baseline.history.length, 1);
 
   resetJourneyDiagnostics();
+  await page.getByRole('button', { name: 'More', exact: true }).click();
   await page.getByRole('button', { name: 'AI Agent', exact: true }).click();
   await page.getByText('AI Agent · Bounded deterministic v1', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
   await page.getByLabel('Transform').selectOption('ROTATE_90_CW');

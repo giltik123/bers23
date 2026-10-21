@@ -194,12 +194,14 @@ try {
   assert.equal(await countLocalTickets(projectId), 0);
 
   const fashionNav = page.getByRole('button', { name: 'Fashion', exact: true });
+  await fashionNav.click();
   const fashionLoad = waitForCoreResponses(page, [
     ['GET', '/api/core/garments'],
     ['GET', '/api/core/wardrobe/garments'],
     ['GET', '/api/core/wardrobe/collections'],
   ]);
-  await fashionNav.click();
+  await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
+  await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
   await fashionLoad;
   const wardrobeRegion = page.getByRole('region', { name: 'Canonical fashion wardrobe', exact: true });
   await wardrobeRegion.waitFor({ state: 'visible', timeout: 15_000 });
@@ -209,12 +211,13 @@ try {
   assert.equal(Number(garmentBeforeContour.revision), 2);
   assert.equal(garmentBeforeContour.category, 'jackets');
 
-  const outfitsNav = page.getByRole('button', { name: 'Outfits', exact: true });
+  await page.getByRole('link', { name: /Back to workspace|Назад к редактору/ }).click();
+  await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId);
   const outfitLoad = waitForCoreResponses(page, [
     ['GET', '/api/core/wardrobe/outfits'],
     ['GET', '/api/core/wardrobe/garments'],
   ]);
-  await outfitsNav.click();
+  await page.getByText('Комплекты одежды · дополнительно', { exact: true }).click();
   await outfitLoad;
   const outfitRegion = page.getByRole('region', { name: 'Canonical Outfit builder', exact: true });
   await outfitRegion.waitFor({ state: 'visible', timeout: 15_000 });

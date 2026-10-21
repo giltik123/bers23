@@ -17,6 +17,7 @@ import ResetPassword from '@/pages/ResetPassword';
 import AppLayout from '@/components/AppLayout';
 import Projects from '@/pages/Projects';
 import Editor from '@/pages/Editor';
+import Wardrobe from '@/pages/Wardrobe';
 import Settings from '@/pages/Settings';
 import Billing from '@/pages/Billing';
 import Subscription from '@/pages/Subscription';
@@ -54,6 +55,7 @@ const AuthenticatedApp = () => {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Projects />} />
           <Route path="/editor" element={<Editor />} />
+          <Route path="/wardrobe" element={<Wardrobe />} />
           {EDITOR_PRO_LAB_LOCAL_ONLY && (
             <Route path="/editor-pro-lab" element={
               <Suspense fallback={<p role="status" className="p-6">Loading local image-quality lab…</p>}>
