@@ -176,6 +176,7 @@ try {
   assert(projectId, 'Projects upload must navigate to Editor with canonical project id');
   diagnostics.projectId = projectId;
 
+  await page.getByRole('button', { name: 'Маски и SAM3 · по запросу' }).click();
   await page.getByText('Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.', { exact: true })
     .waitFor({ state: 'visible', timeout: 20_000 });
   await page.getByRole('button', { name: 'More', exact: true }).click();
