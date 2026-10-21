@@ -526,7 +526,7 @@ test('Editor removes dead recipe-chain execution wiring and uses planner advisor
     'onApply={runChain}',
     'creditsCalculator',
   ]) assert.equal(editor.includes(forbidden), false, forbidden);
-  assert.match(editor, /<CreditsBar estimate=\{!pendingResult && plan\?\.status === 'ready' \? \(plan\.credits\?\.credits \?\? 0\) : 0\} \/>/);
+  assert.doesNotMatch(editor, /<CreditsBar/);
   assert.doesNotMatch(editor, /jobManager\.submit|segmentationService\.start/);
 });
 
