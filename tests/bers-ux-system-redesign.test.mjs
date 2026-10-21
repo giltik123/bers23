@@ -6,9 +6,10 @@ const read = (path) => readFile(path, 'utf8');
 
 test('BERS navigation names every destination and shows the current section', async () => {
   const app = await read('src/components/AppLayout.jsx');
-  for (const route of ["/", "/assets", "/automations", "/subscription", "/settings"]) {
+  for (const route of ["/", "/assets", "/automations", "/settings"]) {
     assert.ok(app.includes("path: '" + route + "'"), 'navigation route missing: ' + route);
   }
+  assert.doesNotMatch(app, /path: '\/subscription'/);
   assert.match(app, /function NavLink\(\{ path, label, icon: Icon, active/);
   assert.match(app, /aria-current=\{active \? 'page' : undefined\}/);
   assert.match(app, /navUi\.main/);
