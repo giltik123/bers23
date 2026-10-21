@@ -34,7 +34,7 @@ test('zero-object Prompt remains a canonical whole-image edit without inventing 
   const editor = await readFile(EDITOR, 'utf8');
   const modes = editorModeBlock(editor);
 
-  assert.match(modes, /allowWholeImage=\{objects\.length === 0\}/);
+  assert.match(modes, /allowWholeImage=\{!PRODUCTION_MASK_UI_ENABLED \|\| objects\.length === 0\}/);
   assert.match(modes, /applying=\{editorBusy \|\| committing\}/);
   assert.match(editor, /Automatic object detection is not available in this version\./);
   assert.doesNotMatch(modes, /objects\.length === 0[\s\S]{0,300}(randomUUID|mask_artifact_id|selected:\s*true)/);
