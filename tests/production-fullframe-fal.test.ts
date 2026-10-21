@@ -40,7 +40,7 @@ test('browser full-frame prompt edit goes through server fal and returns reviewa
     artifacts:[{id:'signed-image',scope,kind:'image',value:source,
       producerStepId:'user-input',metadata:{artifactRole:'ORIGINAL'}}]});
   assert.equal(calls.length,1);
-  assert.match(calls[0].url,/fal-ai\\/flux-pro\\/kontext/);
+  assert.ok(calls[0].url.includes('fal-ai/flux-pro/kontext'));
   assert.deepEqual(calls[0].body,{prompt:'paint a purple landscape',
     image_url:'https://cdn.fal.test/trusted-input.png'});
   const artifact=result.artifacts[0];
