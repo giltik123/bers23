@@ -19,8 +19,6 @@ import Projects from '@/pages/Projects';
 import Editor from '@/pages/Editor';
 import Wardrobe from '@/pages/Wardrobe';
 import Settings from '@/pages/Settings';
-import Billing from '@/pages/Billing';
-import Subscription from '@/pages/Subscription';
 import AssetLibrary from '@/pages/AssetLibrary';
 import AutomationStudio from '@/pages/AutomationStudio';
 
@@ -64,8 +62,8 @@ const AuthenticatedApp = () => {
             } />
           )}
           <Route path="/settings" element={<Settings />} />
-          <Route path="/billing" element={<Billing />} />
-          <Route path="/subscription" element={<Subscription />} />
+          <Route path="/billing" element={<Navigate to="/settings" replace />} />
+          <Route path="/subscription" element={<Navigate to="/settings" replace />} />
           <Route path="/assets" element={<AssetLibrary />} />
           <Route path="/automations" element={<AutomationStudio />} />
         </Route>
