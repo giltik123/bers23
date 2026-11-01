@@ -159,9 +159,9 @@ test('Editor selection brush hardness is explicit and quality warnings are user-
 
   assert.match(toolbar, /selectionUi[.]brushHardness[^>]*min="0" max="100"/);
   assert.match(toolbar, /disabled=\{busy \|\| \(selection\.mode !== 'BRUSH_ADD' && selection\.mode !== 'BRUSH_SUBTRACT'\)\}/);
-  assert.match(toolbar, /Selection is empty\. Add pixels before Done\./);
-  assert.match(toolbar, /Selection is extremely small\. Zoom in and verify the mask before Done\./);
-  assert.match(toolbar, /Selection covers almost the entire image\. Verify the mask before Done\./);
+  assert.match(toolbar, /selectionUi[.]selectionEmpty/);
+  assert.match(toolbar, /selectionUi[.]selectionTiny/);
+  assert.match(toolbar, /selectionUi[.]selectionSuspiciouslyFull/);
 });
 
 test('Editor Masked Exposure uses exact eighth-stops and remains preview-before-Accept', async () => {
