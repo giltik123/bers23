@@ -7,7 +7,7 @@ import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import ProjectActionsMenu from '@/components/projects/ProjectActionsMenu';
 import { previewCache } from '@/lib/performance/previewCache';
 
-export default function ProjectCard({ project, onRename, onToggleFavorite, onToggleArchive, onDelete }) {
+export default function ProjectCard({ project, onRename, onToggleFavorite, onToggleArchive, onDelete, actionsDisabled = false }) {
   const { t, language } = useTranslation();
   const edits = project.operations?.length || 0;
   const previewUrl = previewCache.gallery(project);
@@ -37,6 +37,7 @@ export default function ProjectCard({ project, onRename, onToggleFavorite, onTog
       <div className="absolute right-3 top-3 flex flex-wrap items-center gap-2">
         <button
           onClick={(e) => { e.preventDefault(); onToggleFavorite(project); }}
+          disabled={actionsDisabled}
           className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-slate-950/75 px-3 text-xs font-medium text-white shadow-sm backdrop-blur hover:bg-slate-950"
           aria-label={project.favorite ? t('projectUi.removeFavorite') : t('projectUi.addFavorite')}
           title={project.favorite ? "Remove from favorites" : "Add to favorites"}
@@ -50,6 +51,7 @@ export default function ProjectCard({ project, onRename, onToggleFavorite, onTog
           onToggleFavorite={onToggleFavorite}
           onToggleArchive={onToggleArchive}
           onDelete={onDelete}
+          disabled={actionsDisabled}
         />
       </div>
     </div>

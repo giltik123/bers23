@@ -102,6 +102,7 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
     "favoriteFailed": "Unable to update favorite.",
     "archiveFailed": "Unable to update archive state.",
     "deleteFailed": "Unable to delete project.",
+    "deleteConfirm": "Delete project \"{name}\"? This cannot be undone.",
     "fileInput": "Choose a photo for a new project",
     "searchRegion": "Find projects",
     "searchYour": "Search your projects",
