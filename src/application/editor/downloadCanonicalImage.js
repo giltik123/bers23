@@ -51,9 +51,13 @@ export function canonicalDownloadName(projectName, contentType) {
   const ext={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'}[contentType];
   if(!ext)throw new Error('Export format is not supported by Core');
   const stem=String(projectName||'BERS-image')
-    .replace(/[\\/\x00-\x1f<>:"|?*]/g,'_').replace(/^\.+/,'')
-    .trim().slice(0,95) || 'BERS-image';
-  return `${stem}.${ext}`;
+    // Invisible direction controls can spoof the displayed extension.
+    .replace(/[\\/\x00-\x1f\x7f-\x9f<>:"|?*\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g,'_')
+    .replace(/^\.+/,'').trim().slice(0,95).replace(/[. ]+$/,'') || 'BERS-image';
+  // Windows treats device names as reserved even when an extension is appended.
+  const safeStem=/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(stem)
+    ? `BERS-${stem}` : stem;
+  return `${safeStem}.${ext}`;
 }
 
 export async function downloadCanonicalImage({
@@ -85,18 +89,23 @@ export async function downloadCanonicalImage({
   const filename=canonicalDownloadName(projectName,mime);
   const blob=await readBoundedImage(response,mime,maxBytes);
   const objectUrl=urlApi.createObjectURL(blob);
-  const anchor=documentApi.createElement('a');
+  let anchor,dispatched=false;
   try{
+    anchor=documentApi.createElement('a');
     anchor.href=objectUrl;
     anchor.download=filename;
     anchor.style.display='none';
     documentApi.body.appendChild(anchor);
     anchor.click();
+    dispatched=true;
     return filename;
   }finally{
-    anchor.remove();
-    // Chrome/Firefox need the object URL to remain alive until the file
-    // download has been dispatched to the browser's download manager.
-    scheduleRevoke(()=>urlApi.revokeObjectURL(objectUrl));
+    try { anchor?.remove(); }
+    finally {
+      // A failed DOM setup or blocked click must not leak the image Blob.
+      // After a successful click, browsers need time to dispatch the download.
+      if(dispatched) scheduleRevoke(()=>urlApi.revokeObjectURL(objectUrl));
+      else urlApi.revokeObjectURL(objectUrl);
+    }
   }
 }
