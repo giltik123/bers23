@@ -183,6 +183,8 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   },
   "allProjects": "All projects",
   "rename": "Rename",
+  "renameProject": "Rename project",
+  "renamePrompt": "Enter a new project name",
   "editorHint": "Photo editor · changes are saved only after you accept a preview",
   "imageTitle": "Your image",
   "imageHint": "Select an object on the photo, or use a tool to edit the whole image.",

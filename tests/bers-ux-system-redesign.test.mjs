@@ -49,7 +49,7 @@ test('Editor uses a spacious canvas-led workspace and explanatory editing modes'
   assert.match(navigation, /aria-pressed=\{active === item\.id\}/);
   assert.match(navigation, /onClick=\{\(\) => onChange\(item\.id\)\}/);
   assert.match(navigation, /current\?\.description/);
-  assert.match(editor, /aria-label="Rename project"/);
+  assert.match(editor, /aria-label=\\{t\\('editorUi\\.renameProject'\\)\\}/);
   assert.match(editor, /View full-size image in a new tab/);
   assert.doesNotMatch(editor, /aria-label="Download"/, 'opening an image in a tab must not claim a file download');
 });
@@ -140,4 +140,18 @@ test('Free generation uses explicit consent, server-owned account setup and no b
   assert.ok(studio.includes('generativeConfirmed'));
   assert.ok(studio.includes('бесплатно в пределах серверного лимита'));
   assert.ok(editor.includes('onPrepareFreeAccount={() => creativeEditApplicationService.prepareAccount()}'));
+});
+
+test('Editor project rename prompt and accessible name follow the active RU/EN locale', async () => {
+  const [editor, en, ru] = await Promise.all([
+    read('src/pages/Editor.jsx'),
+    read('src/lib/i18n/locales/en/index.js'),
+    read('src/lib/i18n/locales/ru/index.js'),
+  ]);
+  assert.match(editor, /window\\.prompt\\(t\\('editorUi\\.renamePrompt'\\), project\\.name\\)/);
+  assert.match(editor, /aria-label=\\{t\\('editorUi\\.renameProject'\\)\\}/);
+  assert.ok(en.includes('"renameProject": "Rename project"'));
+  assert.ok(en.includes('"renamePrompt": "Enter a new project name"'));
+  assert.ok(ru.includes('"renameProject": "Переименовать проект"'));
+  assert.ok(ru.includes('"renamePrompt": "Введите новое название проекта"'));
 });
