@@ -80,7 +80,8 @@ test('Virtual Try-On requires a fresh selected garment and explicit consent for 
     running: false, error: '', garments: [garment], garmentId: 'g1', consent: true };
   assert.equal(canSubmitTryOn(ready), true);
   for (const change of [
-    { loading: true }, { running: true }, { error: 'Network unavailable' },
+    { loading: true }, { running: true }, { consent: 'true' },
+    { garments: [{ ...garment, status: 'ARCHIVED' }] }, { error: 'Network unavailable' },
     { consent: false }, { disabled: true }, { needsAccountSetup: true },
     { garmentId: 'foreign' }, { garmentId: '' }, { garments: [] }, { garments: null },
   ]) {
