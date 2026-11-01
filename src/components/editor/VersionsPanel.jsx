@@ -10,6 +10,21 @@ import {
 
 export default function VersionsPanel({ versions = [], onCreate, onRestore, disabled }) {
   const { t, language } = useTranslation();
+  // A menu may remain open while a Project mutation begins; guard the actions
+  // themselves, not just the trigger, and confirm before changing history.
+  const createVersion = () => {
+    if (!disabled) onCreate();
+  };
+  const confirmVersionRestore = (version) => {
+    if (disabled) return;
+    const label = typeof version?.name === 'string' && version.name.trim()
+      ? version.name.trim()
+      : (language === 'ru' ? 'выбранную версию' : 'selected version');
+    const message = language === 'ru'
+      ? `Восстановить версию «${label}»? Текущий результат проекта изменится.`
+      : `Restore version “${label}”? The current Project result will change.`;
+    if (window.confirm(message)) onRestore(version);
+  };
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -19,12 +34,12 @@ export default function VersionsPanel({ versions = [], onCreate, onRestore, disa
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel>{t('editControls.versions')}</DropdownMenuLabel>
-        <DropdownMenuItem onClick={onCreate}>
+        <DropdownMenuItem disabled={disabled} onClick={createVersion}>
           <Plus className="w-4 h-4 mr-2" /> {t('editControls.saveVersion')}
         </DropdownMenuItem>
         {versions.length > 0 && <DropdownMenuSeparator />}
         {versions.map((v) => (
-          <DropdownMenuItem key={v.id} onClick={() => onRestore(v)}>
+          <DropdownMenuItem key={v.id} disabled={disabled} onClick={() => confirmVersionRestore(v)}>
             <img src={v.preview_url} alt="" className="w-8 h-8 rounded object-cover mr-2" />
             <span className="flex-1 min-w-0">
               <span className="block text-sm truncate">{v.name}</span>
