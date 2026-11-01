@@ -15,11 +15,12 @@ const critical = [
   'src/components/projects/ProjectCard.jsx',
   'src/components/projects/ProjectActionsMenu.jsx',
   'src/pages/AssetLibrary.jsx',
+  'src/components/editor/SelectionToolbar.jsx',
 ];
 
 test('Russian locale covers auth, projects and navigation with English counterparts', async () => {
   const english = await readFile('src/lib/i18n/locales/en/index.js', 'utf8');
-  for (const namespace of ['authUi', 'projectUi', 'navUi', 'assetUi']) {
+  for (const namespace of ['authUi', 'projectUi', 'navUi', 'assetUi', 'selectionUi']) {
     const values = russian[namespace];
     assert.ok(values && Object.keys(values).length >= 10, namespace + ' must be translated');
     assert.ok(english.includes(namespace + ': {'), namespace + ' needs an English module');
@@ -32,16 +33,22 @@ test('Russian locale covers auth, projects and navigation with English counterpa
   assert.match(russian.projectUi.newProject, /Новый проект/);
   assert.match(russian.authUi.login, /Войти/);
   assert.match(russian.navUi.projects, /Проекты/);
+  assert.ok(russian.selectionUi.smartMode && russian.selectionUi.smartHint && russian.selectionUi.tealOverlay);
 });
 
 test('key user journeys use live translation without bypassing canonical Project API', async () => {
   for (const path of critical) {
     const source = await readFile(path, 'utf8');
     assert.match(source, /useTranslation/, path + ' must use the locale context');
-    for (const match of source.matchAll(/\bt\(['"]((?:authUi|projectUi|navUi|assetUi)\.\w+)['"]/gu)) {
+    for (const match of source.matchAll(/\bt\(['"]((?:authUi|projectUi|navUi|assetUi|selectionUi)\.\w+)['"]/gu)) {
       const [namespace, key] = match[1].split('.');
       assert.ok(russian[namespace]?.[key], path + ' references missing Russian key ' + match[1]);
     }
+  }
+  const selectionToolbar = await readFile('src/components/editor/SelectionToolbar.jsx', 'utf8');
+  for (const key of ['smartMode', 'addMode', 'removeMode', 'polygonMode', 'lassoMode', 'rectangleMode', 'ellipseMode', 'smartHint', 'addHint', 'removeHint', 'polygonHint', 'lassoHint', 'rectangleHint', 'ellipseHint', 'tealOverlay', 'magentaOverlay', 'amberOverlay']) {
+    assert.ok(selectionToolbar.includes("'" + key + "'"), 'dynamic selection key missing: ' + key);
+    assert.ok(russian.selectionUi[key], 'Russian selection key missing: ' + key);
   }
   const auth = await readFile('src/components/AuthLayout.jsx', 'utf8');
   assert.ok(auth.includes('<LanguageSwitcher />'), 'locale selection must work before login');
