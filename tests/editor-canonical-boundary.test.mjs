@@ -650,7 +650,8 @@ test('bounded Agent panel serializes same-context actions and exposes recoverabl
   assert.match(panel, /actionLocksRef\.current\.add\(contextKey\)/);
   assert.match(panel, /actionLocksRef\.current\.delete\(contextKey\)/);
   assert.match(panel, /if \(contextRef\.current === contextKey\)\s*setActionError/);
-  assert.match(panel, /disabled=\{busy \|\| actionBusy\}/);
+  assert.match(panel, /const actionPending = actionBusy \|\| actionLocksRef\.current\.has\(contextKey\)/);
+  assert.match(panel, /disabled=\{busy \|\| actionPending\}/);
   assert.match(panel, /\(state\?\.error \|\| actionError\).*role="alert"/);
   assert.doesNotMatch(panel, /catch\(\(\) => undefined\)/);
 });
