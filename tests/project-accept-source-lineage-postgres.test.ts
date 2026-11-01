@@ -47,7 +47,7 @@ class ProjectLockWaitBarrier {
   }
 }
 
-async function waitForPostgresLockWait(pool: Pool, waitingPid: number, blockerPid: number): Promise<void> {
+async function waitForPostgresLockWait(pool: Pool, waitingPid: number, expectedBlockerPid: number): Promise<void> {
   const deadline = Date.now() + 5_000;
   let lastBlockers: unknown = null;
   while (Date.now() < deadline) {
@@ -60,11 +60,11 @@ async function waitForPostgresLockWait(pool: Pool, waitingPid: number, blockerPi
       ? rawBlockers.map((pid: unknown) => Number(pid))
       : String(rawBlockers ?? '').replace(/[{}]/gu, '').split(',').filter(Boolean).map(Number);
     lastBlockers = rawBlockers ?? null;
-    if (blockers.includes(blockerPid)) return;
+    if (blockers.includes(expectedBlockerPid)) return;
     await new Promise(resolve => setTimeout(resolve, 10));
   }
   throw new Error(
-    `Timed out waiting for PostgreSQL backend ${waitingPid} to be blocked by ${blockerPid}; last pg_blocking_pids=${JSON.stringify(lastBlockers)}`,
+    `Timed out waiting for PostgreSQL backend ${waitingPid} to be blocked by ${expectedBlockerPid}; last pg_blocking_pids=${JSON.stringify(lastBlockers)}`,
   );
 }
 
@@ -189,7 +189,7 @@ test('Project Accept serializes against cursor changes and rejects a FINAL produ
       // navigation SELECT FOR UPDATE is already waiting behind the blocker.
       acceptOutcomePromise = capture(concurrentProjects.acceptFinal(auth, concurrentProjectId, queuedCandidate.storageId, `Queued stale Accept ${attempt}`));
       const acceptPid = await barrier.waitForPid(2);
-      await waitForPostgresLockWait(pool, acceptPid, blockerPid);
+      await waitForPostgresLockWait(pool, acceptPid, navigationPid);
 
       await blocker.query('COMMIT');
       blocker.release();
