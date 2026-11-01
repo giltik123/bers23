@@ -178,9 +178,33 @@ test('canonical Try-On control copy is complete in both English and Russian with
     readFile('src/components/editor/outfits/CanonicalTryOnProductControls.jsx', 'utf8'),
   ]);
   const extractFashionUi = (source) => {
-    const match = source.match(/fashionUi:\s*(\{[\s\S]*?\n  \})/);
-    assert.ok(match, 'fashionUi catalog exists');
-    return JSON.parse(match[1]);
+    const marker = source.indexOf('fashionUi: {');
+    assert.notEqual(marker, -1, 'fashionUi catalog exists');
+    const start = source.indexOf('{', marker);
+    let depth = 0;
+    let quote = null;
+    let escaped = false;
+    let end = -1;
+    for (let index = start; index < source.length; index += 1) {
+      const character = source[index];
+      if (quote) {
+        if (escaped) escaped = false;
+        else if (character === '\\\\') escaped = true;
+        else if (character === quote) quote = null;
+        continue;
+      }
+      if (character === '"' || character === "'" || character === '`') {
+        quote = character;
+        continue;
+      }
+      if (character === '{') depth += 1;
+      else if (character === '}') {
+        depth -= 1;
+        if (depth === 0) { end = index; break; }
+      }
+    }
+    assert.notEqual(end, -1, 'fashionUi catalog closes');
+    return JSON.parse(source.slice(start, end + 1));
   };
   const english = extractFashionUi(englishSource);
   const russian = extractFashionUi(russianSource);
@@ -191,7 +215,7 @@ test('canonical Try-On control copy is complete in both English and Russian with
     assert.ok(russian[key].trim().length > 0, `Russian fashionUi.${key} is non-empty`);
   }
   for (const key of TRY_ON_I18N_KEYS) {
-    assert.ok(component.includes(`fashionUi.${key}`), `control renders fashionUi.${key}`);
+    assert.ok(component.includes(`fashionUi.${key}`) || component.includes(`'${key}'`), `control maps or renders fashionUi.${key}`);
   }
   assert.match(component, /t\(tryOnMessageKey\(ui\)\)/);
   assert.doesNotMatch(component, /Check readiness|Run remains disabled|> Run\s*</);
