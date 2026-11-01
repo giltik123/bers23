@@ -97,11 +97,17 @@ test('canonical UI exposes owning Creative cancel, owning workflow Retry, read-o
   assert.match(center, /new CreativeExecutionControlPolicy\(coreClient\.creative\)/);
   assert.match(center, /new WorkflowExecutionRetryPolicy\(coreClient\.agent\)/);
   assert.match(center, /canonicalScopeMatches = Boolean\(normalizedProjectId\) && canonical\.projectId === normalizedProjectId/);
+  // Recovery can retain the last confirmed snapshot after a failed refresh.
+  // Such stale rows remain readable but cannot offer mutation controls.
+  assert.match(center, /canonicalControlsReady = canonicalScopeMatches && canonical\.authoritative && !canonical\.stale/);
+  assert.equal((center.match(/if \(!canonicalControlsReady\)/g) || []).length, 2);
+  assert.match(center, /\[creativeControl, canonicalControlsReady, canonical\.runs\]/);
+  assert.match(center, /\[workflowRetryControl, canonicalControlsReady, canonical\.runs\]/);
   assert.match(center, /await creativeControl\.cancel\(run\)/);
   assert.match(center, /await workflowRetryControl\.retry\(run, normalizedProjectId\)/);
   assert.match(center, /await canonicalProjection\.refresh\(\)/);
   assert.match(center, /Canonical recovery state · owning authority controls only/);
-  assert.match(center, /<CanonicalExecutionRunRow[^>]*control=\{canonicalControls\[run\.runId\]\}[^>]*retryControl=\{workflowRetryControls\[run\.runId\]\}[^>]*onCancel=\{cancelCanonicalRun\}[^>]*onRetry=\{retryCanonicalWorkflow\}/);
+  assert.match(center, /<CanonicalExecutionRunRow[^>]*control=\{canonicalControlsReady \? canonicalControls\[run\.runId\] : undefined\}[^>]*retryControl=\{canonicalControlsReady \? workflowRetryControls\[run\.runId\] : undefined\}[^>]*onCancel=\{cancelCanonicalRun\}[^>]*onRetry=\{retryCanonicalWorkflow\}/);
   assert.doesNotMatch(center, /<CanonicalExecutionRunRow[^>]*(onRunAgain|onDuplicate|onMoveUp)=/);
   assert.doesNotMatch(center, /ExecutionRunRegistry|coreClient\.executionRuns|execution-runs\/.*(cancel|retry)|coreClient\.creative\.execute/);
 
