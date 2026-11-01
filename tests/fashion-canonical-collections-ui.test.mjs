@@ -75,5 +75,3 @@ test('ambiguous collection create refreshes canonical state and never automatica
   assert.match(collections, /return true;[\s\S]*return false;/);
   assert.equal((createBlock[1].match(/model\.create/g) || []).length, 1, 'create handler must issue at most one create side effect');
 });
-
-});
