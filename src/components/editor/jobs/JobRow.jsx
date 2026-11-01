@@ -26,8 +26,8 @@ export default function JobRow({ job, onCancel, onRunAgain, onDuplicate, onMoveU
       // The owning adapter still controls execution and financial settlement.
       // Never swallow a failed explicit repeat without user feedback.
       setRepeatError(language === 'ru'
-        ? 'Не удалось запустить новую операцию. Проверьте состояние задачи и попробуйте ещё раз.'
-        : 'Could not start the new operation. Check the task state before trying again.');
+        ? 'Новая операция не запустилась или завершилась ошибкой. Проверьте состояние задачи перед повтором.'
+        : 'The new operation could not start or failed. Check the task state before trying again.');
     } finally {
       repeatInFlight.current = false;
       setRepeatPending(false);
