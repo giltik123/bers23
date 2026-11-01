@@ -21,17 +21,27 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
   finalCallbackRef.current = onFinalCandidate;
   const [state, setState] = useState(EMPTY_STATE);
 
-  const publishView = useCallback((view, ticket) => {
+  // Recheck inside React's queued state updater as well as at dispatch time.
+  // A route change can occur between enqueue and commit.
+  const publishScopedState = useCallback((ticket, update) => {
     if (!mountedRef.current || !contextGateRef.current.isCurrent(ticket)) return;
-    setState((previous) => Object.freeze({ ...previous, active: !TERMINAL.has(view.state), view, error: null }));
+    setState((previous) => contextGateRef.current.isCurrent(ticket)
+      ? (typeof update === 'function' ? update(previous) : update)
+      : previous);
   }, []);
+
+  const publishView = useCallback((view, ticket) => {
+    publishScopedState(ticket, (previous) => Object.freeze({
+      ...previous, active: !TERMINAL.has(view.state), view, error: null,
+    }));
+  }, [publishScopedState]);
 
   const runOperation = useCallback(async (name, operation, context) => {
     const ticket = contextGateRef.current.capture(project?.id, context.sourceArtifactId);
     if (!ticket) throw new Error('Bounded Agent Project or source changed before execution');
     if (operationRef.current) throw new Error(`Bounded Agent ${name} cannot start while ${operationRef.current} is in progress`);
     operationRef.current = name;
-    if (mountedRef.current) setState((previous) => Object.freeze({ ...previous, active: true, busy: true, error: null }));
+    publishScopedState(ticket, (previous) => Object.freeze({ ...previous, active: true, busy: true, error: null }));
     try {
       const outcome = await operation((view) => publishView(view, ticket));
       // The old Core workflow may finish, but it must never replace the new
@@ -59,7 +69,7 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
           revokeBlob(previewUrl);
           return outcome;
         }
-        setState(Object.freeze({ active: false, busy: false, view, error: null }));
+        publishScopedState(ticket, Object.freeze({ active: false, busy: false, view, error: null }));
         writeHint(project?.id, { executionId: view.executionId, sourceArtifactId: context.sourceArtifactId, mode: context.mode, width: context.width, height: context.height });
         try { finalCallbackRef.current?.(pending); }
         catch (error) { revokeBlob(previewUrl); throw error; }
@@ -67,25 +77,24 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
       }
       if (view.retryAvailable) {
         writeHint(project?.id, { executionId: view.executionId, sourceArtifactId: context.sourceArtifactId, mode: context.mode, width: context.width, height: context.height });
-        if (mountedRef.current) setState(Object.freeze({ active: true, busy: false, view, error: null }));
+        publishScopedState(ticket, Object.freeze({ active: true, busy: false, view, error: null }));
         return outcome;
       }
       if (TERMINAL.has(view.state)) {
         clearHint(project?.id);
-        if (mountedRef.current) setState(Object.freeze({ active: false, busy: false, view, error: terminalMessage(view) }));
+        publishScopedState(ticket, Object.freeze({ active: false, busy: false, view, error: terminalMessage(view) }));
         return outcome;
       }
       writeHint(project?.id, { executionId: view.executionId, sourceArtifactId: context.sourceArtifactId, mode: context.mode, width: context.width, height: context.height });
-      if (mountedRef.current) setState(Object.freeze({ active: true, busy: false, view, error: null }));
+      publishScopedState(ticket, Object.freeze({ active: true, busy: false, view, error: null }));
       return outcome;
     } catch (error) {
-      if (mountedRef.current && contextGateRef.current.isCurrent(ticket))
-        setState((previous) => Object.freeze({ ...previous, busy: false, error: error?.message || 'Bounded Agent failed' }));
+      publishScopedState(ticket, (previous) => Object.freeze({ ...previous, busy: false, error: error?.message || 'Bounded Agent failed' }));
       throw error;
     } finally {
       operationRef.current = null;
     }
-  }, [project?.id, publishView]);
+  }, [project?.id, publishView, publishScopedState]);
 
   const start = useCallback(async ({ mode, width, height }) => {
     const sourceArtifactId = project?.current_image_artifact_id;
@@ -124,17 +133,16 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
     if (!ticket) throw new Error('Bounded Agent Project or source changed before cancellation');
     if (operationRef.current) throw new Error(`Bounded Agent cancel cannot run while ${operationRef.current} is in progress`);
     operationRef.current = 'cancel';
-    if (mountedRef.current) setState((previous) => Object.freeze({ ...previous, busy: true, error: null }));
+    publishScopedState(ticket, (previous) => Object.freeze({ ...previous, busy: true, error: null }));
     try {
       const view = await createBoundedAgentRunner({ projectId: project.id }).cancel(executionId);
       clearHint(project.id);
-      if (mountedRef.current && contextGateRef.current.isCurrent(ticket))
-        setState(Object.freeze({ active: false, busy: false, view, error: null }));
+      publishScopedState(ticket, Object.freeze({ active: false, busy: false, view, error: null }));
       return view;
     } finally {
       operationRef.current = null;
     }
-  }, [project?.id, project?.current_image_artifact_id, state.view?.executionId]);
+  }, [project?.id, project?.current_image_artifact_id, state.view?.executionId, publishScopedState]);
 
   const dismiss = useCallback(() => {
     clearHint(project?.id);
