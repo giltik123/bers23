@@ -633,6 +633,7 @@ test('bounded Agent UI checks current context before publishing progress and ter
   const hook = await readFile('src/components/editor/agent/useBoundedAgentEditor.js', 'utf8');
   assert.match(hook, /contextGateRef\.current\.sync\(project\?\.id, project\?\.current_image_artifact_id\)/);
   assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) return;/);
+  assert.match(hook, /setState\(\(previous\) => contextGateRef\.current\.isCurrent\(ticket\)/);
   assert.match(hook, /if \(!contextGateRef\.current\.isCurrent\(ticket\)\) return outcome;/);
   assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) \{\s*revokeBlob\(previewUrl\)/);
   assert.match(hook, /useEffect\(\(\) => \{ setState\(EMPTY_STATE\); \}, \[contextKey\]\)/);
