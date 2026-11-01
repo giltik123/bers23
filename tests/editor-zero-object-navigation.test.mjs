@@ -61,8 +61,7 @@ test('reachable Fashion, Outfit and bounded Agent surfaces preserve narrow canon
   assert.match(outfits, /createCanonicalOutfitViewModel/);
   assert.match(outfits, /coreClient\.fashion\.outfits/);
   assert.match(outfits, /coreClient\.fashion\.wardrobe/);
-  assert.match(outfits, /server-owned/);
-  assert.match(outfits, /never retried automatically/);
+  assert.match(outfits, /fashionUi\.outfitAuthorityNotice/);
   for (const forbidden of ['outfitManager', 'coreClient.entities', 'FASHN', 'onCommit', 'onRollback']) {
     assert.equal(outfits.includes(forbidden), false, `Outfits must not mount legacy or execution authority ${forbidden}`);
   }

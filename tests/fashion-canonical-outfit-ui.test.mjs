@@ -138,7 +138,7 @@ test('lost or conflicted mutation outcomes reconcile by read only and never retr
   assert.match(panel, /setErrorKey\(reconciled \? 'outfitCreateUnconfirmed' : 'outfitCreateUnconfirmedNoRefresh'\)/);
   assert.match(panel, /setErrorKey\(reconciled \? 'outfitMutationUnconfirmed' : 'outfitMutationUnconfirmedNoRefresh'\)/);
   assert.doesNotMatch(panel, /cause\?\.message/);
-  assert.match(panel, /never retried automatically/);
+  assert.match(panel, /fashionUi\.outfitAuthorityNotice/);
   assert.equal((model.match(/outfits\.create\(/g) ?? []).length, 1, 'create must have one dispatch site');
   assert.equal((model.match(/outfits\.addEntry\(/g) ?? []).length, 1, 'addEntry must have one dispatch site');
   assert.equal((model.match(/outfits\.removeEntry\(/g) ?? []).length, 1, 'removeEntry must have one dispatch site');
@@ -147,11 +147,11 @@ test('lost or conflicted mutation outcomes reconcile by read only and never retr
 
 test('Wardrobe projection is display-only and duplicate/unsupported garment choices are blocked in UX', () => {
   assert.match(model, /wardrobeError/);
-  assert.match(panel, /Outfit references remain canonical/);
-  assert.match(panel, /Unavailable garment reference/);
+  assert.match(panel, /fashionUi\.wardrobeLabelsUnavailable/);
+  assert.match(panel, /fashionUi\.unavailableGarmentReference/);
   assert.match(panel, /!selectedGarmentIds\.has\(item\.garmentId\)/);
   assert.match(panel, /addAllowedRoles\.length === 0/);
-  assert.match(panel, /Update its Wardrobe category before adding it/);
+  assert.match(panel, /fashionUi\.unsupportedOutfitLayerRole/);
 });
 
 test('metadata editing is canonical, revision-bound and unavailable for archived Outfits', () => {
