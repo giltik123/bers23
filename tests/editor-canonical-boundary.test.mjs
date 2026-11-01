@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
+import { createBoundedAgentContextGate } from '../src/components/editor/agent/boundedAgentContextGate.js';
 
 test('Editor single-edit path crosses only an application boundary', async () => { const source = await readFile('src/pages/Editor.jsx', 'utf8'); for (const forbidden of ['editingEngine', 'creditsEngine', 'reveProvider', 'providers/fal', 'provider-runtime', 'server/transactions']) assert.equal(source.includes(forbidden), false, forbidden); assert.match(source, /creativeEditApplicationService\.execute/); });
 test('application edit adapter sends no server-authoritative fields', async () => { const source = await readFile('src/application/creative/CreativeEditApplicationService.js', 'utf8'); assert.match(source, /coreClient\.creative\.execute/); for (const forbidden of ['walletBalance', 'reservationStatus', 'authorizationResult', 'retryCount', 'FAL_KEY', 'REVE_KEY']) assert.equal(source.includes(forbidden), false); });
@@ -599,4 +600,40 @@ test('production Editor does not expose mask controls or pass stale masks into w
   assert.ok(studio.includes("const wholeImageAdmitted = Boolean(plan.instruction) && plan.kind !== 'FASHION'"));
   assert.ok(studio.includes("await onPrepareFreeAccount?.()"));
   assert.ok(studio.includes("Понимаю, что может измениться весь кадр"));
+});
+
+test('bounded Agent async tickets cannot cross Project or source boundaries', () => {
+  const gate = createBoundedAgentContextGate('project-a', 'original-a');
+  const old = gate.capture('project-a', 'original-a');
+  assert.equal(gate.isCurrent(old), true);
+  gate.sync('project-b', 'original-b');
+  assert.equal(gate.isCurrent(old), false, 'old Project callback is stale');
+  assert.equal(gate.capture('project-a', 'original-a'), null);
+  const current = gate.capture('project-b', 'original-b');
+  assert.equal(gate.isCurrent(current), true);
+  gate.sync('project-b', 'final-b');
+  assert.equal(gate.isCurrent(current), false, 'new accepted source invalidates old callback');
+  const next = gate.capture('project-b', 'final-b');
+  assert.equal(gate.isCurrent(next), true);
+  gate.sync('project-a', 'original-a');
+  assert.equal(gate.isCurrent(old), false, 'returning to an old Project cannot revive a stale ticket');
+});
+
+test('bounded Agent context fence rejects missing or mismatched canonical source', () => {
+  const gate = createBoundedAgentContextGate(null, null);
+  assert.equal(gate.capture(null, null), null);
+  gate.sync('project-a', 'original-a');
+  assert.equal(gate.capture('project-a', 'other-artifact'), null);
+  assert.equal(gate.capture('project-b', 'original-a'), null);
+  assert.equal(gate.isCurrent(null), false);
+  assert.equal(gate.isCurrent({ projectId: 'project-a', sourceArtifactId: 'original-a', revision: -1 }), false);
+});
+
+test('bounded Agent UI checks current context before publishing progress and terminal preview', async () => {
+  const hook = await readFile('src/components/editor/agent/useBoundedAgentEditor.js', 'utf8');
+  assert.match(hook, /contextGateRef\.current\.sync\(project\?\.id, project\?\.current_image_artifact_id\)/);
+  assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) return;/);
+  assert.match(hook, /if \(!contextGateRef\.current\.isCurrent\(ticket\)\) return outcome;/);
+  assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) \{\s*revokeBlob\(previewUrl\)/);
+  assert.match(hook, /useEffect\(\(\) => \{ setState\(EMPTY_STATE\); \}, \[contextKey\]\)/);
 });
