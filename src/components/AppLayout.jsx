@@ -19,7 +19,7 @@ import { adaptiveCachePolicy } from '@/lib/platform/AdaptiveCachePolicy';
 import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { readProjectNavigationContext, projectNavigationTargets } from '@/lib/navigation/projectNavigation';
 
-function NavLink({ path, to = path, label, icon: Icon, active, onNavigate, compact = false }) {
+function NavLink({ path, label, icon: Icon, active, onNavigate, compact = false, to = path }) {
   return (
     <Link
       to={to}
