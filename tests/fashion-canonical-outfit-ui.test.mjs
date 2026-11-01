@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import './fashion-outfit-catalog-freshness.test.mjs';
 import {
   OUTFIT_LAYER_ROLES,
   OUTFIT_OCCASIONS,
