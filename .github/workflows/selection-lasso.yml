@@ -8,6 +8,10 @@ on:
       - 'src/components/editor/SelectionToolbar.jsx'
       - 'src/components/editor/ImageCanvas.jsx'
       - 'src/pages/Editor.jsx'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/product-russian-ui.test.mjs'
+      - 'tests/mask-photoshop-controls.test.mjs'
       - 'src/platform/creative/pipeline/ControlledLocalEdit.ts'
       - 'tests/intelligent-selection.test.ts'
       - 'tests/mask-refinement-lineage.test.ts'
@@ -37,6 +41,8 @@ jobs:
           node-version: '24.x'
           cache: npm
       - run: npm ci
+      - name: Verify Russian and English selection UI catalogs
+        run: node --test tests/product-russian-ui.test.mjs tests/mask-photoshop-controls.test.mjs
       - name: Typecheck lasso selection surfaces
         run: npm run typecheck
       - name: Bundle deterministic lasso regressions
@@ -66,8 +72,8 @@ jobs:
           grep -q "rasterizeSelectionPolygon" "$service"
           grep -q "service.applyLasso(polygonComposition)" "$editor"
           grep -q "service.applyPolygon(polygonComposition)" "$editor"
-          grep -q 'aria-label="Lasso composition"' "$toolbar"
-          grep -q 'aria-label="Apply lasso selection"' "$toolbar"
+          grep -q 'selectionUi.lassoComposition' "$toolbar"
+          grep -q 'selectionUi.applyLassoSelection' "$toolbar"
           grep -q "selection?.mode !== 'LASSO'" "$canvas"
           ! grep -E -q "fetch\(|coreClient|provider|billing|credits" "$service"
           test -n "$BASE_SHA"

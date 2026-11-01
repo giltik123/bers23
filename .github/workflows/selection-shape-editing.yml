@@ -8,6 +8,10 @@ on:
       - 'src/components/editor/SelectionToolbar.jsx'
       - 'src/components/editor/ImageCanvas.jsx'
       - 'src/pages/Editor.jsx'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/product-russian-ui.test.mjs'
+      - 'tests/mask-photoshop-controls.test.mjs'
       - 'tests/intelligent-selection.test.ts'
       - 'tests/editor-canonical-boundary.test.mjs'
       - '.github/workflows/selection-shape-editing.yml'
@@ -63,7 +67,7 @@ jobs:
           grep -q "nudgeShape(deltaX" "$service"
           grep -q "service.shapeHandle({ handle, displayPoint: point, view })" "$editor"
           grep -q "service.nudgeShape(deltaX, deltaY)" "$editor"
-          grep -q 'aria-label="Shape keyboard nudging"' "$toolbar"
+          grep -q 'selectionUi.shapeKeyboardNudging' "$toolbar"
           grep -q "Resize selection from" "$canvas"
           ! grep -E -q "fetch\(|coreClient|provider|billing|credits" "$service"
           test -n "$BASE_SHA"
