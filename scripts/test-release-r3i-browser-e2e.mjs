@@ -133,7 +133,7 @@ try {
   try { browser = await chromium.launch({ channel: 'chrome', headless: true }); }
   catch (error) { throw new Error(`Mandatory system Google Chrome launch failed: ${error instanceof Error ? error.message : String(error)}`); }
 
-  const browserContext = await browser.newContext();
+  const browserContext = await browser.newContext({ locale: 'en-US' });
   const page = await browserContext.newPage();
   attachDiagnostics(page);
 
