@@ -305,9 +305,9 @@ test('Editor Crop UI is exact, accessible and fail-closed instead of clamping in
   assert.match(editor, /function exactCropRect\(draft, sourceWidth, sourceHeight\)/);
   assert.match(editor, /\[x, y, width, height\]\.every\(Number\.isSafeInteger\)/);
   assert.match(editor, /x \+ width > sourceWidth \|\| y \+ height > sourceHeight/);
-  assert.match(toolbar, /aria-label="Crop controls"/);
+  assert.match(toolbar, /aria-label=\{t\('editorGeometry.cropControls'\)\}/);
   for (const field of ["{ key: 'x', label: 'X' }", "{ key: 'y', label: 'Y' }", "{ key: 'width', label: 'Width' }", "{ key: 'height', label: 'Height' }"]) assert.equal(toolbar.includes(field), true, field);
-  assert.match(toolbar, /aria-label=\{`Crop \$\{label\.toLowerCase\(\)\}`\}/);
+  assert.match(toolbar, /aria-label=\{t\('editorGeometry.cropField'/);
   assert.match(toolbar, /disabled=\{busy \|\| !valid\}/);
   assert.doesNotMatch(toolbar, /Math\.(round|floor|ceil)\(Number\(raw\)\)/);
   assert.match(canvas, /Math\.floor\(\(event\.clientX - rect\.left\) \/ rect\.width \* cropSource\.sourceWidth\)/);
@@ -334,9 +334,9 @@ test('Editor Resize UI keeps exact integer bounds and explicit deterministic asp
   assert.match(editor, /width \* height > RESIZE_MAX_OUTPUT_PIXELS/);
   assert.match(editor, /function proportionalResizeDimension\(value, sourceSame, sourceOther\)/);
   assert.match(editor, /const rounded = \(numerator \* 2n \+ same\) \/ \(same \* 2n\)/);
-  assert.match(toolbar, /aria-label="Resize controls"/);
-  assert.match(toolbar, /aria-label="Keep resize aspect ratio"/);
-  assert.match(toolbar, /aria-label=\{`Resize \$\{label\.toLowerCase\(\)\}`\}/);
+  assert.match(toolbar, /aria-label=\{t\('editorGeometry.resizeControls'\)\}/);
+  assert.match(toolbar, /aria-label=\{t\('editorGeometry.keepAspectLabel'\)\}/);
+  assert.match(toolbar, /aria-label=\{t\('editorGeometry.resizeField'/);
   assert.match(toolbar, /max=\{RESIZE_MAX_DIMENSION\}/);
   assert.match(toolbar, /disabled=\{busy \|\| !valid\}/);
   assert.doesNotMatch(toolbar, /Math\.(round|floor|ceil)\(Number\(raw\)\)/);
