@@ -6,7 +6,7 @@ const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.
 const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
 
 function atLeastFixedDomPurify(version) {
-  const match = /^(\\d+)\\.(\\d+)\\.(\\d+)$/.exec(version);
+  const match = /^([0-9]+)[.]([0-9]+)[.]([0-9]+)$/.exec(version);
   if (!match) return false;
   const [major, minor, patch] = match.slice(1).map(Number);
   return major > 3 || (major === 3 && (minor > 4 || (minor === 4 && patch >= 17)));
