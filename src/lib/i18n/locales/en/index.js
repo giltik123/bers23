@@ -281,6 +281,29 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   "refreshError": "Try-On choices could not be refreshed. Reload canonical Outfits before trying again.",
   "selectionInvalid": "Try-On selection is invalid."
 },
+  editorStatusUi: {
+    "selectionStatus": "Editor selection status",
+    "objects": "{count} objects",
+    "selected": "{count} selected · {mode}",
+    "masks": "Masks {masked}/{total}",
+    "segmentation": "Segmentation: {state}",
+    "cache": "Cache: {state}",
+    "single": "single", "completed": "completed", "idle": "idle", "empty": "empty",
+    "pipelineStatus": "Image pipeline status",
+    "pipelineError": "Last pipeline failed",
+    "pipelineReady": "Last pipeline completed",
+    "pipelineIdle": "No pipeline activity",
+    "processing": "Processing",
+    "previewLimit": "Preview resolution target",
+    "currentImage": "Current image dimensions",
+    "estimatedTier": "Estimated processing tier",
+    "tierPreview": "preview", "tierStandard": "standard", "tierHd": "HD", "tierOriginal": "original",
+    stages: {
+      "validation": "Validating", "metadata": "Reading metadata", "optimization": "Optimizing",
+      "resolution": "Selecting resolution", "masks": "Processing masks", "crop": "Computing crop",
+      "preview": "Generating preview", "restore": "Restoring result", "export": "Exporting"
+    }
+  },
   assetUi: {
     "untitled": "Untitled project",
     "loadFailed": "Unable to load canonical project assets.",
