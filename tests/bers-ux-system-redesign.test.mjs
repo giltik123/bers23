@@ -141,3 +141,48 @@ test('Free generation uses explicit consent, server-owned account setup and no b
   assert.ok(studio.includes('бесплатно в пределах серверного лимита'));
   assert.ok(editor.includes('onPrepareFreeAccount={() => creativeEditApplicationService.prepareAccount()}'));
 });
+
+
+test('legacy prompt plan is advisory, cannot silently commit, and blocks invalid preview actions', async () => {
+  const [plannerSource, intentSource, preview, input, editor, en, ru] = await Promise.all([
+    read('src/lib/planner/executionPlanner.js'),
+    read('src/lib/planner/intentAnalyzer.js'),
+    read('src/components/editor/PlanPreview.jsx'),
+    read('src/components/editor/InstructionBar.jsx'),
+    read('src/pages/Editor.jsx'),
+    read('src/lib/i18n/locales/en/index.js'),
+    read('src/lib/i18n/locales/ru/index.js'),
+  ]);
+
+  // Exercise the real pure planner without requiring Vite's @/ alias in Node.
+  const { ACTIONS } = await import('data:text/javascript,' + encodeURIComponent(intentSource));
+  const aliasImport = "import { ACTIONS } from '@/lib/planner/intentAnalyzer';";
+  assert.ok(plannerSource.includes(aliasImport), 'planner import contract changed');
+  const moduleSource = plannerSource.replace(aliasImport, 'const ACTIONS = ' + JSON.stringify(ACTIONS) + ';');
+  const { buildExecutionPlan } = await import('data:text/javascript,' + encodeURIComponent(moduleSource));
+  for (const action of [ACTIONS.CUSTOM_PROMPT, ACTIONS.VIRTUAL_TRY_ON]) {
+    const plan = buildExecutionPlan({ intent: { action, scope: 'whole_image' }, object: null });
+    assert.equal(plan.order.at(-1).step, 'save', 'preserve legacy planner step identity');
+    assert.match(plan.order.at(-1).label, /Review preview \(Accept to save\)/);
+    assert.ok(plan.order.every(step => step.label !== 'Save to project history'));
+  }
+
+  assert.match(editor, /planReady=\{Boolean\(plan && plan\.status === 'ready'\)\}/);
+  assert.match(input, /planReady = true/);
+  assert.match(input, /event\.key === 'Enter' && canEdit && planReady && !applying/);
+  assert.match(input, /disabled=\{!canEdit \|\| !planReady \|\| !instruction\.trim\(\) \|\| applying\}/);
+  assert.match(preview, /editControls\.planAdvisory/);
+  assert.match(preview, /editControls\.planReview/);
+  assert.match(preview, /plannerNotice\(e, t\)/);
+  assert.match(preview, /plannerNotice\(a, t\)/);
+  for (const key of [
+    'planReady', 'planClarify', 'planInvalid', 'planDuration',
+    'planWholeImage', 'planNoObject', 'planSegmentation',
+    'planTryOn', 'planEditing', 'planReview', 'planAdvisory',
+    'planNoProject', 'planNoImage', 'planEmptyInstruction',
+    'planSelectObject', 'planConflictingRequest', 'planNoObjectScope',
+  ]) {
+    assert.ok(en.includes('"' + key + '":'), 'English plan label missing: ' + key);
+    assert.ok(ru.includes('"' + key + '":'), 'Russian plan label missing: ' + key);
+  }
+});
