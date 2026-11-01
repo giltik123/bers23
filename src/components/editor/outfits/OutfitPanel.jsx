@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { Archive, ArrowDown, ArrowUp, Heart, Layers, Loader2, Plus, RefreshCw, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,18 +18,23 @@ function replaceOutfit(current, next) {
   return sortOutfits([...current.filter((item) => item.id !== next.id), next]);
 }
 
-function label(value) {
-  return String(value || '').replaceAll('_', ' ').toLowerCase();
+function localizedEnum(t, group, value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  const key = `fashionUi.${group}.${normalized}`;
+  const translated = t(key);
+  return translated === key ? normalized.replaceAll('_', ' ') : translated;
 }
 
 export default function OutfitPanel({ onCanonicalChange }) {
+  const { t } = useTranslation();
   const model = useMemo(() => createCanonicalOutfitViewModel({
     outfits: coreClient.fashion.outfits,
     wardrobe: coreClient.fashion.wardrobe,
   }), []);
   const [outfits, setOutfits] = useState([]);
   const [garments, setGarments] = useState([]);
-  const [wardrobeWarning, setWardrobeWarning] = useState('');
+  const [wardrobeUnavailable, setWardrobeUnavailable] = useState(false);
   const [selectedId, setSelectedId] = useState('');
   const [newName, setNewName] = useState('');
   const [editName, setEditName] = useState('');
@@ -38,14 +44,12 @@ export default function OutfitPanel({ onCanonicalChange }) {
   const [addGarmentId, setAddGarmentId] = useState('');
   const [addRole, setAddRole] = useState('');
   const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
+  const [errorKey, setErrorKey] = useState('');
 
   const applySnapshot = useCallback((snapshot) => {
     setOutfits(snapshot.outfits);
     setGarments(snapshot.garments);
-    setWardrobeWarning(snapshot.wardrobeError
-      ? 'Wardrobe labels are temporarily unavailable; Outfit references remain canonical.'
-      : '');
+    setWardrobeUnavailable(Boolean(snapshot.wardrobeError));
     setSelectedId((current) => (
       current && snapshot.outfits.some((item) => item.id === current)
         ? current
@@ -55,12 +59,12 @@ export default function OutfitPanel({ onCanonicalChange }) {
 
   const reload = useCallback(async ({ announce = true } = {}) => {
     setBusy('load');
-    setError('');
+    setErrorKey('');
     try {
       applySnapshot(await model.load());
       if (announce) onCanonicalChange?.();
-    } catch (cause) {
-      setError(cause?.message || 'Outfits could not be loaded.');
+    } catch {
+      setErrorKey('outfitLoadFailed');
     } finally {
       setBusy('');
     }
@@ -70,7 +74,10 @@ export default function OutfitPanel({ onCanonicalChange }) {
     try {
       applySnapshot(await model.load());
       onCanonicalChange?.();
-    } catch { /* keep the originating mutation error */ }
+      return true;
+    } catch {
+      return false;
+    }
   }, [applySnapshot, model, onCanonicalChange]);
 
   useEffect(() => { void reload({ announce: false }); }, [reload]);
@@ -112,16 +119,16 @@ export default function OutfitPanel({ onCanonicalChange }) {
     event.preventDefault();
     if (!newName.trim() || busy) return;
     setBusy('create');
-    setError('');
+    setErrorKey('');
     try {
       const created = await model.create({ name: newName });
       setOutfits((current) => replaceOutfit(current, created));
       setSelectedId(created.id);
       setNewName('');
       onCanonicalChange?.();
-    } catch (cause) {
-      await reconcileQuietly();
-      setError(`Creation result was not confirmed. Canonical state was refreshed; check the list before retrying. ${cause?.message || ''}`.trim());
+    } catch {
+      const reconciled = await reconcileQuietly();
+      setErrorKey(reconciled ? 'outfitCreateUnconfirmed' : 'outfitCreateUnconfirmedNoRefresh');
     } finally {
       setBusy('');
     }
@@ -130,15 +137,15 @@ export default function OutfitPanel({ onCanonicalChange }) {
   const mutateSelected = async (key, action) => {
     if (!selected || busy) return false;
     setBusy(key);
-    setError('');
+    setErrorKey('');
     try {
       const next = await action(selected);
       setOutfits((current) => replaceOutfit(current, next));
       onCanonicalChange?.();
       return true;
-    } catch (cause) {
-      await reconcileQuietly();
-      setError(`${cause?.message || 'Outfit mutation was not confirmed.'} Canonical state was refreshed; review it before retrying.`);
+    } catch {
+      const reconciled = await reconcileQuietly();
+      setErrorKey(reconciled ? 'outfitMutationUnconfirmed' : 'outfitMutationUnconfirmedNoRefresh');
       return false;
     } finally {
       setBusy('');
@@ -153,44 +160,44 @@ export default function OutfitPanel({ onCanonicalChange }) {
   }));
 
   return (
-    <section className="rounded-2xl border border-border p-3 space-y-3" aria-label="Canonical Outfit builder">
+    <section className="rounded-2xl border border-border p-3 space-y-3" aria-label={t('fashionUi.outfitPanelLabel')}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium flex items-center gap-1.5">
-          <Layers className="w-3.5 h-3.5 text-primary" /> Outfits
+          <Layers className="w-3.5 h-3.5 text-primary" /> {t('fashionUi.outfits')}
         </p>
         <Button variant="ghost" size="sm" className="h-8" onClick={() => reload()} disabled={Boolean(busy)}>
           <RefreshCw className={`h-3.5 w-3.5 ${busy === 'load' ? 'animate-spin' : ''}`} />
-          <span className="sr-only">Reload outfits</span>
+          <span className="sr-only">{t('fashionUi.reloadManagedOutfits')}</span>
         </Button>
       </div>
 
       <p className="text-[11px] text-muted-foreground">
-        Outfit order, layer roles, readiness and revisions are server-owned. Failed mutations are reconciled by reloading canonical state and are never retried automatically.
+        {t('fashionUi.outfitAuthorityNotice')}
       </p>
 
       <form className="flex gap-1.5" onSubmit={create}>
         <Input
           value={newName}
           onChange={(event) => setNewName(event.target.value)}
-          placeholder="New outfit"
+          placeholder={t('fashionUi.newOutfit')}
           maxLength={200}
           disabled={Boolean(busy)}
         />
         <Button type="submit" size="sm" disabled={!newName.trim() || Boolean(busy)}>
-          <Plus className="h-3.5 w-3.5 mr-1" /> Create
+          <Plus className="h-3.5 w-3.5 mr-1" /> {t('common.create')}
         </Button>
       </form>
 
-      {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
-      {wardrobeWarning && <p className="text-[11px] text-amber-700 dark:text-amber-300" role="status">{wardrobeWarning}</p>}
+      {errorKey && <p className="text-xs text-destructive" role="alert">{t(`fashionUi.${errorKey}`)}</p>}
+      {wardrobeUnavailable && <p className="text-[11px] text-amber-700 dark:text-amber-300" role="status">{t('fashionUi.wardrobeLabelsUnavailable')}</p>}
 
       {busy === 'load' && outfits.length === 0 ? (
         <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground" role="status">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading canonical outfits…
+          <Loader2 className="h-4 w-4 animate-spin" /> {t('fashionUi.outfitLoading')}
         </div>
       ) : outfits.length === 0 ? (
         <div className="rounded-xl bg-secondary/40 p-4 text-center text-xs text-muted-foreground">
-          No managed outfits yet. Create one to compose stable garment references.
+          {t('fashionUi.outfitEmpty')}
         </div>
       ) : (
         <>
@@ -212,12 +219,12 @@ export default function OutfitPanel({ onCanonicalChange }) {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{selected.name}</p>
-                  <p className="text-[10px] text-muted-foreground">readiness: {label(selected.referenceReadiness)}</p>
+                  <p className="text-[10px] text-muted-foreground">{t('fashionUi.outfitReadinessLabel', { value: localizedEnum(t, 'outfitReadiness', selected.referenceReadiness) })}</p>
                 </div>
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    aria-label={selected.favorite ? `Remove ${selected.name} from favorites` : `Add ${selected.name} to favorites`}
+                    aria-label={selected.favorite ? t('fashionUi.removeFavorite', { name: selected.name }) : t('fashionUi.addFavorite', { name: selected.name })}
                     aria-pressed={selected.favorite}
                     className="rounded-md p-1 hover:bg-accent disabled:opacity-50"
                     disabled={Boolean(busy) || selected.status !== 'ACTIVE'}
@@ -227,31 +234,31 @@ export default function OutfitPanel({ onCanonicalChange }) {
                   </button>
                   {selected.status === 'ACTIVE' ? (
                     <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={Boolean(busy)} onClick={() => mutateSelected('archive', (outfit) => model.archive(outfit))}>
-                      <Archive className="h-3.5 w-3.5 mr-1" /> Archive
+                      <Archive className="h-3.5 w-3.5 mr-1" /> {t('fashionUi.archive')}
                     </Button>
                   ) : (
                     <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={Boolean(busy)} onClick={() => mutateSelected('restore', (outfit) => model.restore(outfit))}>
-                      <RotateCcw className="h-3.5 w-3.5 mr-1" /> Restore
+                      <RotateCcw className="h-3.5 w-3.5 mr-1" /> {t('fashionUi.restore')}
                     </Button>
                   )}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-1.5">
-                <Input value={editName} onChange={(event) => setEditName(event.target.value)} maxLength={200} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} aria-label="Outfit name" />
-                <select value={editStyle} onChange={(event) => setEditStyle(event.target.value)} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit style">
-                  {OUTFIT_STYLES.map((value) => <option key={value} value={value}>{label(value)}</option>)}
+                <Input value={editName} onChange={(event) => setEditName(event.target.value)} maxLength={200} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} aria-label={t('fashionUi.outfitName')} />
+                <select value={editStyle} onChange={(event) => setEditStyle(event.target.value)} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label={t('fashionUi.outfitStyle')}>
+                  {OUTFIT_STYLES.map((value) => <option key={value} value={value}>{localizedEnum(t, 'outfitStyles', value)}</option>)}
                 </select>
-                <select value={editSeason} onChange={(event) => setEditSeason(event.target.value)} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit season">
-                  {OUTFIT_SEASONS.map((value) => <option key={value} value={value}>{label(value)}</option>)}
+                <select value={editSeason} onChange={(event) => setEditSeason(event.target.value)} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label={t('fashionUi.outfitSeason')}>
+                  {OUTFIT_SEASONS.map((value) => <option key={value} value={value}>{localizedEnum(t, 'outfitSeasons', value)}</option>)}
                 </select>
-                <select value={editOccasion} onChange={(event) => setEditOccasion(event.target.value)} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit occasion">
-                  {OUTFIT_OCCASIONS.map((value) => <option key={value} value={value}>{label(value)}</option>)}
+                <select value={editOccasion} onChange={(event) => setEditOccasion(event.target.value)} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label={t('fashionUi.outfitOccasion')}>
+                  {OUTFIT_OCCASIONS.map((value) => <option key={value} value={value}>{localizedEnum(t, 'outfitOccasions', value)}</option>)}
                 </select>
               </div>
               <div className="flex justify-end">
                 <Button size="sm" variant="secondary" className="h-8" disabled={!metadataDirty || Boolean(busy) || selected.status !== 'ACTIVE'} onClick={saveMetadata}>
-                  <Save className="h-3.5 w-3.5 mr-1" /> Save metadata
+                  <Save className="h-3.5 w-3.5 mr-1" /> {t('fashionUi.saveOutfitMetadata')}
                 </Button>
               </div>
 
@@ -262,12 +269,12 @@ export default function OutfitPanel({ onCanonicalChange }) {
                     onChange={(event) => setAddGarmentId(event.target.value)}
                     className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
                     disabled={Boolean(busy) || availableGarments.length === 0}
-                    aria-label="Garment to add"
+                    aria-label={t('fashionUi.garmentToAdd')}
                   >
-                    <option value="">Add garment…</option>
+                    <option value="">{t('fashionUi.addGarment')}</option>
                     {availableGarments.map((garment) => (
                       <option key={garment.garmentId} value={garment.garmentId}>
-                        {garment.name} · {garment.category}
+                        {garment.name} · {localizedEnum(t, 'garmentCategories', garment.category)}
                       </option>
                     ))}
                   </select>
@@ -276,10 +283,10 @@ export default function OutfitPanel({ onCanonicalChange }) {
                     onChange={(event) => setAddRole(event.target.value)}
                     className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
                     disabled={Boolean(busy) || !addGarmentId || addAllowedRoles.length === 0}
-                    aria-label="Layer role for new garment"
+                    aria-label={t('fashionUi.layerRoleForNewGarment')}
                   >
-                    <option value="">Auto role</option>
-                    {addAllowedRoles.map((role) => <option key={role} value={role}>{label(role)}</option>)}
+                    <option value="">{t('fashionUi.autoRole')}</option>
+                    {addAllowedRoles.map((role) => <option key={role} value={role}>{localizedEnum(t, 'outfitLayerRoles', role)}</option>)}
                   </select>
                   <Button
                     size="sm"
@@ -290,16 +297,16 @@ export default function OutfitPanel({ onCanonicalChange }) {
                       (outfit) => model.addEntry(outfit, addGarmentId, addRole),
                     ).then((ok) => { if (ok) { setAddGarmentId(''); setAddRole(''); } })}
                   >
-                    Add
+                    {t('common.add')}
                   </Button>
                 </div>
               )}
               {selected.status === 'ACTIVE' && addGarmentId && addAllowedRoles.length === 0 && (
-                <p className="text-[10px] text-muted-foreground" role="status">This garment category has no admitted Outfit layer role. Update its Wardrobe category before adding it.</p>
+                <p className="text-[10px] text-muted-foreground" role="status">{t('fashionUi.unsupportedOutfitLayerRole')}</p>
               )}
 
               {selected.entries.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground">This Outfit has no garment references yet.</p>
+                <p className="text-[11px] text-muted-foreground">{t('fashionUi.emptyOutfitEntries')}</p>
               ) : (
                 <div className="space-y-1">
                   {selected.entries.map((entry, index) => {
@@ -309,9 +316,9 @@ export default function OutfitPanel({ onCanonicalChange }) {
                     return (
                       <div key={entry.entryId} className="grid grid-cols-[1fr_auto_auto] items-center gap-1.5 rounded-lg bg-background/70 px-2 py-1.5">
                         <div className="min-w-0">
-                          <p className="text-[11px] font-medium truncate">{garment?.name || 'Unavailable garment reference'}</p>
+                          <p className="text-[11px] font-medium truncate">{garment?.name || t('fashionUi.unavailableGarmentReference')}</p>
                           <p className="text-[9px] text-muted-foreground truncate">
-                            {entry.referenceReadiness === 'READY' ? garment?.category || entry.garmentCategory || entry.garmentId : label(entry.referenceReadiness)}
+                            {entry.referenceReadiness === 'READY' ? (localizedEnum(t, 'garmentCategories', garment?.category || entry.garmentCategory) || entry.garmentId) : localizedEnum(t, 'outfitReadiness', entry.referenceReadiness)}
                           </p>
                         </div>
                         <select
@@ -322,19 +329,19 @@ export default function OutfitPanel({ onCanonicalChange }) {
                           )}
                           className="h-7 rounded-md border border-input bg-transparent px-1 text-[10px]"
                           disabled={Boolean(busy) || selected.status !== 'ACTIVE' || allowedRoles.length === 0}
-                          aria-label={`Layer role for ${garment?.name || entry.garmentId}`}
+                          aria-label={t('fashionUi.layerRoleFor', { name: garment?.name || entry.garmentId })}
                         >
-                          {!currentRoleIsAllowed && <option value={entry.layerRole}>{label(entry.layerRole)} · review</option>}
+                          {!currentRoleIsAllowed && <option value={entry.layerRole}>{localizedEnum(t, 'outfitLayerRoles', entry.layerRole)} · {t('fashionUi.review')}</option>}
                           {allowedRoles.map((role) => <option key={role} value={role}>{label(role)}</option>)}
                         </select>
                         <div className="flex items-center">
-                          <button type="button" aria-label={`Move ${garment?.name || entry.garmentId} up`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={Boolean(busy) || selected.status !== 'ACTIVE' || index === 0} onClick={() => mutateSelected(`up:${entry.entryId}`, (outfit) => model.moveEntry(outfit, entry.entryId, -1))}>
+                          <button type="button" aria-label={t('fashionUi.moveGarmentUp', { name: garment?.name || entry.garmentId })} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={Boolean(busy) || selected.status !== 'ACTIVE' || index === 0} onClick={() => mutateSelected(`up:${entry.entryId}`, (outfit) => model.moveEntry(outfit, entry.entryId, -1))}>
                             <ArrowUp className="h-3.5 w-3.5" />
                           </button>
-                          <button type="button" aria-label={`Move ${garment?.name || entry.garmentId} down`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={Boolean(busy) || selected.status !== 'ACTIVE' || index === selected.entries.length - 1} onClick={() => mutateSelected(`down:${entry.entryId}`, (outfit) => model.moveEntry(outfit, entry.entryId, 1))}>
+                          <button type="button" aria-label={t('fashionUi.moveGarmentDown', { name: garment?.name || entry.garmentId })} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={Boolean(busy) || selected.status !== 'ACTIVE' || index === selected.entries.length - 1} onClick={() => mutateSelected(`down:${entry.entryId}`, (outfit) => model.moveEntry(outfit, entry.entryId, 1))}>
                             <ArrowDown className="h-3.5 w-3.5" />
                           </button>
-                          <button type="button" aria-label={`Remove ${garment?.name || entry.garmentId} from ${selected.name}`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={Boolean(busy) || selected.status !== 'ACTIVE'} onClick={() => mutateSelected(`remove:${entry.entryId}`, (outfit) => model.removeEntry(outfit, entry.entryId))}>
+                          <button type="button" aria-label={t('fashionUi.removeGarmentFromOutfit', { name: garment?.name || entry.garmentId, outfit: selected.name })} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={Boolean(busy) || selected.status !== 'ACTIVE'} onClick={() => mutateSelected(`remove:${entry.entryId}`, (outfit) => model.removeEntry(outfit, entry.entryId))}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
