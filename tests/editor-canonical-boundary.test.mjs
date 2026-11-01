@@ -636,5 +636,7 @@ test('bounded Agent UI checks current context before publishing progress and ter
   assert.match(hook, /setState\(\(previous\) => contextGateRef\.current\.isCurrent\(ticket\)/);
   assert.match(hook, /if \(!contextGateRef\.current\.isCurrent\(ticket\)\) return outcome;/);
   assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) \{\s*revokeBlob\(previewUrl\)/);
-  assert.match(hook, /useEffect\(\(\) => \{ setState\(EMPTY_STATE\); \}, \[contextKey\]\)/);
+  assert.match(hook, /const visibleState = stateOwnerRef\.current === contextKey \? state : EMPTY_STATE/);
+  assert.match(hook, /stateOwnerRef\.current = contextKey;\s*setState\(EMPTY_STATE\)/);
+  assert.match(hook, /return Object\.freeze\(\{ state: visibleState, busy: visibleState\.busy/);
 });
