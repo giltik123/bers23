@@ -74,7 +74,7 @@ async function waitForPostgresLockWait(pool: Pool, waitingPid: number, blockerPi
   );
 }
 
-function observeProjectRowLockIssuance(pool: Pool, barrier: ProjectLockWaitBarrier): Pool {
+function observeProjectRowLockRequests(pool: Pool, barrier: ProjectLockWaitBarrier): Pool {
   return {
     query: (...args: any[]) => (pool.query as any)(...args),
     connect: async () => {
@@ -176,7 +176,7 @@ test('Project Accept serializes against cursor changes and rejects a FINAL produ
     );
 
     const barrier = new ProjectLockWaitBarrier();
-    const concurrentProjects = new PostgresProjectStore(observeProjectRowLockIssuance(pool, barrier));
+    const concurrentProjects = new PostgresProjectStore(observeProjectRowLockRequests(pool, barrier));
     const blocker = await pool.connect();
     let blockerReleased = false;
     let navigateOutcomePromise: Promise<Captured<unknown>> | undefined;
