@@ -178,7 +178,7 @@ test('canonical Try-On control copy is complete in both English and Russian with
     readFile('src/components/editor/outfits/CanonicalTryOnProductControls.jsx', 'utf8'),
   ]);
   const extractFashionUi = (source) => {
-    const match = source.match(/fashionUi:\\s*(\\{[\\s\\S]*?\\n  \\})/);
+    const match = source.match(/fashionUi:\s*(\{[\s\S]*?\n  \})/);
     assert.ok(match, 'fashionUi catalog exists');
     return JSON.parse(match[1]);
   };
@@ -193,6 +193,6 @@ test('canonical Try-On control copy is complete in both English and Russian with
   for (const key of TRY_ON_I18N_KEYS) {
     assert.ok(component.includes(`fashionUi.${key}`), `control renders fashionUi.${key}`);
   }
-  assert.match(component, /t\\(tryOnMessageKey\\(ui\\)\\)/);
-  assert.doesNotMatch(component, /Check readiness|Run remains disabled|> Run\\s*</);
+  assert.match(component, /t\(tryOnMessageKey\(ui\)\)/);
+  assert.doesNotMatch(component, /Check readiness|Run remains disabled|> Run\s*</);
 });
