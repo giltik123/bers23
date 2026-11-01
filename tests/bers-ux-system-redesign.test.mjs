@@ -173,10 +173,14 @@ test('legacy prompt plan is advisory, cannot silently commit, and blocks invalid
   assert.match(input, /disabled=\{!canEdit \|\| !planReady \|\| !instruction\.trim\(\) \|\| applying\}/);
   assert.match(preview, /editControls\.planAdvisory/);
   assert.match(preview, /editControls\.planReview/);
+  assert.match(preview, /plannerNotice\(e, t\)/);
+  assert.match(preview, /plannerNotice\(a, t\)/);
   for (const key of [
     'planReady', 'planClarify', 'planInvalid', 'planDuration',
     'planWholeImage', 'planNoObject', 'planSegmentation',
     'planTryOn', 'planEditing', 'planReview', 'planAdvisory',
+    'planNoProject', 'planNoImage', 'planEmptyInstruction',
+    'planSelectObject', 'planConflictingRequest', 'planNoObjectScope',
   ]) {
     assert.ok(en.includes('"' + key + '":'), 'English plan label missing: ' + key);
     assert.ok(ru.includes('"' + key + '":'), 'Russian plan label missing: ' + key);
