@@ -49,11 +49,14 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
     setFailed(previous => ({ ...previous, [role]: identity }));
     setLoaded(previous => ({ ...previous, [role]: null }));
   };
-  const reviewBlocked = needsHumanReview && !canAcceptReviewedCandidate({
+  // Every operation must display its current candidate before Accept is enabled.
+  // Fashion/scoped AI additionally require inspecting the source and explicit review.
+  // This is a UI interlock; Core still owns Artifact and Project acceptance.
+  const reviewBlocked = !canAcceptReviewedCandidate({
     identity, acknowledgedIdentity,
     afterLoadedIdentity: loaded.after, beforeLoadedIdentity: loaded.before,
     afterErrorIdentity: failed.after, beforeErrorIdentity: failed.before,
-    requiresBefore: scopedGeneration || fashion,
+    requiresBefore: needsHumanReview,
     requiresReview: needsHumanReview,
     reviewComplete: scopedGeneration ? scopedReview : allFashionAccepted,
     busy,
@@ -220,11 +223,20 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
       <p className="text-[11px] text-muted-foreground">
         {language === 'ru' ? t('editControls.qualityHint') : 'Zoom uses actual decoded image dimensions (one CSS pixel per source pixel at 100%). This remains a visual preview, not a pixel-level quality certificate. Accept alone commits to Project history.'}
       </p>
-      {(failed.before === identity || failed.after === identity) && needsHumanReview && (
-        <p role="alert" className="text-sm text-destructive">Не удалось загрузить изображение для проверки. Принятие заблокировано.</p>
+      {(failed.after === identity || (needsHumanReview && failed.before === identity)) && (
+        <p role="alert" className="text-sm text-destructive">
+          {language === 'ru' ? 'Не удалось загрузить изображение для проверки. Принятие заблокировано.' : 'Could not load the image for review. Accept is disabled.'}
+        </p>
       )}
       {needsHumanReview && !reviewImagesReady && (
-        <p role="status" className="text-xs text-muted-foreground">Перед принятием просмотрите «Before» и «After»; необходимо загрузить обе версии текущего результата.</p>
+        <p role="status" className="text-xs text-muted-foreground">
+          {language === 'ru' ? 'Перед принятием просмотрите «Before» и «After»; необходимо загрузить обе версии текущего результата.' : 'Review both Before and After; both previews must load before accepting this result.'}
+        </p>
+      )}
+      {!needsHumanReview && loaded.after !== identity && failed.after !== identity && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {language === 'ru' ? 'Ожидание загрузки текущего результата перед принятием.' : 'Waiting for the current result preview to load before accepting.'}
+        </p>
       )}
       {scopedGeneration && (
         <label className="flex gap-2 text-sm rounded-xl border p-3" aria-label="Ручная проверка ИИ">
