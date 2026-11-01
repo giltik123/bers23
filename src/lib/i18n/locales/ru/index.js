@@ -35,7 +35,7 @@ export const modules = {
       localAuthorityUnavailable: 'Локальный билет выполнения недоступен',
       expires: 'Истекает: {date}',
       cancellationUnsupported: 'Отмена не поддерживается.',
-      final: 'ИТОГ',
+      final: 'FINAL',
       openResult: 'Открыть результат',
       cancel: 'Отменить',
       cancelling: 'Отменяем через Core креативного выполнения…',
