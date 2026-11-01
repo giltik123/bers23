@@ -108,3 +108,26 @@ test('VI-3 brand and proper-noun searches stay literal read-only Wardrobe querie
     );
   }
 });
+
+test('VI-3 Russian footwear phrases resolve to their distinct canonical Wardrobe categories',()=>{
+  const footwear=[
+    {id:'boots-1',name:'Кожаные сапоги',category:'boots',tags:[],favorite:false},
+    {id:'sneakers-1',name:'Кроссовки',category:'sneakers',tags:[],favorite:false},
+    {id:'shoes-1',name:'Лоферы',category:'shoes',tags:[],favorite:false},
+    {id:'sandals-1',name:'Босоножки',category:'sandals',tags:[],favorite:false},
+  ];
+  for(const [spoken,category,id] of [
+    ['сапоги','boots','boots-1'],
+    ['кроссовки','sneakers','sneakers-1'],
+    ['лоферы','shoes','shoes-1'],
+    ['босоножки','sandals','sandals-1'],
+  ]){
+    const hints=normalizeRussianFashionVoice(spoken);
+    assert.deepEqual(hints.categories,[category],spoken);
+    assert.deepEqual(
+      filterCanonicalWardrobeVoice(footwear,{query:spoken,hints}).map(item=>item.id),
+      [id],
+      spoken,
+    );
+  }
+});
