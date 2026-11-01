@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { canCompareOperationAligned, canComparePixelsAligned, nativeInspectionCanvasSize } from '../src/components/editor/compareGeometryPolicy.js';
+import { reviewCandidateIdentity, canAcceptReviewedCandidate } from '../src/application/editor/ai-first/resultReviewGate.js';
 
 test('precise before/after split requires identical real image dimensions',()=>{
   assert.equal(canComparePixelsAligned({width:512,height:768},{width:512,height:768}),true);
@@ -61,4 +62,55 @@ test('zoom is genuine bounded native-pixel inspection, not an arbitrary scaled p
   assert.match(component,/disabled=\{!naturalSize\}/u);
   assert.match(component,/style=\{inspectedCanvas\}/u);
   assert.doesNotMatch(component,/width: `\$\{zoom \* 100\}%`/u);
+});
+
+test('all candidates require their own successfully decoded preview before Accept, not just Fashion/AI', async () => {
+  const first = reviewCandidateIdentity({
+    beforeUrl: '/source-a', afterUrl: '/candidate-a',
+    finalArtifactId: 'final-a', executionId: 'run-a', kind: 'CROP',
+  });
+  const next = reviewCandidateIdentity({
+    beforeUrl: '/source-a', afterUrl: '/candidate-b',
+    finalArtifactId: 'final-b', executionId: 'run-b', kind: 'CROP',
+  });
+  const base = {
+    identity: first, acknowledgedIdentity: first,
+    afterLoadedIdentity: null, beforeLoadedIdentity: null,
+    afterErrorIdentity: null, beforeErrorIdentity: null,
+    requiresBefore: false, requiresReview: false,
+    reviewComplete: true, busy: false,
+  };
+  assert.equal(canAcceptReviewedCandidate(base), false, 'unloaded preview must not be accepted');
+  assert.equal(canAcceptReviewedCandidate({ ...base, afterErrorIdentity: first }), false, 'failed preview must not be accepted');
+  assert.equal(canAcceptReviewedCandidate({ ...base, afterLoadedIdentity: first }), true, 'decoded current preview can be accepted');
+  assert.equal(canAcceptReviewedCandidate({ ...base, afterLoadedIdentity: first, busy: true }), false, 'busy commit must not be accepted');
+  assert.equal(canAcceptReviewedCandidate({ ...base, identity: next, afterLoadedIdentity: first }), false, 'stale decoded preview must not admit next candidate');
+  assert.equal(canAcceptReviewedCandidate({ ...base, identity: next, afterLoadedIdentity: next }), false, 'next candidate needs its own identity acknowledgement');
+  assert.equal(canAcceptReviewedCandidate({ ...base, identity: next, acknowledgedIdentity: next, afterLoadedIdentity: next }), true);
+
+  const component = await readFile('src/components/editor/ResultCompare.jsx', 'utf8');
+  assert.match(component, /const reviewBlocked = !canAcceptReviewedCandidate\(\{/u);
+  assert.match(component, /requiresBefore: needsHumanReview/u);
+  assert.match(component, /requiresReview: needsHumanReview/u);
+  assert.match(component, /disabled=\{busy \|\| reviewBlocked\}/u);
+  assert.match(component, /loaded\.after !== identity && failed\.after !== identity/u);
+  assert.match(component, /failed\.after === identity \|\| \(needsHumanReview && failed\.before === identity\)/u);
+});
+
+test('human-scoped/Fashion review still requires both previews and affirmative review', () => {
+  const identity = reviewCandidateIdentity({
+    beforeUrl: '/original', afterUrl: '/fashion',
+    finalArtifactId: 'final-f', executionId: 'run-f', kind: 'FASHION_TRYON',
+  });
+  const base = {
+    identity, acknowledgedIdentity: identity,
+    afterLoadedIdentity: identity, beforeLoadedIdentity: null,
+    afterErrorIdentity: null, beforeErrorIdentity: null,
+    requiresBefore: true, requiresReview: true,
+    reviewComplete: false, busy: false,
+  };
+  assert.equal(canAcceptReviewedCandidate(base), false, 'before image is required');
+  assert.equal(canAcceptReviewedCandidate({ ...base, beforeLoadedIdentity: identity }), false, 'human review is required');
+  assert.equal(canAcceptReviewedCandidate({ ...base, beforeLoadedIdentity: identity, reviewComplete: true }), true);
+  assert.equal(canAcceptReviewedCandidate({ ...base, beforeLoadedIdentity: identity, beforeErrorIdentity: identity, reviewComplete: true }), false);
 });
