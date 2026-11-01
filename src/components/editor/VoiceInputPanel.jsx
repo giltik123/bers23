@@ -46,35 +46,48 @@ export default function VoiceInputPanel({
   const [missingPack,setMissingPack]=useState(false);
   const [installing,setInstalling]=useState(false);
   const sessionRef=useRef(null);
+  const sessionAbortRef=useRef(null);
   const submittingRef=useRef(false);
   const generationRef=useRef(0);
-  useEffect(()=>()=>{generationRef.current++;sessionRef.current?.abort();sessionRef.current=null;},[]);
+  useEffect(()=>()=>{
+    generationRef.current++;
+    sessionAbortRef.current?.abort();sessionAbortRef.current=null;
+    sessionRef.current?.abort();sessionRef.current=null;
+  },[]);
   useEffect(()=>{
     generationRef.current++;
+    sessionAbortRef.current?.abort();sessionAbortRef.current=null;
     sessionRef.current?.abort();sessionRef.current=null;
     setTranscript('');setPartial('');setTranscriptSource(null);
+    setError('');setNotice('');setMissingPack(false);
     setPhase('IDLE');
   },[sourceKey]);
   const cancel=()=>{
     generationRef.current++;
+    sessionAbortRef.current?.abort();sessionAbortRef.current=null;
     sessionRef.current?.abort();sessionRef.current=null;
     setPhase('IDLE');setTranscript('');setPartial('');setError('');setNotice('');setTranscriptSource(null);setMissingPack(false);
   };
   useEffect(()=>{
-    if(disabled && sessionRef.current){
+    if(disabled && (sessionAbortRef.current || sessionRef.current)){
       generationRef.current++;
-      sessionRef.current.abort();sessionRef.current=null;
-      setPhase('IDLE');setPartial('');
+      sessionAbortRef.current?.abort();sessionAbortRef.current=null;
+      sessionRef.current?.abort();sessionRef.current=null;
+      setPhase('IDLE');setTranscript('');setPartial('');setTranscriptSource(null);
       setError('Редактор занят: запись остановлена без выполнения команды.');
     }
   },[disabled]);
   const start=async()=>{
     if(disabled||phase==='RECORDING'||phase==='PREPARING')return;
     const generation=++generationRef.current;
+    sessionAbortRef.current?.abort();
+    const controller=new AbortController();
+    sessionAbortRef.current=controller;
     sessionRef.current?.abort();sessionRef.current=null;
     setError('');setNotice('');setMissingPack(false);setTranscript('');setPartial('');setTranscriptSource(sourceKey);setPhase('PREPARING');
     try{
       const session=await createLocalVoiceSession({
+        signal:controller.signal,
         onPartial:value=>{if(generation===generationRef.current)setPartial(value);},
         onFinal:value=>{
           if(generation!==generationRef.current)return;
@@ -82,22 +95,23 @@ export default function VoiceInputPanel({
         },
         onEnd:()=>{
           if(generation!==generationRef.current)return;
-          sessionRef.current=null;
+          sessionRef.current=null;sessionAbortRef.current=null;
           setPhase(prev=>prev==='RECORDING'||prev==='STOPPING'?'REVIEW':prev);
         },
         onError:reason=>{
           if(generation!==generationRef.current)return;
-          sessionRef.current=null;
+          sessionRef.current=null;sessionAbortRef.current=null;
           setPhase('ERROR');setError('Ошибка локального распознавания: '+String(reason).slice(0,100));
         },
       });
-      if(generation!==generationRef.current){
+      if(generation!==generationRef.current||controller.signal.aborted){
         session.abort();return;
       }
       sessionRef.current=session;
       setPhase(current=>current==='PREPARING'?'RECORDING':current);
     }catch(reason){
-      if(generation!==generationRef.current)return;
+      if(generation!==generationRef.current||controller.signal.aborted)return;
+      sessionAbortRef.current=null;
       setError(reason?.message||'Локальный голосовой ввод недоступен.');
       setMissingPack(reason?.code==='LOCAL_ASR_PACK_MISSING');
       setPhase('ERROR');
@@ -105,12 +119,17 @@ export default function VoiceInputPanel({
   };
   const installPack=async()=>{
     if(disabled||installing||!missingPack)return;
+    const generation=generationRef.current;
     setInstalling(true);setError('');setNotice('');
     try{
       await installLocalRussianVoicePack();
+      if(generation!==generationRef.current)return;
       setMissingPack(false);setPhase('IDLE');
       setNotice('Русская модель установлена. Нажмите «Записать» для начала.');
-    }catch(reason){setError(reason?.message||'Не удалось установить локальную модель.');}
+    }catch(reason){
+      if(generation===generationRef.current)
+        setError(reason?.message||'Не удалось установить локальную модель.');
+    }
     finally{setInstalling(false);}
   };
   const stop=()=>{
