@@ -52,7 +52,7 @@ export default function JobRow({ job, onCancel, onRunAgain, onDuplicate, onMoveU
           {job.status === 'failed' && onRunAgain && (
             <Button type="button" size="sm" variant="ghost" disabled={repeatPending}
               onClick={() => void startNewOperation(JOB_REPEAT_ACTIONS.RUN_AGAIN, onRunAgain)}>
-              <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />Run again
+              <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /><span>Run again</span>
             </Button>
           )}
           {['queued', 'preparing', 'running', 'retrying'].includes(job.status) && onCancel && (
