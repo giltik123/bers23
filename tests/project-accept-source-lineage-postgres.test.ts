@@ -74,7 +74,7 @@ async function waitForPostgresLockWait(pool: Pool, waitingPid: number, blockerPi
   );
 }
 
-function observeProjectRowLockIssuance(pool: Pool, barrier: ProjectLockIssuanceBarrier): Pool {
+function observeProjectRowLockIssuance(pool: Pool, barrier: ProjectLockWaitBarrier): Pool {
   return {
     query: (...args: any[]) => (pool.query as any)(...args),
     connect: async () => {
