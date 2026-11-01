@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Loader2, RotateCw, ShieldCheck, SquareArrowOutUpRight, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS } from '@/platform/creative/deterministic/ResizeIdentity';
@@ -19,8 +19,19 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
   const [voiceReview,setVoiceReview]=useState(false);
   const [taskText, setTaskText] = useState('');
   const [taskDraft, setTaskDraft] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const actionLocksRef = useRef(new Set());
+  const contextKey = JSON.stringify([project?.id ?? null, project?.current_image_artifact_id ?? null]);
+  const contextRef = useRef(contextKey);
+  contextRef.current = contextKey;
   const active = Boolean(state?.active);
-  useEffect(()=>{setVoiceReview(false);setTaskDraft(null);},[project?.current_image_artifact_id]);
+  useEffect(()=>{
+    setVoiceReview(false);
+    setTaskDraft(null);
+    setActionError(null);
+    setActionBusy(false);
+  },[contextKey]);
   const view = state?.view;
 
   useEffect(() => {
@@ -43,7 +54,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
   const validTarget = useMemo(() => Number.isSafeInteger(width) && Number.isSafeInteger(height)
     && width > 0 && height > 0 && width <= RESIZE_MAX_DIMENSION && height <= RESIZE_MAX_DIMENSION
     && width * height <= RESIZE_MAX_OUTPUT_PIXELS, [width, height]);
-  const canPrepare = Boolean(project?.current_image_artifact_id) && !disabled && !busy && !active;
+  const canPrepare = Boolean(project?.current_image_artifact_id) && !disabled && !busy && !actionBusy && !active;
   const canStart = canPrepare && validTarget;
   const stepLabel = view?.nextAction?.operation === 'ORTHOGONAL_TRANSFORM'
     ? 'Running orthogonal transform'
@@ -53,7 +64,21 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
         ? `${view.attemptStatus || 'Local'} attempt can be retried`
         : view?.state || 'Ready';
 
-  const invoke = (operation) => { void Promise.resolve().then(operation).catch(() => undefined); };
+  const invoke = (operation) => {
+    // React's busy prop may not update until the next render. Do not allow
+    // two browser actions for the same Project/source in that interval.
+    if (actionLocksRef.current.has(contextKey)) return;
+    actionLocksRef.current.add(contextKey);
+    setActionBusy(true);
+    setActionError(null);
+    void Promise.resolve().then(operation).catch((error) => {
+      if (contextRef.current === contextKey)
+        setActionError(error?.message || 'Bounded Agent action failed');
+    }).finally(() => {
+      actionLocksRef.current.delete(contextKey);
+      if (contextRef.current === contextKey) setActionBusy(false);
+    });
+  };
   const prepareTask = () => {
     if (!canPrepare) return;
     const proposed = routeEditorAgentTask(taskText);
@@ -82,7 +107,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">Что хотите сделать с фотографией?</span>
           <textarea rows={3} maxLength={850} value={taskText}
-            disabled={disabled || busy}
+            disabled={disabled || busy || actionBusy}
             placeholder="Поверни фото вправо и затем сделай 1024 на 1024"
             onChange={(event) => { setTaskText(event.target.value); setTaskDraft(null); }}
             className="min-h-24 w-full resize-y rounded-lg border bg-background px-3 py-2 text-sm" />
@@ -132,7 +157,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
               className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
               value={mode}
               onChange={(event) => setMode(event.target.value)}
-              disabled={disabled || busy}
+              disabled={disabled || busy || actionBusy}
             >
               {MODES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
@@ -143,7 +168,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
               className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
               type="number" min="1" max={RESIZE_MAX_DIMENSION} step="1" value={width}
               onChange={(event) => setWidth(Number(event.target.value))}
-              disabled={disabled || busy}
+              disabled={disabled || busy || actionBusy}
             />
           </label>
           <label className="space-y-1">
@@ -152,7 +177,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
               className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
               type="number" min="1" max={RESIZE_MAX_DIMENSION} step="1" value={height}
               onChange={(event) => setHeight(Number(event.target.value))}
-              disabled={disabled || busy}
+              disabled={disabled || busy || actionBusy}
             />
           </label>
           {!validTarget && <p className="text-xs text-destructive sm:col-span-2">Target must use positive integer dimensions within the deterministic Resize limits.</p>}
@@ -167,7 +192,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
         </div>
       )}
 
-      {(active || busy) && (
+      {(active || busy || actionBusy) && (
         <div className="space-y-3 rounded-xl border bg-card p-3" role="status">
           <div className="flex items-center gap-2 text-sm">
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -176,16 +201,16 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
           {view?.executionId && <p className="break-all text-[11px] text-muted-foreground">Workflow: {view.executionId}</p>}
           {view?.retryAvailable ? (
             <div className="flex gap-2">
-              <Button size="sm" onClick={() => invoke(() => onRetry?.())} disabled={busy}>Retry exact step</Button>
-              <Button size="sm" variant="outline" onClick={() => invoke(() => onCancel?.())} disabled={busy}><X className="mr-1 h-3.5 w-3.5" />Cancel</Button>
+              <Button size="sm" onClick={() => invoke(() => onRetry?.())} disabled={busy || actionBusy}>Retry exact step</Button>
+              <Button size="sm" variant="outline" onClick={() => invoke(() => onCancel?.())} disabled={busy || actionBusy}><X className="mr-1 h-3.5 w-3.5" />Cancel</Button>
             </div>
           ) : view?.state && !['SUCCESS','FAILED','CANCELLED','UNKNOWN'].includes(view.state) ? (
-            <Button size="sm" variant="outline" onClick={() => invoke(() => onCancel?.())} disabled={busy}><X className="mr-1 h-3.5 w-3.5" />Cancel workflow</Button>
+            <Button size="sm" variant="outline" onClick={() => invoke(() => onCancel?.())} disabled={busy || actionBusy}><X className="mr-1 h-3.5 w-3.5" />Cancel workflow</Button>
           ) : null}
         </div>
       )}
 
-      {state?.error && <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive" role="alert">{state.error}</p>}
+      {(state?.error || actionError) && <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive" role="alert">{state?.error || actionError}</p>}
     </section>
   );
 }
