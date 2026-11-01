@@ -44,8 +44,8 @@ test('F3c manifest is exact, normalized and matches the accepted browser bundle 
   const manifest = JSON.parse(await readFile(MANIFEST_PATH, 'utf8'));
   assert.equal(manifest.schemaVersion, 1);
   assert.equal(manifest.profile, PROFILE);
-  assertExactPathList(manifest.bundleInputs, 'bundleInputs', 12);
-  assertExactPathList(manifest.supportPaths, 'supportPaths', 19);
+  assertExactPathList(manifest.bundleInputs, 'bundleInputs', 21);
+  assertExactPathList(manifest.supportPaths, 'supportPaths', 29);
   assert.equal(
     manifest.bundleInputs.some(path => manifest.supportPaths.includes(path)),
     false,
