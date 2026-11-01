@@ -31,21 +31,22 @@ export default function CanonicalAutomationStudio() {
   ));
   const canChangeCatalog = canMutateAutomationCatalog(catalogFresh, busy);
   const canRun = Boolean(canChangeCatalog && selected?.status === 'ACTIVE' && selectedProjectId && !dirty);
+  const canAcceptInvocation = Boolean(canChangeCatalog && invocation && selected?.id === invocation.automationId && selectedProjectId === invocation.projectId);
   const isTerminal = Boolean(invocation && TERMINAL_STATES.has(invocation.state));
   const resumePointer = selected && selectedProjectId ? recalledInvocation(selected.id, selectedProjectId) : '';
 
   useEffect(() => { void reload(); }, []);
 
   useEffect(() => {
-    if (!selected) return;
-    setDraft({
+    if (selected) setDraft({
       name: selected.name,
       orthogonal_mode: selected.plan.orthogonal_mode,
       target_width: selected.plan.target_width,
       target_height: selected.plan.target_height,
     });
+    // A removed definition or Project selection cannot retain an old Accept candidate.
     setInvocation(null);
-  }, [selected?.id, selected?.revision]);
+  }, [selectedAutomationId, selected?.id, selected?.revision, selectedProjectId]);
 
   async function reload() {
     setBusy(true); setCatalogFresh(false); setError('');
@@ -149,7 +150,7 @@ export default function CanonicalAutomationStudio() {
   }
 
   async function accept() {
-    if (!canChangeCatalog || invocation?.state !== 'SUCCESS' || !invocation.terminalArtifactId) return;
+    if (!canAcceptInvocation || invocation?.state !== 'SUCCESS' || !invocation.terminalArtifactId) return;
     setBusy(true); setError('');
     try {
       await coreClient.projects.acceptFinal(invocation.projectId, invocation.terminalArtifactId, `Automation: ${selected?.name || invocation.automationId}`);
@@ -228,7 +229,7 @@ export default function CanonicalAutomationStudio() {
               {invocation && !isTerminal && <Button variant="outline" onClick={() => void cancel()} disabled={busy}><Square className="h-4 w-4" />Cancel</Button>}
             </div>
 
-            {invocation && <InvocationPanel invocation={invocation} busy={busy} catalogFresh={catalogFresh} onAccept={accept} />}
+            {invocation && <InvocationPanel invocation={invocation} busy={busy} canAccept={canAcceptInvocation} onAccept={accept} />}
           </section>
         </main>
       </div>
@@ -236,12 +237,12 @@ export default function CanonicalAutomationStudio() {
   );
 }
 
-function InvocationPanel({ invocation, busy, catalogFresh, onAccept }) {
+function InvocationPanel({ invocation, busy, canAccept, onAccept }) {
   return <div className="space-y-3 rounded-xl bg-secondary/40 p-3">
     <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-medium">Invocation {invocation.invocationId}</p><p className="text-xs text-muted-foreground">Definition r{invocation.definitionRevision} · state {invocation.state}{invocation.attemptStatus ? ` · attempt ${invocation.attemptStatus}` : ''}</p></div>{invocation.failureCode && <span className="text-xs text-destructive">{invocation.failureCode}</span>}</div>
     {invocation.nextAction && <p className="text-xs text-muted-foreground">Core next action: {invocation.nextAction.operation}</p>}
     {invocation.state === 'SUCCESS' && invocation.terminalImageUrl && <img src={deliveryUrl(invocation.terminalImageUrl)} alt="Automation result preview" className="max-h-[480px] w-full rounded-xl bg-muted object-contain" />}
-    {invocation.state === 'SUCCESS' && invocation.terminalArtifactId && <Button onClick={() => void onAccept()} disabled={busy || !catalogFresh}>Accept result into Project</Button>}
+    {invocation.state === 'SUCCESS' && invocation.terminalArtifactId && <Button onClick={() => void onAccept()} disabled={busy || !canAccept}>Accept result into Project</Button>}
   </div>;
 }
 
