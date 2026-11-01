@@ -46,7 +46,7 @@ export async function createLocalVoiceSession({
   SpeechRecognitionCtor=globalThis.SpeechRecognition,
   onPartial=()=>{},onFinal=()=>{},onEnd=()=>{},onError=()=>{},
   schedule=(f,ms)=>setTimeout(f,ms),unschedule=clearTimeout,
-  maxDurationMs=LOCAL_VOICE_MAX_MS,locale='ru-RU',
+  maxDurationMs=LOCAL_VOICE_MAX_MS,locale='ru-RU',signal=null,
 }={}){
   if(locale!=='ru-RU'||!Number.isSafeInteger(maxDurationMs)||
      maxDurationMs<1000||maxDurationMs>LOCAL_VOICE_MAX_MS)
@@ -66,6 +66,10 @@ export async function createLocalVoiceSession({
     throw new LocalVoiceUnavailable('LOCAL_ASR_CHECK_FAILED',
       'Не удалось проверить локальную языковую модель. Запись не начата.');
   }
+  // Availability is asynchronous. A project switch or busy Editor may cancel
+  // this request while the OS is checking the installed language pack.
+  if(signal?.aborted)
+    throw new LocalVoiceUnavailable('LOCAL_ASR_ABORTED','Голосовая запись отменена до запуска.');
   const route=chooseVoiceRecognitionRoute({
     locale,privacy:'LOCAL_ONLY',osOnDeviceAvailable:available==='available',
   });
@@ -95,6 +99,7 @@ export async function createLocalVoiceSession({
   const close=()=>{
     if(!active)return false;
     active=false;
+    signal?.removeEventListener('abort',onAbort);
     if(timeoutId!==null)unschedule(timeoutId);
     return true;
   };
@@ -135,8 +140,20 @@ export async function createLocalVoiceSession({
       }
     }
   };
+  // Bind cancellation before activating the microphone. Abort is idempotent,
+  // including if the Editor becomes busy between availability and start().
+  const onAbort=()=>abort();
+  if(signal?.aborted){
+    abort();
+    throw new LocalVoiceUnavailable('LOCAL_ASR_ABORTED','Голосовая запись отменена до запуска.');
+  }
+  signal?.addEventListener('abort',onAbort,{once:true});
   try{
+    if(signal?.aborted)
+      throw new LocalVoiceUnavailable('LOCAL_ASR_ABORTED','Голосовая запись отменена до запуска.');
     recognizer.start();
+    if(signal?.aborted)
+      throw new LocalVoiceUnavailable('LOCAL_ASR_ABORTED','Голосовая запись отменена до запуска.');
     timeoutId=schedule(()=>{
       if(!active)return;
       // stop() may wait indefinitely for a final browser result / onend.
@@ -144,8 +161,9 @@ export async function createLocalVoiceSession({
       abort();
       onError('LOCAL_ASR_TIMEOUT');
     },maxDurationMs);
-  }catch{
+  }catch(reason){
     abort();
+    if(reason instanceof LocalVoiceUnavailable)throw reason;
     throw new LocalVoiceUnavailable('LOCAL_ASR_START_FAILED',
       'Не удалось включить микрофон или локальное распознавание речи.');
   }
