@@ -12,7 +12,7 @@
     "db:migrate:transactions": "node --experimental-strip-types server/transactions/infrastructure/postgres/transactionSchemaCli.ts migrate",
     "db:check:transactions": "node --experimental-strip-types server/transactions/infrastructure/postgres/transactionSchemaCli.ts check",
     "test:transactions": "node --experimental-strip-types --test server/transactions/**/*.test.mjs",
-    "test:core-cutover": "node --test tests/core-cutover-architecture.test.mjs tests/project-canonical-architecture.test.mjs",
+    "test:core-cutover": "node --test tests/core-cutover-architecture.test.mjs tests/project-canonical-architecture.test.mjs tests/project-editor-async-context.test.mjs",
     "test:canonical-product": "npm run test:canonical-product-vertical && npm run test:creative-canonical && npm run test:creative-production-authority && npm run test:core-http",
     "test:postgres": "node --experimental-strip-types --test server/transactions/infrastructure/postgres/postgresTransactionStore.integration.test.mjs",
     "test:transactions-postgres": "node -e \"if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required: PostgreSQL transaction tests cannot be skipped'); process.exit(1) }\" && npm run db:migrate:transactions && npm run test:postgres",
