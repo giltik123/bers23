@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { Archive, Camera, Heart, Images, Loader2, Plus, RefreshCw, RotateCcw, Shirt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -95,6 +95,7 @@ export default function FashionPanel({ voiceQuery = null }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fresh, setFresh] = useState(false);
+  const catalogRequestRef = useRef(0);
   const [error, setError] = useState('');
   const [addOpen, setAddOpen] = useState(false);
   const [captureItem, setCaptureItem] = useState(null);
@@ -105,6 +106,7 @@ export default function FashionPanel({ voiceQuery = null }) {
   const canMutate = fresh && !loading;
 
   const reload = useCallback(async ({ quiet = false } = {}) => {
+    const ticket = ++catalogRequestRef.current;
     // A failed or in-flight catalog refresh cannot authorize writes using old revisions.
     setFresh(false);
     if (!quiet) {
@@ -113,27 +115,32 @@ export default function FashionPanel({ voiceQuery = null }) {
     }
     try {
       const next = await wardrobe.load();
-      setItems(next);
-      setFresh(true);
+      if (ticket === catalogRequestRef.current) {
+        setItems(next);
+        setFresh(true);
+      }
       return next;
     } catch (cause) {
-      setFresh(false);
-      if (!quiet) setError(cause?.message || 'Wardrobe could not be loaded.');
+      if (ticket === catalogRequestRef.current) {
+        setFresh(false);
+        if (!quiet) setError(cause?.message || 'Wardrobe could not be loaded.');
+      }
       throw cause;
     } finally {
-      if (!quiet) setLoading(false);
+      if (!quiet && ticket === catalogRequestRef.current) setLoading(false);
     }
   }, [wardrobe]);
 
   useEffect(() => {
     let active = true;
+    const ticket = ++catalogRequestRef.current;
     setLoading(true);
     setFresh(false);
     wardrobe.load().then(
-      (next) => { if (active) { setItems(next); setFresh(true); setError(''); setLoading(false); } },
-      (cause) => { if (active) { setFresh(false); setError(cause?.message || 'Wardrobe could not be loaded.'); setLoading(false); } },
+      (next) => { if (active && ticket === catalogRequestRef.current) { setItems(next); setFresh(true); setError(''); setLoading(false); } },
+      (cause) => { if (active && ticket === catalogRequestRef.current) { setFresh(false); setError(cause?.message || 'Wardrobe could not be loaded.'); setLoading(false); } },
     );
-    return () => { active = false; };
+    return () => { active = false; catalogRequestRef.current += 1; };
   }, [wardrobe]);
 
   const replaceItem = useCallback((next) => {
