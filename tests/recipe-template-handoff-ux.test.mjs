@@ -33,6 +33,7 @@ test('recipe navigation is translated and keyboard state is exposed', () => {
   assert.match(panel, /aria-pressed=\{category === item\.id\}/);
   assert.match(panel, /recipes\.categories\.\$\{item\.id\}/);
   assert.match(panel, /recipes\.chainsUnavailable/);
+  assert.match(panel, /disabled=\{disabled \|\| !recipeManager\.isApplicable\(selectedRecipe, selectedObjects\)\}/);
   assert.match(read('src/components/editor/recipes/RecipeDetail.jsx'), /recipes\.allRecipes/);
 });
 
