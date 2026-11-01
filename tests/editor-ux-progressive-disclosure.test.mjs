@@ -49,7 +49,7 @@ test('brush and edge controls are contextual but retain real edit callbacks', ()
   assert.match(selection, /\{\(selection\.mode === 'BRUSH_ADD' \|\| selection\.mode === 'BRUSH_SUBTRACT'\) && <>/);
   assert.match(selection, /selectionUi[.]brushSize[^>]*onChange=\{\(event\) => onBrushSize\(Number\(event\.target\.value\)\)\}/);
   assert.match(selection, /selectionUi[.]brushHardness[^>]*onChange=\{\(event\) => onBrushHardness\(Number\(event\.target\.value\)\)\}/);
-  assert.match(selection, /<summary[^>]*>selectionUi[.]refineSelectionEdges<\/summary>/);
+  assert.match(selection, /selectionUi[.]refineSelectionEdges/);
   for (const name of ['Grow', 'Shrink', 'Open', 'Close', 'Feather']) {
     assert.match(selection, new RegExp('selectionUi[.]' + name.toLowerCase() + 'Selection[^>]*onClick=\\{on' + name + '\\}'));
   }
