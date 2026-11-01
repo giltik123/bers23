@@ -10,7 +10,8 @@ export function eligibleTryOnGarments(snapshot) {
 }
 
 export function canSubmitTryOn({ disabled, needsAccountSetup, loading, running, error, garments, garmentId, consent }) {
-  return !disabled && !needsAccountSetup && !loading && !running && !error && consent &&
+  return !disabled && !needsAccountSetup && !loading && !running && !error && consent === true &&
     typeof garmentId === 'string' && garmentId.length > 0 &&
-    Array.isArray(garments) && garments.some(item => item.garmentId === garmentId);
+    Array.isArray(garments) && garments.some(item => item && item.garmentId === garmentId &&
+      item.status === 'ACTIVE' && TRY_ON_CATEGORIES.has(item.categoryGroup));
 }
