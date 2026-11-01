@@ -32,7 +32,8 @@ export default function RecipePanel({ objects = [], selectedObjects = [], onUse,
   if (selectedRecipe) {
     return (
       <div className="border border-border/60 rounded-2xl p-4">
-        <RecipeDetail recipe={selectedRecipe} onBack={() => setSelectedRecipe(null)} onUse={onUse} disabled={disabled} />
+        <RecipeDetail recipe={selectedRecipe} onBack={() => setSelectedRecipe(null)} onUse={onUse}
+          disabled={disabled || !recipeManager.isApplicable(selectedRecipe, selectedObjects)} />
       </div>
     );
   }
