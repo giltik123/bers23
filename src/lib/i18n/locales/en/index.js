@@ -438,7 +438,8 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
     "preparingSmartSelection": "Preparing Smart Selection…",
     "selectionEmpty": "Selection is empty. Add pixels before Done.",
     "selectionTiny": "Selection is extremely small. Zoom in and verify the mask before Done.",
-    "selectionSuspiciouslyFull": "Selection covers almost the entire image. Verify the mask before Done."
+    "selectionSuspiciouslyFull": "Selection covers almost the entire image. Verify the mask before Done.",
+    "lassoPointLimit": "Lasso point limit reached ({count}). Apply the selection or clear the current path."
   },
 };
 export default modules;
