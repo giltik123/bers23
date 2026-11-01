@@ -190,135 +190,135 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
     onNudgeShape(movement[0], movement[1]);
   };
   return (
-    <section className="rounded-xl border bg-card p-3 space-y-3" aria-label="Selection tools">
+    <section className="rounded-xl border bg-card p-3 space-y-3" aria-label={t('selectionUi.selectionTools')}>
       <header className="space-y-1">
-        <h3 className="text-base font-semibold">Select &amp; Mask</h3>
-        <p className="text-xs leading-5 text-muted-foreground">Paint, draw a shape, or tap Smart. Add and Remove refine the same mask without changing your image.</p>
+        <h3 className="text-base font-semibold">{t('selectionUi.selectAndMask')}</h3>
+        <p className="text-xs leading-5 text-muted-foreground">{t('selectionUi.selectionIntro')}</p>
       </header>
       <div className="flex flex-wrap gap-2">
         {modes.map(([id, label]) => <Button key={id} type="button" size="sm" aria-pressed={selection.mode === id} title={modeHints[id]} variant={selection.mode === id ? 'default' : 'outline'} disabled={busy} onClick={() => onMode(id)}>{label}</Button>)}
         {(selection.mode === 'BRUSH_ADD' || selection.mode === 'BRUSH_SUBTRACT') && <>
-        <label className="flex items-center gap-2 px-2 text-xs">Brush radius
-          <input aria-label="Brush Size" aria-valuetext={`${brushSize} pixels`} type="range" min="2" max="96" value={brushSize} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushSize(Number(event.target.value))} />
+        <label className="flex items-center gap-2 px-2 text-xs">{t('selectionUi.brushRadius')}
+          <input aria-label={t('selectionUi.brushSize')} aria-valuetext={t('selectionUi.valueInPixels', { count: brushSize })} type="range" min="2" max="96" value={brushSize} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushSize(Number(event.target.value))} />
           <span aria-hidden="true">{brushSize}px</span>
         </label>
-        <label className="flex items-center gap-2 px-2 text-xs">Hardness
-          <input aria-label="Brush Hardness" aria-valuetext={`${brushHardness} percent`} type="range" min="0" max="100" value={brushHardness} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushHardness(Number(event.target.value))} />
+        <label className="flex items-center gap-2 px-2 text-xs">{t('selectionUi.hardness')}
+          <input aria-label={t('selectionUi.brushHardness')} aria-valuetext={t('selectionUi.valueInPercent', { count: brushHardness })} type="range" min="0" max="100" value={brushHardness} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushHardness(Number(event.target.value))} />
           <span aria-hidden="true">{brushHardness}%</span>
         </label>
-        <label className="flex items-center gap-2 px-2 text-xs">Opacity
-          <input aria-label="Brush Opacity" aria-valuetext={`${brushOpacity} percent`} type="range" min="0" max="100" step="1" value={brushOpacity} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushOpacity(Number(event.target.value))} />
+        <label className="flex items-center gap-2 px-2 text-xs">{t('selectionUi.opacity')}
+          <input aria-label={t('selectionUi.brushOpacity')} aria-valuetext={t('selectionUi.valueInPercent', { count: brushOpacity })} type="range" min="0" max="100" step="1" value={brushOpacity} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushOpacity(Number(event.target.value))} />
           <span aria-hidden="true">{brushOpacity}%</span>
         </label>
         </>}
       </div>
-      <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground" role="status">{modeHints[selection.mode]} {selection.quality ? `Mask coverage: ${(selection.quality.coverage * 100).toFixed(1)}%.` : 'No mask area committed yet.'}</p>
+      <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground" role="status">{modeHints[selection.mode]} {selection.quality ? t('selectionUi.maskCoverage', { coverage: (selection.quality.coverage * 100).toFixed(1) }) : t('selectionUi.noMaskAreaCommitted')}</p>
 
-      <div className="space-y-3 rounded-xl border border-border/70 bg-background p-3" aria-label="Mask overlay controls">
+      <div className="space-y-3 rounded-xl border border-border/70 bg-background p-3" aria-label={t('selectionUi.maskOverlayControls')}>
         <div className="flex items-center justify-between gap-3">
-          <h4 className="text-sm font-semibold">Mask overlay</h4>
+          <h4 className="text-sm font-semibold">{t('selectionUi.maskOverlay')}</h4>
           <label className="flex cursor-pointer items-center gap-2 text-xs">
-            <input type="checkbox" aria-label="Show mask overlay" checked={maskOverlayVisible} onChange={(event) => onMaskOverlayVisible(event.target.checked)} className="h-4 w-4 accent-primary" />
-            Show
+            <input type="checkbox" aria-label={t('selectionUi.showMaskOverlay')} checked={maskOverlayVisible} onChange={(event) => onMaskOverlayVisible(event.target.checked)} className="h-4 w-4 accent-primary" />
+            {t('selectionUi.show')}
           </label>
         </div>
         <label className="block space-y-1 text-xs">
-          <span className="flex justify-between text-muted-foreground"><span>Overlay opacity · view only</span><strong className="tabular-nums">{maskOverlayOpacity}%</strong></span>
-          <input type="range" aria-label="Mask overlay opacity" min="0" max="100" step="1" value={maskOverlayOpacity} onChange={(event) => onMaskOverlayOpacity(Number(event.target.value))} disabled={!maskOverlayVisible} className="w-full accent-primary" />
+          <span className="flex justify-between text-muted-foreground"><span>{t('selectionUi.overlayOpacityViewOnly')}</span><strong className="tabular-nums">{maskOverlayOpacity}%</strong></span>
+          <input type="range" aria-label={t('selectionUi.maskOverlayOpacity')} min="0" max="100" step="1" value={maskOverlayOpacity} onChange={(event) => onMaskOverlayOpacity(Number(event.target.value))} disabled={!maskOverlayVisible} className="w-full accent-primary" />
         </label>
-        <div className="flex items-center gap-2" role="group" aria-label="Mask overlay color">
-          <span className="mr-1 text-xs text-muted-foreground">Color</span>
+        <div className="flex items-center gap-2" role="group" aria-label={t('selectionUi.maskOverlayColor')}>
+          <span className="mr-1 text-xs text-muted-foreground">{t('selectionUi.color')}</span>
           {overlayChoices.map((choice) => (
-            <button key={choice.id} type="button" aria-label={choice.label} aria-pressed={maskOverlayColor === choice.id} disabled={!maskOverlayVisible} onClick={() => onMaskOverlayColor(choice.id)} className={`flex h-9 w-9 items-center justify-center rounded-xl border-2 transition-transform disabled:opacity-50 ${maskOverlayColor === choice.id ? 'border-primary scale-105' : 'border-border'}`}>
+            <button key={choice.id} type="button" aria-label={t('selectionUi.' + choice.labelKey)} aria-pressed={maskOverlayColor === choice.id} disabled={!maskOverlayVisible} onClick={() => onMaskOverlayColor(choice.id)} className={`flex h-9 w-9 items-center justify-center rounded-xl border-2 transition-transform disabled:opacity-50 ${maskOverlayColor === choice.id ? 'border-primary scale-105' : 'border-border'}`}>
               <span className={`h-5 w-5 rounded-full ${choice.className}`} aria-hidden="true" />
             </button>
           ))}
         </div>
-        <p className="text-[11px] leading-4 text-muted-foreground">Only the display color changes. Saved mask alpha and editing strength stay untouched.</p>
+        <p className="text-[11px] leading-4 text-muted-foreground">{t('selectionUi.onlyDisplayColorChanges')}</p>
       </div>
       {selection.mode === 'POLYGON' && (
-        <div className="flex flex-wrap items-center gap-2" aria-label="Polygon selection controls">
-          <label className="flex items-center gap-2 text-xs">Composition
-            <select aria-label="Polygon composition" value={polygonComposition} disabled={busy} onChange={(event) => onPolygonComposition(event.target.value)} className="rounded-md border bg-background px-2 py-1">
-              <option value="REPLACE">Replace</option>
-              <option value="ADD">Add</option>
-              <option value="SUBTRACT">Subtract</option>
-              <option value="INTERSECT">Intersect</option>
+        <div className="flex flex-wrap items-center gap-2" aria-label={t('selectionUi.polygonSelectionControls')}>
+          <label className="flex items-center gap-2 text-xs">{t('selectionUi.composition')}
+            <select aria-label={t('selectionUi.polygonComposition')} value={polygonComposition} disabled={busy} onChange={(event) => onPolygonComposition(event.target.value)} className="rounded-md border bg-background px-2 py-1">
+              <option value="REPLACE">{t('selectionUi.replace')}</option>
+              <option value="ADD">{t('selectionUi.add')}</option>
+              <option value="SUBTRACT">{t('selectionUi.subtract')}</option>
+              <option value="INTERSECT">{t('selectionUi.intersect')}</option>
             </select>
           </label>
-          <span className="text-xs text-muted-foreground" role="status">{selection.polygonVertices.length} vertices</span>
-          <Button type="button" size="sm" variant="outline" aria-label="Apply polygon selection" disabled={busy || selection.polygonVertices.length < 3} onClick={onApplyPolygon}>Apply Polygon</Button>
-          <Button type="button" size="sm" variant="ghost" aria-label="Clear polygon vertices" disabled={busy || selection.polygonVertices.length === 0} onClick={onClearPolygon}>Clear Points</Button>
+          <span className="text-xs text-muted-foreground" role="status">{t('selectionUi.verticesCount', { count: selection.polygonVertices.length })}</span>
+          <Button type="button" size="sm" variant="outline" aria-label={t('selectionUi.applyPolygonSelection')} disabled={busy || selection.polygonVertices.length < 3} onClick={onApplyPolygon}>{t('selectionUi.applyPolygon')}</Button>
+          <Button type="button" size="sm" variant="ghost" aria-label={t('selectionUi.clearPolygonVertices')} disabled={busy || selection.polygonVertices.length === 0} onClick={onClearPolygon}>{t('selectionUi.clearPoints')}</Button>
         </div>
       )}
       {selection.mode === 'LASSO' && (
-        <div className="flex flex-wrap items-center gap-2" aria-label="Lasso selection controls">
-          <label className="flex items-center gap-2 text-xs">Composition
-            <select aria-label="Lasso composition" value={polygonComposition} disabled={busy} onChange={(event) => onPolygonComposition(event.target.value)} className="rounded-md border bg-background px-2 py-1">
-              <option value="REPLACE">Replace</option>
-              <option value="ADD">Add</option>
-              <option value="SUBTRACT">Subtract</option>
-              <option value="INTERSECT">Intersect</option>
+        <div className="flex flex-wrap items-center gap-2" aria-label={t('selectionUi.lassoSelectionControls')}>
+          <label className="flex items-center gap-2 text-xs">{t('selectionUi.composition')}
+            <select aria-label={t('selectionUi.lassoComposition')} value={polygonComposition} disabled={busy} onChange={(event) => onPolygonComposition(event.target.value)} className="rounded-md border bg-background px-2 py-1">
+              <option value="REPLACE">{t('selectionUi.replace')}</option>
+              <option value="ADD">{t('selectionUi.add')}</option>
+              <option value="SUBTRACT">{t('selectionUi.subtract')}</option>
+              <option value="INTERSECT">{t('selectionUi.intersect')}</option>
             </select>
           </label>
-          <span className="text-xs text-muted-foreground" role="status">{selection.polygonVertices.length} sampled points</span>
-          <Button type="button" size="sm" variant="outline" aria-label="Apply lasso selection" disabled={busy || selection.polygonVertices.length < 3} onClick={onApplyPolygon}>Apply Lasso</Button>
-          <Button type="button" size="sm" variant="ghost" aria-label="Clear lasso points" disabled={busy || selection.polygonVertices.length === 0} onClick={onClearPolygon}>Clear Points</Button>
+          <span className="text-xs text-muted-foreground" role="status">{t('selectionUi.sampledPointsCount', { count: selection.polygonVertices.length })}</span>
+          <Button type="button" size="sm" variant="outline" aria-label={t('selectionUi.applyLassoSelection')} disabled={busy || selection.polygonVertices.length < 3} onClick={onApplyPolygon}>{t('selectionUi.applyLasso')}</Button>
+          <Button type="button" size="sm" variant="ghost" aria-label={t('selectionUi.clearLassoPoints')} disabled={busy || selection.polygonVertices.length === 0} onClick={onClearPolygon}>{t('selectionUi.clearPoints')}</Button>
         </div>
       )}
       {(selection.mode === 'RECTANGLE' || selection.mode === 'ELLIPSE') && (
-        <div className="flex flex-wrap items-center gap-2" aria-label="Shape selection controls">
-          <label className="flex items-center gap-2 text-xs">Composition
-            <select aria-label="Shape composition" value={polygonComposition} disabled={busy} onChange={(event) => onPolygonComposition(event.target.value)} className="rounded-md border bg-background px-2 py-1">
-              <option value="REPLACE">Replace</option>
-              <option value="ADD">Add</option>
-              <option value="SUBTRACT">Subtract</option>
-              <option value="INTERSECT">Intersect</option>
+        <div className="flex flex-wrap items-center gap-2" aria-label={t('selectionUi.shapeSelectionControls')}>
+          <label className="flex items-center gap-2 text-xs">{t('selectionUi.composition')}
+            <select aria-label={t('selectionUi.shapeComposition')} value={polygonComposition} disabled={busy} onChange={(event) => onPolygonComposition(event.target.value)} className="rounded-md border bg-background px-2 py-1">
+              <option value="REPLACE">{t('selectionUi.replace')}</option>
+              <option value="ADD">{t('selectionUi.add')}</option>
+              <option value="SUBTRACT">{t('selectionUi.subtract')}</option>
+              <option value="INTERSECT">{t('selectionUi.intersect')}</option>
             </select>
           </label>
-          <span className="text-xs text-muted-foreground" role="status">{selection.shapeVertices.length === 2 ? 'Drag ready' : 'Drag on image'}</span>
+          <span className="text-xs text-muted-foreground" role="status">{selection.shapeVertices.length === 2 ? t('selectionUi.dragReady') : t('selectionUi.dragOnImage')}</span>
           <div
             role="group"
-            aria-label="Shape keyboard nudging"
+            aria-label={t('selectionUi.shapeKeyboardNudging')}
             aria-disabled={!shapeReady || busy}
             tabIndex={shapeReady && !busy ? 0 : -1}
             onKeyDown={shapeKeyDown}
             className="rounded-md border px-2 py-1 text-[11px] text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           >
-            Arrow keys move 1px · Shift+Arrow 10px
+            {t('selectionUi.arrowMoveHint')}
           </div>
-          <Button type="button" size="sm" variant="outline" aria-label={`Apply ${selection.mode.toLowerCase()} selection`} disabled={busy || selection.shapeVertices.length !== 2} onClick={onApplyShape}>Apply {selection.mode === 'RECTANGLE' ? 'Rectangle' : 'Ellipse'}</Button>
-          <Button type="button" size="sm" variant="ghost" aria-label="Clear shape anchors" disabled={busy || selection.shapeVertices.length === 0} onClick={onClearShape}>Clear Shape</Button>
+          <Button type="button" size="sm" variant="outline" aria-label={selection.mode === 'RECTANGLE' ? t('selectionUi.applyRectangleSelection') : t('selectionUi.applyEllipseSelection')} disabled={busy || selection.shapeVertices.length !== 2} onClick={onApplyShape}>{selection.mode === 'RECTANGLE' ? t('selectionUi.applyRectangle') : t('selectionUi.applyEllipse')}</Button>
+          <Button type="button" size="sm" variant="ghost" aria-label={t('selectionUi.clearShapeAnchors')} disabled={busy || selection.shapeVertices.length === 0} onClick={onClearShape}>{t('selectionUi.clearShape')}</Button>
         </div>
       )}
       <details className="rounded-lg border border-border/60 p-2">
-        <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground">Refine selection edges</summary>
+        <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground">{t('selectionUi.refineSelectionEdges')}</summary>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-2 px-2 text-xs">Edge Radius
-          <input aria-label="Selection edge radius" type="range" min="1" max="32" value={morphologyRadius} disabled={busy || !editable} onChange={(event) => onMorphologyRadius(Number(event.target.value))} />
+        <label className="flex items-center gap-2 px-2 text-xs">{t('selectionUi.edgeRadius')}
+          <input aria-label={t('selectionUi.selectionEdgeRadius')} type="range" min="1" max="32" value={morphologyRadius} disabled={busy || !editable} onChange={(event) => onMorphologyRadius(Number(event.target.value))} />
           <span aria-hidden="true">{morphologyRadius}px</span>
         </label>
-        <Button type="button" size="sm" variant="outline" aria-label="Grow selection" disabled={busy || !editable} onClick={onGrow}>Grow</Button>
-        <Button type="button" size="sm" variant="outline" aria-label="Shrink selection" disabled={busy || !editable} onClick={onShrink}>Shrink</Button>
-        <Button type="button" size="sm" variant="outline" aria-label="Open selection" disabled={busy || !editable} onClick={onOpen}>Open</Button>
-        <Button type="button" size="sm" variant="outline" aria-label="Close selection" disabled={busy || !editable} onClick={onClose}>Close</Button>
-        <Button type="button" size="sm" variant="outline" aria-label="Feather selection" disabled={busy || !editable} onClick={onFeather}>Feather</Button>
+        <Button type="button" size="sm" variant="outline" aria-label={t('selectionUi.growSelection')} disabled={busy || !editable} onClick={onGrow}>{t('selectionUi.grow')}</Button>
+        <Button type="button" size="sm" variant="outline" aria-label={t('selectionUi.shrinkSelection')} disabled={busy || !editable} onClick={onShrink}>{t('selectionUi.shrink')}</Button>
+        <Button type="button" size="sm" variant="outline" aria-label={t('selectionUi.openSelection')} disabled={busy || !editable} onClick={onOpen}>{t('selectionUi.open')}</Button>
+        <Button type="button" size="sm" variant="outline" aria-label={t('selectionUi.closeSelection')} disabled={busy || !editable} onClick={onClose}>{t('selectionUi.close')}</Button>
+        <Button type="button" size="sm" variant="outline" aria-label={t('selectionUi.featherSelection')} disabled={busy || !editable} onClick={onFeather}>{t('selectionUi.feather')}</Button>
         </div>
       </details>
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" size="sm" variant="outline" aria-label="Undo selection edit" aria-keyshortcuts="Control+Z Meta+Z" disabled={busy || !selection.canUndo} onClick={onUndo}>Undo</Button>
-        <Button type="button" size="sm" variant="outline" aria-label="Redo selection edit" aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y" disabled={busy || !selection.canRedo} onClick={onRedo}>Redo</Button>
-        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onClear}>Clear</Button>
-        <Button type="button" size="sm" variant="outline" aria-label="Invert selection" disabled={!editable} onClick={onInvert}>Invert</Button>
+        <Button type="button" size="sm" variant="outline" aria-label={t('selectionUi.undoSelectionEdit')} aria-keyshortcuts="Control+Z Meta+Z" disabled={busy || !selection.canUndo} onClick={onUndo}>{t('selectionUi.undo')}</Button>
+        <Button type="button" size="sm" variant="outline" aria-label={t('selectionUi.redoSelectionEdit')} aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y" disabled={busy || !selection.canRedo} onClick={onRedo}>{t('selectionUi.redo')}</Button>
+        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onClear}>{t('selectionUi.clearSelection')}</Button>
+        <Button type="button" size="sm" variant="outline" aria-label={t('selectionUi.invertSelection')} disabled={!editable} onClick={onInvert}>{t('selectionUi.invert')}</Button>
         <span className="flex-1" />
-        <Button type="button" size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button type="button" size="sm" disabled={!canDone} onClick={onDone} title="Save the selected pixels as a canonical mask, then return to photo editing">Done</Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onCancel}>{t('selectionUi.cancelSelection')}</Button>
+        <Button type="button" size="sm" disabled={!canDone} onClick={onDone} title={t('selectionUi.doneSelectionTitle')}>{t('selectionUi.doneSelection')}</Button>
       </div>
-      {selection.state === 'SELECTING' && <p className="text-xs text-muted-foreground" role="status">Preparing Smart Selection…</p>}
+      {selection.state === 'SELECTING' && <p className="text-xs text-muted-foreground" role="status">{t('selectionUi.preparingSmartSelection')}</p>}
       {selection.warning && <p className="text-xs text-amber-600" role="status">{selection.warning}</p>}
-      {selection.quality?.warning === 'EMPTY' && <p className="text-xs text-amber-600" role="status">Selection is empty. Add pixels before Done.</p>}
-      {selection.quality?.warning === 'TINY' && <p className="text-xs text-amber-600" role="status">Selection is extremely small. Zoom in and verify the mask before Done.</p>}
-      {selection.quality?.warning === 'SUSPICIOUSLY_FULL' && <p className="text-xs text-amber-600" role="status">Selection covers almost the entire image. Verify the mask before Done.</p>}
+      {selection.quality?.warning === 'EMPTY' && <p className="text-xs text-amber-600" role="status">{t('selectionUi.selectionEmpty')}</p>}
+      {selection.quality?.warning === 'TINY' && <p className="text-xs text-amber-600" role="status">{t('selectionUi.selectionTiny')}</p>}
+      {selection.quality?.warning === 'SUSPICIOUSLY_FULL' && <p className="text-xs text-amber-600" role="status">{t('selectionUi.selectionSuspiciouslyFull')}</p>}
     </section>
   );
 }
