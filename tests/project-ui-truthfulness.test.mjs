@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import './project-gallery-reconciliation.test.mjs';
 
 test('Projects UI does not expose a fake Duplicate action', async () => {
   const [projects, card, menu] = await Promise.all([
