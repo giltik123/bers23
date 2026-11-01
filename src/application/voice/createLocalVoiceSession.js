@@ -51,6 +51,8 @@ export async function createLocalVoiceSession({
   if(locale!=='ru-RU'||!Number.isSafeInteger(maxDurationMs)||
      maxDurationMs<1000||maxDurationMs>LOCAL_VOICE_MAX_MS)
     throw new LocalVoiceUnavailable('VOICE_INVALID_POLICY','Неверная политика локального голосового ввода');
+  if(signal?.aborted)
+    throw new LocalVoiceUnavailable('LOCAL_ASR_ABORTED','Голосовая запись отменена до запуска.');
   if(typeof SpeechRecognitionCtor!=='function' ||
      typeof SpeechRecognitionCtor.available!=='function')
     throw new LocalVoiceUnavailable('LOCAL_ASR_UNSUPPORTED',
