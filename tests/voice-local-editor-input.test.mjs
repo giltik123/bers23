@@ -83,6 +83,60 @@ test('offline local speech port starts only after explicit on-device RU capabili
   assert.equal(end,1);
   assert.deepEqual(activity,['start','stop']);
 });
+test('a cancelled Editor context never starts a microphone after an async local pack check',async()=>{
+  const f=fakeRecognizer();
+  let resolveAvailability;
+  f.Recognizer.available=()=>new Promise(resolve=>{resolveAvailability=resolve;});
+  const controller=new AbortController();
+  const pending=createLocalVoiceSession({
+    SpeechRecognitionCtor:f.Recognizer,signal:controller.signal,
+  });
+  controller.abort(); // Editor became busy or switched Project while OS check was pending
+  resolveAvailability('available');
+  await assert.rejects(pending,error=>error instanceof LocalVoiceUnavailable &&
+    error.code==='LOCAL_ASR_ABORTED');
+  assert.deepEqual(f.activity,[]);
+  assert.equal(f.instance(),undefined);
+
+  const alreadyCancelled=new AbortController();
+  alreadyCancelled.abort();
+  const fresh=fakeRecognizer();
+  await assert.rejects(()=>createLocalVoiceSession({
+    SpeechRecognitionCtor:fresh.Recognizer,signal:alreadyCancelled.signal,
+  }),error=>error.code==='LOCAL_ASR_ABORTED');
+  assert.deepEqual(fresh.checks,[]);
+  assert.deepEqual(fresh.activity,[]);
+});
+
+test('Editor cancellation signal aborts active local ASR and discards late transcripts',async()=>{
+  const f=fakeRecognizer();
+  const controller=new AbortController();
+  let finals=0,cleared=0;
+  const session=await createLocalVoiceSession({
+    SpeechRecognitionCtor:f.Recognizer,signal:controller.signal,
+    onFinal:()=>finals++,
+    schedule:()=>23,unschedule:()=>cleared++,
+  });
+  const staleCallback=f.instance().onresult;
+  controller.abort();
+  assert.deepEqual(f.activity,['start','abort']);
+  assert.equal(f.instance().onresult,null);
+  assert.equal(cleared,1);
+  staleCallback({results:[{0:{transcript:'не выполнять'},isFinal:true}]});
+  assert.equal(finals,0);
+  session.abort();controller.abort();
+  assert.deepEqual(f.activity,['start','abort']);
+});
+
+test('Voice panel invalidates in-flight recognition on busy Editor and Project/source changes',async()=>{
+  const ui=await readFile('src/components/editor/VoiceInputPanel.jsx','utf8');
+  assert.match(ui,/signal:controller\.signal/);
+  assert.match(ui,/if\(disabled && \(sessionAbortRef\.current \|\| sessionRef\.current\)\)/);
+  assert.match(ui,/sessionAbortRef\.current\?\.abort\(\)/);
+  assert.match(ui,/\},\[sourceKey\]\)/);
+  assert.match(ui,/generation!==generationRef\.current\|\|controller\.signal\.aborted/);
+});
+
 test('missing/restricted local Russian model fails closed without microphone start or remote fallback',async()=>{
   for(const status of ['downloadable','downloading','unavailable']){
     const f=fakeRecognizer(status);
