@@ -52,10 +52,14 @@ export default function useProject(projectId) {
     return () => gateRef.current.invalidate();
   }, [load]);
 
+  const activeProject = stateOwnerId === activeId && project?.id === activeId ? project : null;
+
   const runMutation = async (operation) => {
     const gate = gateRef.current;
+    // Do not send a mutation while the newly selected Project is still loading.
+    if (!activeProject || !activeId) throw new Error('Project is not loaded');
     const ticket = gate.begin(activeId);
-    if (ticket === null || !activeId) throw new Error('Project changed before action');
+    if (ticket === null) throw new Error('Project changed before action');
     // A mutation supersedes any pending reload; it must not leave its spinner
     // active after the older read has been correctly ignored.
     setLoading(false);
@@ -69,7 +73,6 @@ export default function useProject(projectId) {
 
   const save = (data) => runMutation(() => projectService.update(activeId, data));
   const rename = (name) => save({ name });
-  const activeProject = stateOwnerId === activeId && project?.id === activeId ? project : null;
 
   // Auto-save detected objects and selection through the canonical Project API.
   const saveObjects = (objects) => save({ objects });
