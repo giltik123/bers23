@@ -3,13 +3,31 @@ import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+// Storage can be unavailable (private browsing, blocked cookies, embedded
+// contexts). Appearance remains a session-local UI preference in that case.
+function readThemePreference() {
+  try {
+    return window.localStorage.getItem('theme') === 'dark';
+  } catch {
+    return false;
+  }
+}
+
+function persistThemePreference(dark) {
+  try {
+    window.localStorage.setItem('theme', dark ? 'dark' : 'light');
+  } catch {
+    // Never crash the shared workspace because persistence is denied.
+  }
+}
+
 export default function ThemeToggle({ showLabel = false }) {
   const { t } = useTranslation();
-  const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
+  const [dark, setDark] = useState(readThemePreference);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
-    localStorage.setItem('theme', dark ? 'dark' : 'light');
+    persistThemePreference(dark);
   }, [dark]);
   useEffect(() => {
     const synchronize = (event) => setDark(Boolean(event.detail));
