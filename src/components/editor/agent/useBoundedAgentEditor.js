@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CONFIGURED_CORE_API_ROOT, resolveCoreResourceUrl } from '@/api/coreResourceUrl';
 import { createBoundedAgentRunner } from '@/application/agent/createBoundedAgentRunner';
 import { encodeDeterministicRgbaPng } from '@/platform/creative/deterministic/DeterministicPng';
+import { createBoundedAgentContextGate } from './boundedAgentContextGate';
 
 const HINT_PREFIX = 'bers:bounded-agent:v1:';
 const EMPTY_STATE = Object.freeze({ active: false, busy: false, view: null, error: null });
@@ -11,21 +12,31 @@ const TERMINAL_DELIVERY_PREFIX = '/api/core/artifacts/results/';
 export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
   const mountedRef = useRef(false);
   const operationRef = useRef(null);
+  const contextGateRef = useRef(null);
+  if (!contextGateRef.current) contextGateRef.current = createBoundedAgentContextGate(project?.id, project?.current_image_artifact_id);
+  // Invalidate stale callbacks during render, before route-change effects run.
+  contextGateRef.current.sync(project?.id, project?.current_image_artifact_id);
+  const contextKey = JSON.stringify([project?.id ?? null, project?.current_image_artifact_id ?? null]);
   const finalCallbackRef = useRef(onFinalCandidate);
   finalCallbackRef.current = onFinalCandidate;
   const [state, setState] = useState(EMPTY_STATE);
 
-  const publishView = useCallback((view) => {
-    if (!mountedRef.current) return;
+  const publishView = useCallback((view, ticket) => {
+    if (!mountedRef.current || !contextGateRef.current.isCurrent(ticket)) return;
     setState((previous) => Object.freeze({ ...previous, active: !TERMINAL.has(view.state), view, error: null }));
   }, []);
 
   const runOperation = useCallback(async (name, operation, context) => {
+    const ticket = contextGateRef.current.capture(project?.id, context.sourceArtifactId);
+    if (!ticket) throw new Error('Bounded Agent Project or source changed before execution');
     if (operationRef.current) throw new Error(`Bounded Agent ${name} cannot start while ${operationRef.current} is in progress`);
     operationRef.current = name;
     if (mountedRef.current) setState((previous) => Object.freeze({ ...previous, active: true, busy: true, error: null }));
     try {
-      const outcome = await operation(publishView);
+      const outcome = await operation((view) => publishView(view, ticket));
+      // The old Core workflow may finish, but it must never replace the new
+      // Project's Agent state or publish a FINAL candidate in its Editor.
+      if (!contextGateRef.current.isCurrent(ticket)) return outcome;
       const view = outcome.view;
       if (view.state === 'SUCCESS') {
         if (!view.terminalArtifactId) throw new Error('Bounded Agent SUCCESS is missing the canonical terminal Artifact');
@@ -44,7 +55,10 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
           beforeUrl: context.beforeUrl,
           context: Object.freeze({ mode: context.mode, width: context.width, height: context.height }),
         });
-        if (!mountedRef.current) { revokeBlob(previewUrl); return outcome; }
+        if (!mountedRef.current || !contextGateRef.current.isCurrent(ticket)) {
+          revokeBlob(previewUrl);
+          return outcome;
+        }
         setState(Object.freeze({ active: false, busy: false, view, error: null }));
         writeHint(project?.id, { executionId: view.executionId, sourceArtifactId: context.sourceArtifactId, mode: context.mode, width: context.width, height: context.height });
         try { finalCallbackRef.current?.(pending); }
@@ -65,7 +79,8 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
       if (mountedRef.current) setState(Object.freeze({ active: true, busy: false, view, error: null }));
       return outcome;
     } catch (error) {
-      if (mountedRef.current) setState((previous) => Object.freeze({ ...previous, busy: false, error: error?.message || 'Bounded Agent failed' }));
+      if (mountedRef.current && contextGateRef.current.isCurrent(ticket))
+        setState((previous) => Object.freeze({ ...previous, busy: false, error: error?.message || 'Bounded Agent failed' }));
       throw error;
     } finally {
       operationRef.current = null;
@@ -105,18 +120,21 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
   const cancel = useCallback(async () => {
     const executionId = state.view?.executionId ?? readHint(project?.id)?.executionId;
     if (!project?.id || !executionId) return;
+    const ticket = contextGateRef.current.capture(project?.id, project?.current_image_artifact_id);
+    if (!ticket) throw new Error('Bounded Agent Project or source changed before cancellation');
     if (operationRef.current) throw new Error(`Bounded Agent cancel cannot run while ${operationRef.current} is in progress`);
     operationRef.current = 'cancel';
     if (mountedRef.current) setState((previous) => Object.freeze({ ...previous, busy: true, error: null }));
     try {
       const view = await createBoundedAgentRunner({ projectId: project.id }).cancel(executionId);
       clearHint(project.id);
-      if (mountedRef.current) setState(Object.freeze({ active: false, busy: false, view, error: null }));
+      if (mountedRef.current && contextGateRef.current.isCurrent(ticket))
+        setState(Object.freeze({ active: false, busy: false, view, error: null }));
       return view;
     } finally {
       operationRef.current = null;
     }
-  }, [project?.id, state.view?.executionId]);
+  }, [project?.id, project?.current_image_artifact_id, state.view?.executionId]);
 
   const dismiss = useCallback(() => {
     clearHint(project?.id);
@@ -127,6 +145,10 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
+
+  // An old Project's progress, retry or error must not remain visible after
+  // navigation or after a new canonical source becomes current.
+  useEffect(() => { setState(EMPTY_STATE); }, [contextKey]);
 
   useEffect(() => {
     if (!project?.id || !project.current_image_artifact_id || operationRef.current) return;
