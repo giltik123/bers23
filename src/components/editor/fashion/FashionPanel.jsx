@@ -94,6 +94,7 @@ export default function FashionPanel({ voiceQuery = null }) {
   }), []);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fresh, setFresh] = useState(false);
   const [error, setError] = useState('');
   const [addOpen, setAddOpen] = useState(false);
   const [captureItem, setCaptureItem] = useState(null);
@@ -101,8 +102,11 @@ export default function FashionPanel({ voiceQuery = null }) {
   const visibleItems=useMemo(
     ()=>filterCanonicalWardrobeVoice(items,voiceQuery),[items,voiceQuery],
   );
+  const canMutate = fresh && !loading;
 
   const reload = useCallback(async ({ quiet = false } = {}) => {
+    // A failed or in-flight catalog refresh cannot authorize writes using old revisions.
+    setFresh(false);
     if (!quiet) {
       setLoading(true);
       setError('');
@@ -110,8 +114,10 @@ export default function FashionPanel({ voiceQuery = null }) {
     try {
       const next = await wardrobe.load();
       setItems(next);
+      setFresh(true);
       return next;
     } catch (cause) {
+      setFresh(false);
       if (!quiet) setError(cause?.message || 'Wardrobe could not be loaded.');
       throw cause;
     } finally {
@@ -122,9 +128,10 @@ export default function FashionPanel({ voiceQuery = null }) {
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setFresh(false);
     wardrobe.load().then(
-      (next) => { if (active) { setItems(next); setError(''); setLoading(false); } },
-      (cause) => { if (active) { setError(cause?.message || 'Wardrobe could not be loaded.'); setLoading(false); } },
+      (next) => { if (active) { setItems(next); setFresh(true); setError(''); setLoading(false); } },
+      (cause) => { if (active) { setFresh(false); setError(cause?.message || 'Wardrobe could not be loaded.'); setLoading(false); } },
     );
     return () => { active = false; };
   }, [wardrobe]);
@@ -134,6 +141,7 @@ export default function FashionPanel({ voiceQuery = null }) {
   }, []);
 
   const createGarment = useCallback(async (intent) => {
+    if (!canMutate) throw new Error('Reload wardrobe before creating a garment.');
     try {
       const created = await wardrobe.create(intent);
       setItems((current) => [created, ...current.filter((item) => item.id !== created.id)]);
@@ -143,9 +151,10 @@ export default function FashionPanel({ voiceQuery = null }) {
       }
       throw cause;
     }
-  }, [reload, wardrobe]);
+  }, [canMutate, reload, wardrobe]);
 
   const appendGarmentView = useCallback(async (item, intent) => {
+    if (!canMutate) throw new Error('Reload wardrobe before adding a garment view.');
     setBusyId(item.id);
     setError('');
     try {
@@ -169,9 +178,10 @@ export default function FashionPanel({ voiceQuery = null }) {
     } finally {
       setBusyId('');
     }
-  }, [reload, replaceItem, wardrobe]);
+  }, [canMutate, reload, replaceItem, wardrobe]);
 
   const runMutation = useCallback(async (item, mutate) => {
+    if (!canMutate) return;
     setBusyId(item.id);
     setError('');
     try {
@@ -183,7 +193,7 @@ export default function FashionPanel({ voiceQuery = null }) {
     } finally {
       setBusyId('');
     }
-  }, [reload, replaceItem]);
+  }, [canMutate, reload, replaceItem]);
 
   return (
     <section className="rounded-2xl border border-border p-3 space-y-3" aria-label="Canonical fashion wardrobe">
@@ -196,7 +206,7 @@ export default function FashionPanel({ voiceQuery = null }) {
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span className="sr-only">{language === 'ru' ? t('fashionUi.reload') : 'Reload wardrobe'}</span>
           </Button>
-          <Button size="sm" className="h-8" onClick={() => setAddOpen(true)}>
+          <Button size="sm" className="h-8" onClick={() => setAddOpen(true)} disabled={!canMutate}>
             <Plus className="h-3.5 w-3.5 mr-1" /> {language === 'ru' ? t('fashionUi.addGarment') : 'Add garment'}
           </Button>
         </div>
@@ -212,13 +222,19 @@ export default function FashionPanel({ voiceQuery = null }) {
         </div>
       )}
 
+      {!fresh && !loading && (
+        <p role="status" className="text-xs text-amber-700 dark:text-amber-300">
+          {language === 'ru' ? 'Список гардероба не подтверждён сервером. Просмотр доступен, изменения заблокированы до успешного обновления.' : 'Wardrobe data is not confirmed by the server. You can view it, but changes are disabled until Reload succeeds.'}
+        </p>
+      )}
+
       {voiceQuery?.query&&(
         <div role="status" className="text-xs rounded-md border px-2 py-2">
           Голосовой поиск: {voiceQuery.query} — найдено {visibleItems.length} из {items.length}.
           Нет совпадений — уточните запрос, BERS не выбирает вещь наугад.
         </div>
       )}
-      <CanonicalCollectionsView garments={items} />
+      <CanonicalCollectionsView garments={items} disabled={!canMutate} />
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground" role="status">
@@ -236,7 +252,7 @@ export default function FashionPanel({ voiceQuery = null }) {
             <WardrobeCard
               key={item.id}
               item={item}
-              busy={busyId === item.id}
+              busy={!canMutate || busyId === item.id}
               onCapture={setCaptureItem}
               onFavorite={(current, favorite) => runMutation(current, (value) => wardrobe.setFavorite(value, favorite))}
               onArchive={(current) => runMutation(current, wardrobe.archive)}
