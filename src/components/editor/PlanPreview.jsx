@@ -16,6 +16,20 @@ const STEP_LABEL_KEYS = {
   save: 'editControls.planReview',
 };
 
+const PLANNER_MESSAGE_KEYS = Object.freeze({
+  'No project loaded': 'editControls.planNoProject',
+  'Project has no image': 'editControls.planNoImage',
+  'Instruction is empty': 'editControls.planEmptyInstruction',
+  'No object selected — select an object or describe which one to edit': 'editControls.planSelectObject',
+  'Conflicting request: both removing and adding/replacing': 'editControls.planConflictingRequest',
+  'No object selected for an object-scoped edit': 'editControls.planNoObjectScope',
+});
+
+function plannerNotice(message, t) {
+  const key = PLANNER_MESSAGE_KEYS[message];
+  return key ? t(key) : message;
+}
+
 // Advisory preview only: execution and Project history remain Core-authorized.
 export default function PlanPreview({ plan }) {
   const { t } = useTranslation();
@@ -49,10 +63,10 @@ export default function PlanPreview({ plan }) {
       {(plan.validation.errors.length > 0 || plan.intent.ambiguity.length > 0) && (
         <ul className="space-y-0.5 text-xs">
           {plan.validation.errors.map((e, i) => (
-            <li key={`e${i}`} className="text-destructive">• {e}</li>
+            <li key={`e${i}`} className="text-destructive">• {plannerNotice(e, t)}</li>
           ))}
           {plan.status !== 'invalid' && plan.intent.ambiguity.map((a, i) => (
-            <li key={`a${i}`} className="text-amber-600">• {a}</li>
+            <li key={`a${i}`} className="text-amber-600">• {plannerNotice(a, t)}</li>
           ))}
         </ul>
       )}
