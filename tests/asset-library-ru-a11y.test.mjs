@@ -17,7 +17,10 @@ test('Asset Library favorite is a separate keyboard-accessible button', async ()
   assert.doesNotMatch(selection[0].slice(selection[0].indexOf('>') + 1), /<button\b|role="button"/, 'no nested interactive controls');
   assert.match(card.slice(card.indexOf(selection[0]) + selection[0].length), /<button[\s\S]*?onClick=\{\(\) => onFavorite\(asset\)\}/);
   assert.match(card, /aria-label=\{t\(asset\.favorite \? 'assetUi\.removeFavorite' : 'assetUi\.addFavorite'/);
+  assert.match(card, /aria-pressed=\{Boolean\(selected\)\}/);
   assert.match(card, /aria-pressed=\{Boolean\(asset\.favorite\)\}/);
+  assert.match(card, /disabled=\{!onFavorite\}/);
+  assert.match(card, /onFavorite\?\.\(asset\)/);
   assert.doesNotMatch(card, /<span role="button"/);
 });
 
