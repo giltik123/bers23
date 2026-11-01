@@ -17,7 +17,7 @@ export default function EditorStatusBar({ objectCount, selectionCount, selection
     { icon: Database, label: t('editorStatusUi.cache', { state: cache }) },
   ];
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1 px-1 text-[11px] text-muted-foreground" aria-label={t('editorStatusUi.selectionStatus')}>
+    <div className="flex flex-wrap gap-x-4 gap-y-1 px-1 text-[11px] text-muted-foreground" role="group" aria-label={t('editorStatusUi.selectionStatus')}>
       {items.map(({ icon: Icon, label }) => (
         <span key={label} className="flex items-center gap-1">
           <Icon className="w-3 h-3" aria-hidden="true" /> {label}
