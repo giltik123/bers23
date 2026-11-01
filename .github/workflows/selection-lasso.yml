@@ -72,6 +72,8 @@ jobs:
           grep -q "rasterizeSelectionPolygon" "$service"
           grep -q "service.applyLasso(polygonComposition)" "$editor"
           grep -q "service.applyPolygon(polygonComposition)" "$editor"
+          grep -q 'selectionUi.polygonComposition' "$toolbar"
+          grep -q 'selectionUi.applyPolygonSelection' "$toolbar"
           grep -q 'selectionUi.lassoComposition' "$toolbar"
           grep -q 'selectionUi.applyLassoSelection' "$toolbar"
           grep -q "selection?.mode !== 'LASSO'" "$canvas"
