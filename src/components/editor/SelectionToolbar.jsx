@@ -1,58 +1,60 @@
 import React from 'react';
 import { Loader2, Brush } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 
-const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove'], ['POLYGON', 'Polygon'], ['LASSO', 'Lasso'], ['RECTANGLE', 'Rectangle'], ['ELLIPSE', 'Ellipse']];
-const modeHints = Object.freeze({
-  SMART_SELECT: 'Tap a subject to create a local AI mask.',
-  BRUSH_ADD: 'Paint on the image to add pixels to the mask.',
-  BRUSH_SUBTRACT: 'Paint on the image to remove pixels from the mask.',
-  POLYGON: 'Click points around an area, then apply the polygon.',
-  LASSO: 'Draw a freehand boundary, then apply the lasso.',
-  RECTANGLE: 'Drag out a rectangle on the image.',
-  ELLIPSE: 'Drag out an ellipse on the image.',
+const modeKeys = Object.freeze([
+  ['SMART_SELECT', 'smartMode'], ['BRUSH_ADD', 'addMode'], ['BRUSH_SUBTRACT', 'removeMode'],
+  ['POLYGON', 'polygonMode'], ['LASSO', 'lassoMode'], ['RECTANGLE', 'rectangleMode'], ['ELLIPSE', 'ellipseMode'],
+]);
+const modeHintKeys = Object.freeze({
+  SMART_SELECT: 'smartHint', BRUSH_ADD: 'addHint', BRUSH_SUBTRACT: 'removeHint',
+  POLYGON: 'polygonHint', LASSO: 'lassoHint', RECTANGLE: 'rectangleHint', ELLIPSE: 'ellipseHint',
 });
 const overlayChoices = Object.freeze([
-  { id: 'teal', label: 'Teal overlay', className: 'bg-emerald-500' },
-  { id: 'magenta', label: 'Magenta overlay', className: 'bg-fuchsia-500' },
-  { id: 'amber', label: 'Amber overlay', className: 'bg-amber-500' },
+  { id: 'teal', labelKey: 'tealOverlay', className: 'bg-emerald-500' },
+  { id: 'magenta', labelKey: 'magentaOverlay', className: 'bg-fuchsia-500' },
+  { id: 'amber', labelKey: 'amberOverlay', className: 'bg-amber-500' },
 ]);
 export default function SelectionToolbar({ selection, brushSize, onBrushSize, brushHardness, onBrushHardness, brushOpacity = 100, onBrushOpacity = () => {},
   maskOverlayVisible = true, onMaskOverlayVisible = () => {}, maskOverlayColor = 'teal', onMaskOverlayColor = () => {},
   maskOverlayOpacity = 45, onMaskOverlayOpacity = () => {}, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onOpen, onClose, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onNudgeShape, exposureEighthStops, onExposureEighthStops, canApplyExposure = false, applyingExposure = false, onApplyExposure, whiteBalanceTemperatureQ8, onWhiteBalanceTemperatureQ8, whiteBalanceTintQ8, onWhiteBalanceTintQ8, canApplyWhiteBalance = false, applyingWhiteBalance = false, onApplyWhiteBalance, levelsInputBlack, onLevelsInputBlack, levelsInputMidpoint, onLevelsInputMidpoint, levelsInputWhite, onLevelsInputWhite, levelsOutputBlack, onLevelsOutputBlack, levelsOutputWhite, onLevelsOutputWhite, canApplyLevels = false, applyingLevels = false, onApplyLevels, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, hasSelectedMask = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+  const { t } = useTranslation();
+  const modes = modeKeys.map(([id, key]) => [id, t('selectionUi.' + key)]);
+  const modeHints = Object.fromEntries(Object.entries(modeHintKeys).map(([id, key]) => [id, t('selectionUi.' + key)]));
   const levelsIdentity = levelsInputBlack === 0 && levelsInputMidpoint === 128 && levelsInputWhite === 255 && levelsOutputBlack === 0 && levelsOutputWhite === 255;
   if (!selection) return (
-    <section className="space-y-4" aria-label="Image selection and adjustments">
+    <section className="space-y-4" aria-label={t('selectionUi.imageSelectionAndAdjustments')}>
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>
-          <Brush className="h-4 w-4" aria-hidden="true" /> Smart Select
+          <Brush className="h-4 w-4" aria-hidden="true" /> {t('selectionUi.smartSelect')}
         </Button>
         {hasSelectedMask && (
           <Button type="button" variant="outline" disabled={startDisabled || !canIsolateBackground || isolatingBackground} onClick={onIsolateBackground}>
             {isolatingBackground && <Loader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden="true" />}
-            {isolatingBackground ? 'Removing background…' : 'Remove background'}
+            {isolatingBackground ? t('selectionUi.removingBackground') : t('selectionUi.removeBackground')}
           </Button>
         )}
       </div>
 
       {hasSelectedMask ? (
         <details className="rounded-2xl border border-border/70 bg-card p-3" open>
-          <summary className="cursor-pointer select-none text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Adjust selected area <span className="font-normal text-muted-foreground">· exposure, color, levels</span>
+          <summary className="cursor-pointer select-none text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{t('selectionUi.adjustSelectedArea')} <span className="font-normal text-muted-foreground">{t('selectionUi.adjustSelectedAreaSuffix')}</span>
           </summary>
           <p className="mt-3 text-xs leading-5 text-muted-foreground">
-            These adjustments affect only your saved mask. Change a value, choose Preview, then Accept or Discard the result.
+            {t('selectionUi.adjustSelectedAreaHint')}
           </p>
           <div className="mt-4 space-y-4">
 
-            <div className="space-y-3 rounded-xl border border-border/70 bg-background p-3" role="group" aria-label="Exposure adjustments">
+            <div className="space-y-3 rounded-xl border border-border/70 bg-background p-3" role="group" aria-label={t('selectionUi.exposureAdjustments')}>
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold">Exposure</h3>
-                <Button type="button" size="sm" variant="ghost" disabled={startDisabled || applyingExposure || exposureEighthStops === 0} onClick={() => onExposureEighthStops(0)}>Reset</Button>
+                <h3 className="text-sm font-semibold">{t('selectionUi.exposure')}</h3>
+                <Button type="button" size="sm" variant="ghost" disabled={startDisabled || applyingExposure || exposureEighthStops === 0} onClick={() => onExposureEighthStops(0)}>{t('selectionUi.reset')}</Button>
               </div>
               <label className="block space-y-2 text-xs">
-                <span className="flex items-center justify-between"><span>Brightness · EV</span><strong className="tabular-nums">{formatExposure(exposureEighthStops)}</strong></span>
+                <span className="flex items-center justify-between"><span>{t('selectionUi.brightnessEv')}</span><strong className="tabular-nums">{formatExposure(exposureEighthStops)}</strong></span>
                 <input
-                  aria-label="Masked exposure"
+                  aria-label={t('selectionUi.maskedExposure')}
                   aria-valuetext={formatExposure(exposureEighthStops)}
                   className="w-full accent-primary"
                   type="range"
@@ -63,23 +65,23 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
                   disabled={startDisabled || !canApplyExposure || applyingExposure}
                   onChange={(event) => onExposureEighthStops(Number(event.target.value))}
                 />
-                <span className="flex justify-between text-[10px] text-muted-foreground"><span>−4 EV</span><span>0</span><span>+4 EV</span></span>
+                <span className="flex justify-between text-[10px] text-muted-foreground"><span>{t('selectionUi.minusFourEv')}</span><span>{t('selectionUi.neutralZero')}</span><span>{t('selectionUi.plusFourEv')}</span></span>
               </label>
-              <Button type="button" className="w-full" variant="outline" aria-label="Preview masked exposure" disabled={startDisabled || !canApplyExposure || applyingExposure || exposureEighthStops === 0} onClick={onApplyExposure}>
+              <Button type="button" className="w-full" variant="outline" aria-label={t('selectionUi.previewMaskedExposure')} disabled={startDisabled || !canApplyExposure || applyingExposure || exposureEighthStops === 0} onClick={onApplyExposure}>
                 {applyingExposure && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                {applyingExposure ? 'Applying exposure…' : 'Preview exposure'}
+                {applyingExposure ? t('selectionUi.applyingExposure') : t('selectionUi.previewExposure')}
               </Button>
             </div>
 
-            <div className="space-y-3 rounded-xl border border-border/70 bg-background p-3" role="group" aria-label="White balance adjustments">
+            <div className="space-y-3 rounded-xl border border-border/70 bg-background p-3" role="group" aria-label={t('selectionUi.whiteBalanceAdjustments')}>
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold">White balance</h3>
-                <Button type="button" size="sm" variant="ghost" disabled={startDisabled || applyingWhiteBalance || (whiteBalanceTemperatureQ8 === 0 && whiteBalanceTintQ8 === 0)} onClick={() => { onWhiteBalanceTemperatureQ8(0); onWhiteBalanceTintQ8(0); }}>Reset</Button>
+                <h3 className="text-sm font-semibold">{t('selectionUi.whiteBalance')}</h3>
+                <Button type="button" size="sm" variant="ghost" disabled={startDisabled || applyingWhiteBalance || (whiteBalanceTemperatureQ8 === 0 && whiteBalanceTintQ8 === 0)} onClick={() => { onWhiteBalanceTemperatureQ8(0); onWhiteBalanceTintQ8(0); }}>{t('selectionUi.reset')}</Button>
               </div>
               <label className="block space-y-2 text-xs">
-                <span className="flex justify-between"><span>Temperature · cool ↔ warm</span><strong className="tabular-nums">{formatWhiteBalanceQ8(whiteBalanceTemperatureQ8)}</strong></span>
+                <span className="flex justify-between"><span>{t('selectionUi.temperatureCoolWarm')}</span><strong className="tabular-nums">{formatWhiteBalanceQ8(whiteBalanceTemperatureQ8)}</strong></span>
                 <input
-                  aria-label="Masked white balance temperature"
+                  aria-label={t('selectionUi.maskedWhiteBalanceTemperature')}
                   aria-valuetext={formatWhiteBalanceQ8(whiteBalanceTemperatureQ8)}
                   type="range"
                   className="w-full accent-primary"
@@ -90,12 +92,12 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
                   disabled={startDisabled || !canApplyWhiteBalance || applyingWhiteBalance}
                   onChange={(event) => onWhiteBalanceTemperatureQ8(Number(event.target.value))}
                 />
-                <span className="flex justify-between text-[10px] text-muted-foreground"><span>Cool</span><span>Neutral</span><span>Warm</span></span>
+                <span className="flex justify-between text-[10px] text-muted-foreground"><span>{t('selectionUi.cool')}</span><span>{t('selectionUi.neutral')}</span><span>{t('selectionUi.warm')}</span></span>
               </label>
               <label className="block space-y-2 text-xs">
-                <span className="flex justify-between"><span>Tint · green ↔ magenta</span><strong className="tabular-nums">{formatWhiteBalanceQ8(whiteBalanceTintQ8)}</strong></span>
+                <span className="flex justify-between"><span>{t('selectionUi.tintGreenMagenta')}</span><strong className="tabular-nums">{formatWhiteBalanceQ8(whiteBalanceTintQ8)}</strong></span>
                 <input
-                  aria-label="Masked white balance tint"
+                  aria-label={t('selectionUi.maskedWhiteBalanceTint')}
                   aria-valuetext={formatWhiteBalanceQ8(whiteBalanceTintQ8)}
                   type="range"
                   className="w-full accent-primary"
@@ -107,67 +109,67 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
                   onChange={(event) => onWhiteBalanceTintQ8(Number(event.target.value))}
                 />
               </label>
-              <Button type="button" className="w-full" variant="outline" aria-label="Preview masked white balance" disabled={startDisabled || !canApplyWhiteBalance || applyingWhiteBalance || (whiteBalanceTemperatureQ8 === 0 && whiteBalanceTintQ8 === 0)} onClick={onApplyWhiteBalance}>
+              <Button type="button" className="w-full" variant="outline" aria-label={t('selectionUi.previewMaskedWhiteBalance')} disabled={startDisabled || !canApplyWhiteBalance || applyingWhiteBalance || (whiteBalanceTemperatureQ8 === 0 && whiteBalanceTintQ8 === 0)} onClick={onApplyWhiteBalance}>
                 {applyingWhiteBalance && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                {applyingWhiteBalance ? 'Applying white balance…' : 'Preview white balance'}
+                {applyingWhiteBalance ? t('selectionUi.applyingWhiteBalance') : t('selectionUi.previewWhiteBalance')}
               </Button>
             </div>
 
-            <div className="space-y-3 rounded-xl border border-border/70 bg-background p-3" role="group" aria-label="Levels adjustments">
+            <div className="space-y-3 rounded-xl border border-border/70 bg-background p-3" role="group" aria-label={t('selectionUi.levelsAdjustments')}>
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold">Levels · tonal range</h3>
-                <Button type="button" size="sm" variant="ghost" disabled={startDisabled || applyingLevels || levelsIdentity} onClick={() => { onLevelsInputBlack(0); onLevelsInputMidpoint(128); onLevelsInputWhite(255); onLevelsOutputBlack(0); onLevelsOutputWhite(255); }}>Reset</Button>
+                <h3 className="text-sm font-semibold">{t('selectionUi.levelsTonalRange')}</h3>
+                <Button type="button" size="sm" variant="ghost" disabled={startDisabled || applyingLevels || levelsIdentity} onClick={() => { onLevelsInputBlack(0); onLevelsInputMidpoint(128); onLevelsInputWhite(255); onLevelsOutputBlack(0); onLevelsOutputWhite(255); }}>{t('selectionUi.reset')}</Button>
               </div>
-              <p className="text-xs text-muted-foreground">Adjust black point, midtone and white point; then set output limits. Values use exact 8-bit steps.</p>
+              <p className="text-xs text-muted-foreground">{t('selectionUi.adjustLevelsHint')}</p>
               <fieldset className="space-y-3" disabled={startDisabled || applyingLevels}>
-                <legend className="sr-only">Masked Levels</legend>
-                <span aria-hidden="true" className="sr-only">Levels</span>
+                <legend className="sr-only">{t('selectionUi.maskedLevels')}</legend>
+                <span aria-hidden="true" className="sr-only">{t('selectionUi.levels')}</span>
 
                 <div className="space-y-1">
-                  <label className="flex items-center justify-between gap-2 text-xs" htmlFor="levels-input-black">Input black</label>
+                  <label className="flex items-center justify-between gap-2 text-xs" htmlFor="levels-input-black">{t('selectionUi.inputBlack')}</label>
                   <div className="flex items-center gap-2">
-                    <input aria-label="Masked Levels input black slider" type="range" className="min-w-0 flex-1 accent-primary" min="0" max={Math.max(0, levelsInputMidpoint - 1)} step="1" value={levelsInputBlack} onChange={(event) => onLevelsInputBlack(Number(event.target.value))} />
-                    <input id="levels-input-black" aria-label="Masked Levels input black" type="number" min="0" max={Math.max(0, levelsInputMidpoint - 1)} step="1" value={levelsInputBlack} onChange={(event) => onLevelsInputBlack(Number(event.target.value))} className="w-16 rounded-lg border bg-card px-2 py-1 text-right text-sm tabular-nums" />
+                    <input aria-label={t('selectionUi.inputBlackSlider')} type="range" className="min-w-0 flex-1 accent-primary" min="0" max={Math.max(0, levelsInputMidpoint - 1)} step="1" value={levelsInputBlack} onChange={(event) => onLevelsInputBlack(Number(event.target.value))} />
+                    <input id="levels-input-black" aria-label={t('selectionUi.inputBlack')} type="number" min="0" max={Math.max(0, levelsInputMidpoint - 1)} step="1" value={levelsInputBlack} onChange={(event) => onLevelsInputBlack(Number(event.target.value))} className="w-16 rounded-lg border bg-card px-2 py-1 text-right text-sm tabular-nums" />
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs" htmlFor="levels-input-mid">Input midtones</label>
+                  <label className="text-xs" htmlFor="levels-input-mid">{t('selectionUi.inputMidtones')}</label>
                   <div className="flex items-center gap-2">
-                    <input aria-label="Masked Levels input midpoint slider" type="range" className="min-w-0 flex-1 accent-primary" min={Math.min(254, levelsInputBlack + 1)} max={Math.max(1, levelsInputWhite - 1)} step="1" value={levelsInputMidpoint} onChange={(event) => onLevelsInputMidpoint(Number(event.target.value))} />
-                    <input id="levels-input-mid" aria-label="Masked Levels input midpoint" type="number" min={Math.min(254, levelsInputBlack + 1)} max={Math.max(1, levelsInputWhite - 1)} step="1" value={levelsInputMidpoint} onChange={(event) => onLevelsInputMidpoint(Number(event.target.value))} className="w-16 rounded-lg border bg-card px-2 py-1 text-right text-sm tabular-nums" />
+                    <input aria-label={t('selectionUi.inputMidtonesSlider')} type="range" className="min-w-0 flex-1 accent-primary" min={Math.min(254, levelsInputBlack + 1)} max={Math.max(1, levelsInputWhite - 1)} step="1" value={levelsInputMidpoint} onChange={(event) => onLevelsInputMidpoint(Number(event.target.value))} />
+                    <input id="levels-input-mid" aria-label={t('selectionUi.inputMidtones')} type="number" min={Math.min(254, levelsInputBlack + 1)} max={Math.max(1, levelsInputWhite - 1)} step="1" value={levelsInputMidpoint} onChange={(event) => onLevelsInputMidpoint(Number(event.target.value))} className="w-16 rounded-lg border bg-card px-2 py-1 text-right text-sm tabular-nums" />
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs" htmlFor="levels-input-white">Input white</label>
+                  <label className="text-xs" htmlFor="levels-input-white">{t('selectionUi.inputWhite')}</label>
                   <div className="flex items-center gap-2">
-                    <input aria-label="Masked Levels input white slider" type="range" className="min-w-0 flex-1 accent-primary" min={Math.min(255, levelsInputMidpoint + 1)} max="255" step="1" value={levelsInputWhite} onChange={(event) => onLevelsInputWhite(Number(event.target.value))} />
-                    <input id="levels-input-white" aria-label="Masked Levels input white" type="number" min={Math.min(255, levelsInputMidpoint + 1)} max="255" step="1" value={levelsInputWhite} onChange={(event) => onLevelsInputWhite(Number(event.target.value))} className="w-16 rounded-lg border bg-card px-2 py-1 text-right text-sm tabular-nums" />
+                    <input aria-label={t('selectionUi.inputWhiteSlider')} type="range" className="min-w-0 flex-1 accent-primary" min={Math.min(255, levelsInputMidpoint + 1)} max="255" step="1" value={levelsInputWhite} onChange={(event) => onLevelsInputWhite(Number(event.target.value))} />
+                    <input id="levels-input-white" aria-label={t('selectionUi.inputWhite')} type="number" min={Math.min(255, levelsInputMidpoint + 1)} max="255" step="1" value={levelsInputWhite} onChange={(event) => onLevelsInputWhite(Number(event.target.value))} className="w-16 rounded-lg border bg-card px-2 py-1 text-right text-sm tabular-nums" />
                   </div>
                 </div>
                 <div className="space-y-1 border-t border-border/70 pt-3">
-                  <label className="text-xs" htmlFor="levels-output-black">Output black</label>
+                  <label className="text-xs" htmlFor="levels-output-black">{t('selectionUi.outputBlack')}</label>
                   <div className="flex items-center gap-2">
-                    <input aria-label="Masked Levels output black slider" type="range" className="min-w-0 flex-1 accent-primary" min="0" max={Math.max(0, levelsOutputWhite - 1)} step="1" value={levelsOutputBlack} onChange={(event) => onLevelsOutputBlack(Number(event.target.value))} />
-                    <input id="levels-output-black" aria-label="Masked Levels output black" type="number" min="0" max={Math.max(0, levelsOutputWhite - 1)} step="1" value={levelsOutputBlack} onChange={(event) => onLevelsOutputBlack(Number(event.target.value))} className="w-16 rounded-lg border bg-card px-2 py-1 text-right text-sm tabular-nums" />
+                    <input aria-label={t('selectionUi.outputBlackSlider')} type="range" className="min-w-0 flex-1 accent-primary" min="0" max={Math.max(0, levelsOutputWhite - 1)} step="1" value={levelsOutputBlack} onChange={(event) => onLevelsOutputBlack(Number(event.target.value))} />
+                    <input id="levels-output-black" aria-label={t('selectionUi.outputBlack')} type="number" min="0" max={Math.max(0, levelsOutputWhite - 1)} step="1" value={levelsOutputBlack} onChange={(event) => onLevelsOutputBlack(Number(event.target.value))} className="w-16 rounded-lg border bg-card px-2 py-1 text-right text-sm tabular-nums" />
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs" htmlFor="levels-output-white">Output white</label>
+                  <label className="text-xs" htmlFor="levels-output-white">{t('selectionUi.outputWhite')}</label>
                   <div className="flex items-center gap-2">
-                    <input aria-label="Masked Levels output white slider" type="range" className="min-w-0 flex-1 accent-primary" min={Math.min(255, levelsOutputBlack + 1)} max="255" step="1" value={levelsOutputWhite} onChange={(event) => onLevelsOutputWhite(Number(event.target.value))} />
-                    <input id="levels-output-white" aria-label="Masked Levels output white" type="number" min={Math.min(255, levelsOutputBlack + 1)} max="255" step="1" value={levelsOutputWhite} onChange={(event) => onLevelsOutputWhite(Number(event.target.value))} className="w-16 rounded-lg border bg-card px-2 py-1 text-right text-sm tabular-nums" />
+                    <input aria-label={t('selectionUi.outputWhiteSlider')} type="range" className="min-w-0 flex-1 accent-primary" min={Math.min(255, levelsOutputBlack + 1)} max="255" step="1" value={levelsOutputWhite} onChange={(event) => onLevelsOutputWhite(Number(event.target.value))} />
+                    <input id="levels-output-white" aria-label={t('selectionUi.outputWhite')} type="number" min={Math.min(255, levelsOutputBlack + 1)} max="255" step="1" value={levelsOutputWhite} onChange={(event) => onLevelsOutputWhite(Number(event.target.value))} className="w-16 rounded-lg border bg-card px-2 py-1 text-right text-sm tabular-nums" />
                   </div>
                 </div>
               </fieldset>
-              <Button type="button" className="w-full" variant="outline" aria-label="Preview masked Levels" disabled={startDisabled || !canApplyLevels || applyingLevels || levelsIdentity} onClick={onApplyLevels}>
+              <Button type="button" className="w-full" variant="outline" aria-label={t('selectionUi.previewMaskedLevels')} disabled={startDisabled || !canApplyLevels || applyingLevels || levelsIdentity} onClick={onApplyLevels}>
                 {applyingLevels && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                {applyingLevels ? 'Applying Levels…' : 'Preview Levels'}
+                {applyingLevels ? t('selectionUi.applyingLevels') : t('selectionUi.previewLevels')}
               </Button>
             </div>
           </div>
         </details>
       ) : (
-        <p className="rounded-xl bg-muted px-3 py-3 text-xs leading-5 text-muted-foreground">To adjust part of the image, use Smart Select, mark an area, then select Done. Advanced sliders appear only when a saved mask exists.</p>
+        <p className="rounded-xl bg-muted px-3 py-3 text-xs leading-5 text-muted-foreground">{t('selectionUi.adjustPartOfImageHint')}</p>
       )}
     </section>
   );
