@@ -13,10 +13,10 @@ test('R3d drives production Crop and Resize controls through explicit Preview Ac
     readFile('src/components/editor/ResizeToolbar.jsx', 'utf8'),
   ]);
 
-  assert.match(cropToolbar, /aria-label="Start crop"/);
-  assert.match(cropToolbar, /aria-label="Apply crop"/);
-  assert.match(resizeToolbar, /aria-label="Start resize"/);
-  assert.match(resizeToolbar, /aria-label="Apply resize"/);
+  assert.match(cropToolbar, /aria-label=\{t\('editorGeometry.startCrop'\)\}/);
+  assert.match(cropToolbar, /aria-label=\{t\('editorGeometry.applyCrop'\)\}/);
+  assert.match(resizeToolbar, /aria-label=\{t\('editorGeometry.startResize'\)\}/);
+  assert.match(resizeToolbar, /aria-label=\{t\('editorGeometry.applyResize'\)\}/);
   assert.match(editor, /createCrop\(/);
   assert.match(editor, /createResize\(/);
   assert.match(editor, /setPendingResult\(/);

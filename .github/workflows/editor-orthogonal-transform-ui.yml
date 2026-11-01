@@ -24,6 +24,8 @@ jobs:
       - run: npm ci
       - name: Prove Editor Rotate/Flip contract
         run: node --test tests/editor-orthogonal-transform-ui.test.mjs
+      - name: Prove localized Crop and Resize controls
+        run: node --test tests/editor-geometry-i18n.test.mjs
       - name: Preserve stale FINAL recovery and canonical Editor contracts
         run: |
           node --test tests/editor-final-source-conflict-recovery.test.mjs
