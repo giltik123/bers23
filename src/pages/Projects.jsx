@@ -22,21 +22,34 @@ export default function Projects() {
   const [uploadError, setUploadError] = useState('');
   const [loadError, setLoadError] = useState('');
   const [actionError, setActionError] = useState('');
+  const [actionBusy, setActionBusy] = useState(false);
+  const listRequestRef = useRef(0);
+  const actionInFlightRef = useRef(false);
   const fileRef = useRef(null);
   const navigate = useNavigate();
 
   const reload = async () => {
+    const request = ++listRequestRef.current;
     setProjects(null);
     setLoadError('');
     try {
-      setProjects(await projectService.list());
+      const next = await projectService.list();
+      if (request === listRequestRef.current) setProjects(next);
     } catch (error) {
+      if (request !== listRequestRef.current) return;
       console.error('[Projects] Failed to load projects', error);
       setLoadError(error?.message || t('projectUi.listFailed'));
     }
   };
   const createProjectFromFile = (file) => projectService.createFromFile(file);
-  useEffect(() => { reload(); offlineQueue.register('project-upload', async ({ file }) => { await createProjectFromFile(file); await reload(); }); }, []);
+  useEffect(() => {
+    void reload();
+    offlineQueue.register('project-upload', async ({ file }) => {
+      await createProjectFromFile(file);
+      await reload();
+    });
+    return () => { listRequestRef.current += 1; };
+  }, []);
 
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -56,31 +69,44 @@ export default function Projects() {
     }
   };
 
+  // A mutation may commit even if the response is lost. Re-read Core once and
+  // never replay the mutation automatically or apply a stale in-flight list.
+  const mutateAndReconcile = async (operation, fallback) => {
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
+    setActionBusy(true);
+    setActionError('');
+    listRequestRef.current += 1;
+    try {
+      await operation();
+    } catch (error) {
+      console.error('[Projects] Project action was not confirmed', error);
+      setActionError(error?.message || fallback);
+    } finally {
+      await reload();
+      actionInFlightRef.current = false;
+      setActionBusy(false);
+    }
+  };
+
   const handleRename = async (project) => {
+    if (actionInFlightRef.current) return;
     const name = window.prompt(t('projectUi.renameTitle'), project.name);
     if (!name || name === project.name) return;
-    setActionError('');
-    try { await projectService.rename(project.id, name); await reload(); }
-    catch (error) { console.error('[Projects] Failed to rename project', error); setActionError(error?.message || t('projectUi.renameFailed')); }
+    await mutateAndReconcile(() => projectService.rename(project.id, name), t('projectUi.renameFailed'));
   };
 
+  const handleToggleFavorite = (project) => mutateAndReconcile(
+    () => projectService.setFavorite(project.id, !project.favorite), t('projectUi.favoriteFailed'),
+  );
 
-  const handleToggleFavorite = async (project) => {
-    setActionError('');
-    try { await projectService.setFavorite(project.id, !project.favorite); await reload(); }
-    catch (error) { console.error('[Projects] Failed to update favorite', error); setActionError(error?.message || 'Unable to update project.'); }
-  };
-
-  const handleToggleArchive = async (project) => {
-    setActionError('');
-    try { await projectService.setArchived(project.id, !project.archived); await reload(); }
-    catch (error) { console.error('[Projects] Failed to update archive state', error); setActionError(error?.message || 'Unable to update project.'); }
-  };
+  const handleToggleArchive = (project) => mutateAndReconcile(
+    () => projectService.setArchived(project.id, !project.archived), t('projectUi.archiveFailed'),
+  );
 
   const handleDelete = async (project) => {
-    setActionError('');
-    try { await projectService.remove(project.id); setProjects((current) => current.filter((p) => p.id !== project.id)); }
-    catch (error) { console.error('[Projects] Failed to delete project', error); setActionError(error?.message || t('projectUi.deleteFailed')); }
+    if (actionInFlightRef.current || !window.confirm(t('projectUi.deleteConfirm', { name: project.name }))) return;
+    await mutateAndReconcile(() => projectService.remove(project.id), t('projectUi.deleteFailed'));
   };
 
   const visible = projects
@@ -94,6 +120,7 @@ export default function Projects() {
     onToggleFavorite: handleToggleFavorite,
     onToggleArchive: handleToggleArchive,
     onDelete: handleDelete,
+    actionsDisabled: actionBusy,
   };
 
   return (
