@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useTranslation } from '@/lib/i18n/TranslationProvider';
 
-export default function InstructionBar({ selectedObject, instruction, onInstructionChange, onApply, applying, allowWholeImage = false }) {
+export default function InstructionBar({ selectedObject, instruction, onInstructionChange, onApply, applying, allowWholeImage = false, planReady = true }) {
   const { t } = useTranslation();
   const canEdit = Boolean(selectedObject || allowWholeImage);
   const wholeImage = !selectedObject && allowWholeImage;
@@ -30,12 +30,12 @@ export default function InstructionBar({ selectedObject, instruction, onInstruct
           placeholder={selectedObject ? t('editControls.exampleObject', { name: selectedObject.label }) : wholeImage ? t('editControls.exampleWhole') : t('editControls.selectFirst')}
           disabled={!canEdit || applying}
           className="h-12 flex-1 rounded-xl"
-          onKeyDown={(event) => event.key === 'Enter' && canEdit && !applying && instruction.trim() && onApply()}
+          onKeyDown={(event) => event.key === 'Enter' && canEdit && planReady && !applying && instruction.trim() && onApply()}
         />
         <Button
           type="button"
           onClick={onApply}
-          disabled={!canEdit || !instruction.trim() || applying}
+          disabled={!canEdit || !planReady || !instruction.trim() || applying}
           className="min-h-12 shrink-0 rounded-xl px-5"
           aria-label={t('editControls.preview')}
         >
