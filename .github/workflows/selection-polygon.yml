@@ -6,6 +6,10 @@ on:
     paths:
       - 'src/application/selection/**'
       - 'src/components/editor/SelectionToolbar.jsx'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/product-russian-ui.test.mjs'
+      - 'tests/mask-photoshop-controls.test.mjs'
       - 'src/components/editor/ImageCanvas.jsx'
       - 'src/pages/Editor.jsx'
       - 'src/platform/creative/pipeline/ControlledLocalEdit.ts'
@@ -67,7 +71,7 @@ jobs:
           grep -q "rasterizeSelectionPolygon" "$service"
           grep -q "composeSelectionMask" "$service"
           grep -q "service.applyPolygon(polygonComposition)" "$editor"
-          grep -q 'aria-label="Polygon composition"' "$toolbar"
+          grep -q "selectionUi.polygonComposition" "$toolbar"
           grep -q "function PolygonPreview" "$canvas"
           ! grep -E -q "fetch\(|coreClient|provider|billing|credits" "$service"
           test -n "$BASE_SHA"

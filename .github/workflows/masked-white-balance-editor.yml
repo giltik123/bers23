@@ -6,6 +6,10 @@ on:
     paths:
       - 'src/pages/Editor.jsx'
       - 'src/components/editor/SelectionToolbar.jsx'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/product-russian-ui.test.mjs'
+      - 'tests/mask-photoshop-controls.test.mjs'
       - 'src/application/createMaskedWhiteBalance.ts'
       - 'src/application/local-execution/CoreAuthorizedMaskedWhiteBalance.ts'
       - 'tests/editor-canonical-boundary.test.mjs'
@@ -53,13 +57,13 @@ jobs:
           grep -q "kind: 'MASKED_WHITE_BALANCE'" "$editor"
           grep -q 'maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current || maskedLevelsInFlightRef.current || orthogonalTransformInFlightRef.current' "$editor"
           grep -q 'orthogonalTransformInFlightRef.current || maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current || maskedLevelsInFlightRef.current' "$editor"
-          grep -q 'aria-label="Masked white balance temperature"' "$toolbar"
+          grep -q "selectionUi.maskedWhiteBalanceTemperature" "$toolbar"
           grep -q 'min="-128"' "$toolbar"
           grep -q 'max="128"' "$toolbar"
-          grep -q 'aria-label="Masked white balance tint"' "$toolbar"
+          grep -q "selectionUi.maskedWhiteBalanceTint" "$toolbar"
           grep -q 'min="-64"' "$toolbar"
           grep -q 'max="64"' "$toolbar"
-          grep -q 'aria-label="Preview masked white balance"' "$toolbar"
+          grep -q "selectionUi.previewMaskedWhiteBalance" "$toolbar"
           ! grep -Eq 'persistFinal|acceptFinal|pushEdit' "$app"
           test -n "$BASE_SHA"
           git diff --check "$BASE_SHA"..HEAD

@@ -6,6 +6,10 @@ on:
     paths:
       - 'src/pages/Editor.jsx'
       - 'src/components/editor/SelectionToolbar.jsx'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/product-russian-ui.test.mjs'
+      - 'tests/mask-photoshop-controls.test.mjs'
       - 'src/application/selection/**'
       - 'tests/intelligent-selection.test.ts'
       - 'tests/editor-canonical-boundary.test.mjs'
@@ -54,7 +58,7 @@ jobs:
           service=src/application/selection/SelectionApplicationService.ts
           grep -q "brushHardness / 100" "$editor"
           ! grep -E -q "hardness:[[:space:]]*\.75" "$editor"
-          grep -q 'aria-label="Brush Hardness"' "$toolbar"
+          grep -q "selectionUi.brushHardness" "$toolbar"
           grep -q 'aria-pressed={selection.mode === id}' "$toolbar"
           grep -q 'aria-keyshortcuts="Control+Z Meta+Z"' "$toolbar"
           grep -q 'aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"' "$toolbar"
