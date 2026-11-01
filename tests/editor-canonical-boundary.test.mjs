@@ -140,9 +140,9 @@ test('Editor selection keyboard history and mode state are explicit without hija
   assert.match(editor, /window\.removeEventListener\('keydown', handleSelectionHistoryShortcut\)/);
 
   assert.match(toolbar, /aria-pressed=\{selection\.mode === id\}/);
-  assert.match(toolbar, /aria-label="Undo selection edit" aria-keyshortcuts="Control\+Z Meta\+Z"/);
-  assert.match(toolbar, /aria-label="Redo selection edit" aria-keyshortcuts="Control\+Shift\+Z Meta\+Shift\+Z Control\+Y"/);
-  assert.match(toolbar, /aria-label="Brush Size" aria-valuetext=\{\`\$\{brushSize\} pixels\`\}/);
+  assert.match(toolbar, /selectionUi[.]undoSelectionEdit[^>]*aria-keyshortcuts="Control\+Z Meta\+Z"/);
+  assert.match(toolbar, /selectionUi[.]redoSelectionEdit[^>]*aria-keyshortcuts="Control\+Shift\+Z Meta\+Shift\+Z Control\+Y"/);
+  assert.match(toolbar, /selectionUi[.]brushSize[^>]*selectionUi[.]valueInPixels/);
   assert.match(toolbar, /\{brushSize\}px/);
 });
 
@@ -157,7 +157,7 @@ test('Editor selection brush hardness is explicit and quality warnings are user-
   assert.doesNotMatch(editor, /hardness:\s*\.75/);
   assert.match(editor, /brushHardness=\{brushHardness\} onBrushHardness=\{setBrushHardness\}/);
 
-  assert.match(toolbar, /aria-label="Brush Hardness"[^>]*min="0" max="100"/);
+  assert.match(toolbar, /selectionUi[.]brushHardness[^>]*min="0" max="100"/);
   assert.match(toolbar, /disabled=\{busy \|\| \(selection\.mode !== 'BRUSH_ADD' && selection\.mode !== 'BRUSH_SUBTRACT'\)\}/);
   assert.match(toolbar, /Selection is empty\. Add pixels before Done\./);
   assert.match(toolbar, /Selection is extremely small\. Zoom in and verify the mask before Done\./);
@@ -188,12 +188,12 @@ test('Editor Masked Exposure uses exact eighth-stops and remains preview-before-
   assert.doesNotMatch(editor, /quarterStops|exposureQuarterStops/);
   assert.doesNotMatch(editor, /applyMaskedExposure[\s\S]{0,900}(persistFinal|issueStoredFinal|acceptFinal)/);
 
-  assert.match(toolbar, /aria-label="Masked exposure"/);
+  assert.match(toolbar, /selectionUi[.]maskedExposure/);
   assert.match(toolbar, /min="-32"/);
   assert.match(toolbar, /max="32"/);
   assert.match(toolbar, /step="1"/);
   assert.match(toolbar, /const ev = eighthStops \/ 8/);
-  assert.match(toolbar, /aria-label="Preview masked exposure"/);
+  assert.match(toolbar, /selectionUi[.]previewMaskedExposure/);
   assert.doesNotMatch(toolbar, /quarterStops|\/ 4/);
 
   assert.match(application, /prepareMaskedExposure/);
@@ -228,14 +228,14 @@ test('Editor Masked White Balance uses exact signed Q8 controls and remains prev
   assert.match(editor, /await pushEdit\(result\.finalArtifactId, used\)/);
   assert.doesNotMatch(editor, /applyMaskedWhiteBalance[\s\S]{0,1200}(persistFinal|issueStoredFinal|acceptFinal)/);
 
-  assert.match(toolbar, /aria-label="Masked white balance temperature"/);
+  assert.match(toolbar, /selectionUi[.]maskedWhiteBalanceTemperature/);
   assert.match(toolbar, /min="-128"/);
   assert.match(toolbar, /max="128"/);
-  assert.match(toolbar, /aria-label="Masked white balance tint"/);
+  assert.match(toolbar, /selectionUi[.]maskedWhiteBalanceTint/);
   assert.match(toolbar, /min="-64"/);
   assert.match(toolbar, /max="64"/);
   assert.match(toolbar, /step="1"/);
-  assert.match(toolbar, /aria-label="Preview masked white balance"/);
+  assert.match(toolbar, /selectionUi[.]previewMaskedWhiteBalance/);
   assert.match(toolbar, /formatWhiteBalanceQ8/);
 
   assert.match(application, /prepareMaskedWhiteBalance/);
@@ -268,14 +268,9 @@ test('Editor Masked Levels uses five exact integers and remains preview-before-A
   assert.match(editor, /await pushEdit\(result\.finalArtifactId, used\)/);
   assert.doesNotMatch(editor, /applyMaskedLevels[\s\S]{0,1800}(persistFinal|issueStoredFinal|acceptFinal)/);
 
-  for (const label of [
-    'Masked Levels input black',
-    'Masked Levels input midpoint',
-    'Masked Levels input white',
-    'Masked Levels output black',
-    'Masked Levels output white',
-    'Preview masked Levels',
-  ]) assert.match(toolbar, new RegExp(`aria-label="${label}"`));
+  for (const key of ['inputBlack', 'inputMidtones', 'inputWhite', 'outputBlack', 'outputWhite', 'previewMaskedLevels']) {
+    assert.ok(toolbar.includes("aria-label={t('selectionUi." + key + "')}") || key === 'previewMaskedLevels' && toolbar.includes("aria-label={t('selectionUi.previewMaskedLevels')}"), key);
+  }
   assert.match(toolbar, /levelsIdentity/);
   assert.match(toolbar, /disabled=\{startDisabled \|\| !canApplyLevels \|\| applyingLevels \|\| levelsIdentity\}/);
 
