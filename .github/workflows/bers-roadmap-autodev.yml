@@ -101,7 +101,7 @@ jobs:
             echo 'Missing BERS_AUTODEV_OPENAI_API_KEY: no model call made.' >&2
             exit 1
           fi
-      - name: Implement one bounded roadmap slice
+      - name: Implement maximal verified batch of related roadmap tasks
         uses: openai/codex-action@v1
         with:
           openai-api-key: ${{ secrets.BERS_AUTODEV_OPENAI_API_KEY }}
@@ -140,18 +140,19 @@ jobs:
               *) echo "Unexpected modified path: $f" >&2; exit 1 ;;
             esac
           done < <(git status --porcelain -z)
-      - name: Open review-only PR for tested change
+      - name: Open review-only PR for integrated tested work
         if: steps.blocked.outputs.is_blocked != 'true'
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ github.token }}
           base: main
           branch: autodev/${{ needs.select.outputs.issue }}-${{ github.run_id }}
-          commit-message: 'chore(autodev): roadmap slice #${{ needs.select.outputs.issue }}'
-          title: '[autodev] Roadmap slice #${{ needs.select.outputs.issue }}'
+          commit-message: 'feat(autodev): integrated roadmap tasks #${{ needs.select.outputs.issue }}'
+          title: '[autodev] Integrated roadmap work #${{ needs.select.outputs.issue }}'
           body: |
-            Automated **review-only** candidate for #${{ needs.select.outputs.issue }}.
-            The exact PR head needs the mandatory BERS CI checks.
+            Automated **review-only** batch of coherent roadmap subtasks for #${{ needs.select.outputs.issue }}.
+            Objective: one unified cross-tool user journey, consistent Project/Artifact/Preview/Accept/history UX, safe recovery and real integration tests.
+            The exact PR head needs the mandatory BERS CI checks; no task is accepted without evidence.
             No production deployment, merge, SAM3, mask changes or paid fal.ai calls are authorized.
             Maintainer: review diff, tests and blockers before merging.
           delete-branch: true
