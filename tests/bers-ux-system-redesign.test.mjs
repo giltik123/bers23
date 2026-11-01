@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 const read = (path) => readFile(path, 'utf8');
 
@@ -140,4 +141,43 @@ test('Free generation uses explicit consent, server-owned account setup and no b
   assert.ok(studio.includes('generativeConfirmed'));
   assert.ok(studio.includes('бесплатно в пределах серверного лимита'));
   assert.ok(editor.includes('onPrepareFreeAccount={() => creativeEditApplicationService.prepareAccount()}'));
+});
+
+test('shared theme preference persists when storage works and stays usable when storage is denied', async () => {
+  const source = await read('src/components/ThemeToggle.jsx');
+  const start = source.indexOf('function readThemePreference()');
+  const end = source.indexOf('export default function ThemeToggle', start);
+  assert.ok(start >= 0 && end > start);
+  const helperSource = source.slice(start, end) + '\n({ readThemePreference, persistThemePreference })';
+  const stored = new Map([['theme', 'dark']]);
+  const storage = {
+    getItem: (key) => stored.get(key) ?? null,
+    setItem: (key, value) => { stored.set(key, value); },
+  };
+  const normal = runInNewContext(helperSource, { window: { localStorage: storage } });
+  assert.equal(normal.readThemePreference(), true);
+  normal.persistThemePreference(false);
+  assert.equal(stored.get('theme'), 'light');
+  assert.equal(normal.readThemePreference(), false);
+  normal.persistThemePreference(true);
+  assert.equal(stored.get('theme'), 'dark');
+
+  // Some browsers throw while resolving localStorage, not just getItem/setItem.
+  const blockedWindow = {};
+  Object.defineProperty(blockedWindow, 'localStorage', {
+    get() { throw new Error('SecurityError: storage access denied'); },
+  });
+  const blocked = runInNewContext(helperSource, { window: blockedWindow });
+  assert.equal(blocked.readThemePreference(), false);
+  assert.doesNotThrow(() => blocked.persistThemePreference(true));
+
+  const deniedMethods = runInNewContext(helperSource, { window: { localStorage: {
+    getItem() { throw new Error('denied'); },
+    setItem() { throw new Error('denied'); },
+  } } });
+  assert.equal(deniedMethods.readThemePreference(), false);
+  assert.doesNotThrow(() => deniedMethods.persistThemePreference(false));
+  assert.match(source, /useState\(readThemePreference\)/);
+  assert.match(source, /persistThemePreference\(dark\)/);
+  assert.match(source, /window\.dispatchEvent\(new CustomEvent\('bers-theme-change'/);
 });
