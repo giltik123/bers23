@@ -42,8 +42,8 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
     "resizeOutput": "Output: {width} × {height}px · {pixels} pixels",
     "cropInvalid": "Enter an integer rectangle fully inside the image.",
     "resizeInvalid": "Use integer dimensions 1–{dimension}px with at most {pixels} output pixels.",
-    "applyCrop": "Apply Crop",
-    "applyResize": "Apply Resize",
+    "applyCrop": "Apply crop",
+    "applyResize": "Apply resize",
     "cropping": "Cropping…",
     "resizing": "Resizing…"
   },

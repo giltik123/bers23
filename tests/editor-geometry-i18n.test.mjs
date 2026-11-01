@@ -21,7 +21,7 @@ test('Crop and Resize share complete English/Russian translation keys and placeh
     assert.deepEqual(placeholders(english[key]), placeholders(russian[key]), key);
   }
   assert.equal(english.startCrop, 'Start crop');
-  assert.equal(english.applyResize, 'Apply Resize');
+  assert.equal(english.applyResize, 'Apply resize');
   assert.equal(russian.startCrop, 'Начать кадрирование');
   assert.equal(russian.applyResize, 'Применить размер');
 });
