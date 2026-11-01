@@ -639,4 +639,7 @@ test('bounded Agent UI checks current context before publishing progress and ter
   assert.match(hook, /const visibleState = stateOwnerRef\.current === contextKey \? state : EMPTY_STATE/);
   assert.match(hook, /stateOwnerRef\.current = contextKey;\s*setState\(EMPTY_STATE\)/);
   assert.match(hook, /return Object\.freeze\(\{ state: visibleState, busy: visibleState\.busy/);
+  assert.match(hook, /operationRef\.current\.get\(lockKey\)/);
+  assert.match(hook, /operationRef\.current\.delete\(lockKey\)/);
+  assert.match(hook, /operationRef\.current\.has\(contextKey\)/);
 });
