@@ -111,17 +111,21 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
     const context = Object.freeze({ sourceArtifactId, beforeUrl, mode, width, height });
     const runner = createBoundedAgentRunner({ projectId: project.id });
     const clientRequestId = globalThis.crypto.randomUUID();
-    writeHint(project.id, { executionId: null, sourceArtifactId, mode, width, height });
-    try {
-      return await runOperation('start', async (onView) => runner.start({ clientRequestId, sourceArtifactId, mode, width, height }, (view) => {
-        writeHint(project.id, { executionId: view.executionId, sourceArtifactId, mode, width, height });
-        onView(view);
-      }), context);
-    } catch (error) {
-      const hint = readHint(project.id);
-      if (!hint?.executionId) clearHint(project.id);
-      throw error;
-    }
+    // Only touch the recovery hint after the per-source operation lock is
+    // acquired. A duplicate start must not erase the first run's hint.
+    return runOperation('start', async (onView) => {
+      writeHint(project.id, { executionId: null, sourceArtifactId, mode, width, height });
+      try {
+        return await runner.start({ clientRequestId, sourceArtifactId, mode, width, height }, (view) => {
+          writeHint(project.id, { executionId: view.executionId, sourceArtifactId, mode, width, height });
+          onView(view);
+        });
+      } catch (error) {
+        const hint = readHint(project.id);
+        if (!hint?.executionId) clearHint(project.id);
+        throw error;
+      }
+    }, context);
   }, [project?.id, project?.current_image_artifact_id, project?.current_image_url, runOperation]);
 
   const retry = useCallback(async () => {
