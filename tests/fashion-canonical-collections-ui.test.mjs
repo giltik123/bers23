@@ -44,3 +44,28 @@ test('ambiguous collection create refreshes canonical state and never automatica
   assert.match(createBlock[1], /check the list before retrying/);
   assert.equal((createBlock[1].match(/model\.create/g) || []).length, 1, 'create handler must issue at most one create side effect');
 });
+
+test('wardrobe writes require a freshly confirmed catalog, including dialog callbacks', () => {
+  assert.match(panel, /const \[fresh, setFresh\] = useState\(false\)/);
+  assert.match(panel, /const canMutate = fresh && !loading/);
+  assert.match(panel, /setFresh\(false\);[\s\S]*?wardrobe\.load\(\)/);
+  assert.match(panel, /ticket === catalogRequestRef\.current/);
+  assert.match(panel, /if \(!canMutate\) throw new Error\('Reload wardrobe before creating a garment/);
+  assert.match(panel, /if \(!canMutate\) throw new Error\('Reload wardrobe before adding a garment view/);
+  assert.match(panel, /if \(!canMutate\) return;/);
+  assert.match(panel, /<CanonicalCollectionsView garments=\{items\} disabled=\{!canMutate\}/);
+  assert.match(panel, /busy=\{!canMutate \|\| busyId === item\.id\}/);
+});
+
+test('collection writes are disabled after failed refresh and recover only on a confirmed reload', () => {
+  assert.match(collections, /const \[fresh, setFresh\] = useState\(false\)/);
+  assert.match(collections, /const canMutate = fresh && !disabled && !busy/);
+  assert.match(collections, /const reload = useCallback\(async \(\) => \{[\s\S]*?setFresh\(false\);[\s\S]*?await model\.load\(\)/);
+  assert.match(collections, /const reconcileQuietly = useCallback\(async \(\) => \{[\s\S]*?setFresh\(false\)/);
+  assert.match(collections, /ticket === requestRef\.current/);
+  assert.match(collections, /if \(!newName\.trim\(\) \|\| !canMutate\) return/);
+  assert.match(collections, /if \(!selected \|\| !canMutate\) return false/);
+  assert.match(collections, /if \(!selected \|\| !canMutate\) return/);
+  assert.match(collections, /if \(!selected \|\| !targetId \|\| !canMutate\) return/);
+  assert.match(collections, /disabled=\{!canMutate \|\| availableToAdd\.length === 0\}/);
+});
