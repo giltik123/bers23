@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Sparkles, FolderOpen, Images, Workflow, Settings2, Menu, X } from 'lucide-react';
+import { Sparkles, FolderOpen, Images, Paintbrush, Workflow, Settings2, Menu, X } from 'lucide-react';
 import ThemeToggle from '@/components/ThemeToggle';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
 import NotificationCenter from '@/components/NotificationCenter';
@@ -17,11 +17,12 @@ import { sessionRecovery } from '@/lib/performance/sessionRecovery';
 import { usePlatformProfile } from '@/lib/platform/PlatformManager';
 import { adaptiveCachePolicy } from '@/lib/platform/AdaptiveCachePolicy';
 import { useTranslation } from '@/lib/i18n/TranslationProvider';
+import { readProjectNavigationContext, projectNavigationTargets } from '@/lib/navigation/projectNavigation';
 
-function NavLink({ path, label, icon: Icon, active, onNavigate, compact = false }) {
+function NavLink({ path, to = path, label, icon: Icon, active, onNavigate, compact = false }) {
   return (
     <Link
-      to={path}
+      to={to}
       aria-current={active ? 'page' : undefined}
       onClick={onNavigate}
       className={[
@@ -54,15 +55,20 @@ export default function AppLayout() {
   useEffect(() => { memoryManager.configure({ cacheMb: adaptiveCachePolicy(platform).cacheMb }); }, [platform.formFactor]);
   useEffect(() => { sessionRecovery.saveRoute([location.pathname, location.search].join('')); offlineQueue.snapshot(); setMenuOpen(false); }, [location.pathname, location.search]);
 
+  const projectContextId = readProjectNavigationContext(location.pathname, location.search);
+  const projectTargets = projectNavigationTargets(projectContextId, location.pathname);
   const navigation = [
     { path: '/', label: t('navUi.projects'), icon: FolderOpen },
-    { path: '/assets', label: t('assets.title'), icon: Images },
+    ...(projectTargets.workspace ? [{ path: '/editor', to: projectTargets.workspace, label: t('navUi.workspace'), icon: Paintbrush }] : []),
+    { path: '/assets', to: projectTargets.assets, label: t('assets.title'), icon: Images },
+    // Automation Studio must independently verify its selected Project through Core;
+    // do not pass an unconsumed Project hint that could imply the wrong run target.
     { path: '/automations', label: t('automation.title'), icon: Workflow },
   ];
   const accountNavigation = [
     { path: '/settings', label: t('settings.title'), icon: Settings2 },
   ];
-  const isActive = (path) => path === '/' ? (location.pathname === '/' || location.pathname === '/editor') : location.pathname === path;
+  const isActive = (path) => location.pathname === path;
 
   return (
     <div data-platform={platform.formFactor} className="flex min-h-screen flex-col bg-background text-foreground">
