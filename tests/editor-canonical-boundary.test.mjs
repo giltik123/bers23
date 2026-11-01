@@ -20,11 +20,11 @@ test('Editor selection morphology stays service-bound and exposes bounded access
   assert.match(editor, /onClose=\{\(\) => updateSelection\(\(service\) => service\.close\(selectionMorphologyRadius\)\)\}/);
   assert.match(editor, /onFeather=\{\(\) => updateSelection\(\(service\) => service\.feather\(selectionMorphologyRadius\)\)\}/);
   assert.match(toolbar, /selectionUi[.]selectionEdgeRadius[^>]*min="1" max="32"/);
-  assert.match(toolbar, /selectionUi[.]growSelection disabled=\{busy \|\| !editable\}/);
-  assert.match(toolbar, /selectionUi[.]shrinkSelection disabled=\{busy \|\| !editable\}/);
-  assert.match(toolbar, /selectionUi[.]openSelection disabled=\{busy \|\| !editable\}/);
-  assert.match(toolbar, /selectionUi[.]closeSelection disabled=\{busy \|\| !editable\}/);
-  assert.match(toolbar, /selectionUi[.]featherSelection disabled=\{busy \|\| !editable\}/);
+  assert.match(toolbar, /selectionUi[.]growSelection[^>]*disabled=\{busy \|\| !editable\}/);
+  assert.match(toolbar, /selectionUi[.]shrinkSelection[^>]*disabled=\{busy \|\| !editable\}/);
+  assert.match(toolbar, /selectionUi[.]openSelection[^>]*disabled=\{busy \|\| !editable\}/);
+  assert.match(toolbar, /selectionUi[.]closeSelection[^>]*disabled=\{busy \|\| !editable\}/);
+  assert.match(toolbar, /selectionUi[.]featherSelection[^>]*disabled=\{busy \|\| !editable\}/);
 });
 
 test('Editor polygon selection keeps raster authority in SelectionApplicationService and preview SVG-only', async () => {
