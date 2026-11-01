@@ -59,7 +59,7 @@ export default function AppLayout() {
   const projectTargets = projectNavigationTargets(projectContextId, location.pathname);
   const navigation = [
     { path: '/', label: t('navUi.projects'), icon: FolderOpen },
-    ...(projectTargets.workspace ? [{ path: '/editor', to: projectTargets.workspace, label: t('navUi.workspace'), icon: Paintbrush }] : []),
+    ...(projectTargets.workspace ? [{ path: '/editor', to: projectTargets.workspace, label: t('editorUi.workspace'), icon: Paintbrush }] : []),
     { path: '/assets', to: projectTargets.assets, label: t('assets.title'), icon: Images },
     // Automation Studio must independently verify its selected Project through Core;
     // do not pass an unconsumed Project hint that could imply the wrong run target.
