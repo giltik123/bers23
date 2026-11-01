@@ -45,7 +45,16 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
     "applyCrop": "Apply crop",
     "applyResize": "Apply resize",
     "cropping": "Cropping…",
-    "resizing": "Resizing…"
+    "resizing": "Resizing…",
+    "rotateFlipTitle": "Rotate & Flip",
+    "rotateFlipControls": "Rotate and flip controls",
+    "rotateFlipHint": "Byte-exact local transform. No interpolation or cloud call.",
+    "transformApplying": "Applying…",
+    "flipHorizontal": "Flip horizontal",
+    "flipVertical": "Flip vertical",
+    "rotate90CW": "Rotate 90° clockwise",
+    "rotate180": "Rotate 180°",
+    "rotate270CW": "Rotate 90° counterclockwise"
   },
   authUi: {
     "brand": "Creative studio",

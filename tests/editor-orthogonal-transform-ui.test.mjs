@@ -38,10 +38,12 @@ test('Rotate/Flip exposes only the closed byte-exact orthogonal mode set', async
   const toolbar = await readFile(TOOLBAR, 'utf8');
   const identity = await readFile(IDENTITY, 'utf8');
 
-  assert.match(toolbar, /aria-label="Rotate and flip controls"/);
+  assert.match(toolbar, /aria-label=\{t\('editorGeometry.rotateFlipControls'\)\}/);
   assert.match(toolbar, /ORTHOGONAL_TRANSFORM_MODES\.map\(\(mode\)/);
   assert.match(toolbar, /data-transform-mode=\{mode\}/);
-  assert.match(toolbar, /Byte-exact local transform\. No interpolation or cloud call\./);
+  assert.match(toolbar, /useTranslation\(\)/);
+  assert.match(toolbar, /ORTHOGONAL_TRANSFORM_TRANSLATION_KEYS\[mode\]/);
+  assert.match(toolbar, /editorGeometry\.rotateFlipHint/);
 
   for (const mode of MODES) {
     assert.equal(identity.includes(`'${mode}'`), true, `canonical mode missing: ${mode}`);

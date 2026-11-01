@@ -26,6 +26,17 @@ test('Crop and Resize share complete English/Russian translation keys and placeh
   assert.equal(russian.applyResize, 'Применить размер');
 });
 
+test('Rotate and Flip use the same locale authority while preserving exact mode identities', async () => {
+  const source = await readFile('src/components/editor/OrthogonalTransformToolbar.jsx', 'utf8');
+  const modes = ['FLIP_HORIZONTAL', 'FLIP_VERTICAL', 'ROTATE_90_CW', 'ROTATE_180', 'ROTATE_270_CW'];
+  assert.match(source, /useTranslation\(\)/);
+  for (const mode of modes) assert.ok(source.includes(mode + ':'), mode);
+  assert.match(source, /editorGeometry\.rotateFlipControls/);
+  assert.match(source, /editorGeometry\.transformApplying/);
+  assert.match(source, /data-transform-mode=\{mode\}/);
+  assert.match(source, /disabled=\{unavailable\}/);
+});
+
 test('Geometry controls retain canonical Preview/Accept boundaries and localized accessibility', async () => {
   const [crop, resize] = await Promise.all(['Crop', 'Resize'].map(name => readFile('src/components/editor/' + name + 'Toolbar.jsx', 'utf8')));
   for (const [source, name] of [[crop, 'crop'], [resize, 'resize']]) {
