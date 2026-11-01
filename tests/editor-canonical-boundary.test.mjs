@@ -504,7 +504,7 @@ test('recipe templates remain canonical Prompt inputs while multi-step execution
   const adapter = await readFile('src/application/creative/LegacyRecipeExecutionAdapter.js', 'utf8');
 
   // Localized copy lives in the translation pack; preserve the canonical Prompt-only contract.
-  assert.match(panel, /recipes\\.chainsHint/);
+  assert.match(panel, /recipes\.chainsHint/);
   const enRecipes = await readFile('src/lib/i18n/locales/en/recipes.js', 'utf8');
   assert.match(enRecipes, /Individual recipes are prompt templates/);
   assert.match(enRecipes, /multi-step chains require server-owned execution/);
