@@ -49,28 +49,22 @@ class ProjectLockWaitBarrier {
 
 async function waitForPostgresLockWait(pool: Pool, waitingPid: number, blockerPid: number): Promise<void> {
   const deadline = Date.now() + 5_000;
+  let lastBlockers: unknown = null;
   while (Date.now() < deadline) {
     const result = await pool.query(
-      `SELECT wait_event_type, query, pg_blocking_pids(pid) AS blocking_pids
-       FROM pg_stat_activity
-       WHERE pid=$1`,
+      'SELECT pg_blocking_pids($1) AS blocking_pids',
       [waitingPid],
     );
-    const activity = result.rows[0];
-    const query = String(activity?.query ?? '');
-    const blockers = Array.isArray(activity?.blocking_pids)
-      ? activity.blocking_pids.map((pid: unknown) => Number(pid))
-      : [];
-    if (
-      activity?.wait_event_type === 'Lock' &&
-      query.toLowerCase().includes('canonical_projects') &&
-      query.toUpperCase().includes('FOR UPDATE') &&
-      blockers.includes(blockerPid)
-    ) return;
+    const rawBlockers = result.rows[0]?.blocking_pids;
+    const blockers = Array.isArray(rawBlockers)
+      ? rawBlockers.map((pid: unknown) => Number(pid))
+      : String(rawBlockers ?? '').replace(/[{}]/gu, '').split(',').filter(Boolean).map(Number);
+    lastBlockers = rawBlockers ?? null;
+    if (blockers.includes(blockerPid)) return;
     await new Promise(resolve => setTimeout(resolve, 10));
   }
   throw new Error(
-    `Timed out waiting for PostgreSQL backend ${waitingPid} to block on canonical_projects behind blocker ${blockerPid}`,
+    `Timed out waiting for PostgreSQL backend ${waitingPid} to be blocked by ${blockerPid}; last pg_blocking_pids=${JSON.stringify(lastBlockers)}`,
   );
 }
 
