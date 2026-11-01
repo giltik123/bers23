@@ -88,8 +88,8 @@ test('superseded local file loads cannot clear newer progress or publish stale e
   const end = local.indexOf('\n  useEffect(() => {\n    if (!details', start);
   assert(start >= 0 && end > start);
   const handler = local.slice(start, end);
-  assert.match(handler, /abortRef\\.current\\?\\.abort\\(\\);\\s*\\/\\/ The file load now owns the loading state[\\s\\S]*?abortRef\\.current = null;/);
-  assert.match(handler, /catch \\(cause\\) \\{\\s*if \\(generation === loadGeneration\\.current\\) setError/);
-  assert.match(handler, /finally \\{[\\s\\S]*?if \\(generation === loadGeneration\\.current\\) setLoading\\(false\\);/);
-  assert.match(local, /if \\(generation !== loadGeneration\\.current\\) return;/);
+  assert.match(handler, /abortRef\.current\?\.abort\(\);\s*\/\/ The file load now owns the loading state[\s\S]*?abortRef\.current = null;/);
+  assert.match(handler, /catch \(cause\) \{\s*if \(generation === loadGeneration\.current\) setError/);
+  assert.match(handler, /finally \{[\s\S]*?if \(generation === loadGeneration\.current\) setLoading\(false\);/);
+  assert.match(local, /if \(generation !== loadGeneration\.current\) return;/);
 });
