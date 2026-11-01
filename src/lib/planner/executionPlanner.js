@@ -20,7 +20,9 @@ export function buildExecutionPlan({ intent, object }) {
   if (needs.segmentation) order.push({ step: 'segmentation', label: 'Isolate object' });
   if (needs.tryon) order.push({ step: 'tryon', label: 'Virtual try-on' });
   if (needs.editing) order.push({ step: 'editing', label: 'Apply AI edit' });
-  order.push({ step: 'save', label: 'Save to project history' });
+  // This is an advisory preview plan, not a Project mutation. Core owns FINAL,
+  // and only the user's explicit Accept can commit a result to history.
+  order.push({ step: 'save', label: 'Review preview (Accept to save)' });
 
   // Rough per-step estimates (seconds), refined once real providers are connected.
   const estimatedDurationSeconds =
