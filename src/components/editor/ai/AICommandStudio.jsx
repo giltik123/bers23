@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles, SlidersHorizontal, Scan, Shirt, WandSparkles, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { createAsyncEditIntentFence } from '@/application/editor/ai-first/asyncEditIntentFence';
 import {
   interpretPhotoCommand,
   sanitizePhotoAdjustmentDraft,
@@ -36,16 +37,21 @@ export default function AICommandStudio({
   const [generativeScope,setGenerativeScope]=useState('MASKED');
   const [executionError,setExecutionError]=useState('');
   const [submitting,setSubmitting]=useState(false);
+  const intentFence = useRef(createAsyncEditIntentFence());
   const maskId=maskToolsEnabled ? (selectedObject?.mask_artifact_id||null) : null;
   const canEdit=!disabled&&!selectionActive&&!pending&&!submitting&&Boolean(project?.current_image_artifact_id);
 
-  useEffect(()=>{
+  useLayoutEffect(()=>{
+    // Invalidate a pending confirmation before a changed Project/source/mask is interactive.
+    intentFence.current.invalidate();
+    setSubmitting(false);
     setParameters(plan.parameters?{...plan.parameters}:null);
     setMaskConfirmed(false);
     setGenerativeConfirmed(false);
     setGenerativeScope('MASKED');
     setExecutionError('');
   },[plan.instruction,plan.operation,project?.id,project?.current_image_artifact_id,selectedObject?.id,maskId]);
+  useEffect(() => () => intentFence.current.invalidate(), []);
 
   const update=(key,value)=>{
     setParameters(previous=>({...previous,[key]:value}));
@@ -53,6 +59,8 @@ export default function AICommandStudio({
   };
   const handleSubmit=async()=>{
     if(!canEdit||plan.kind!=='ADJUSTMENT'||!maskId||!maskConfirmed)return;
+    const ticket = intentFence.current.begin();
+    if (ticket === null) return;
     setSubmitting(true);setExecutionError('');
     try{
       const safe=sanitizePhotoAdjustmentDraft({...plan,parameters});
@@ -64,8 +72,10 @@ export default function AICommandStudio({
         expectedMaskArtifactId: maskId,
       });
     }catch(error){
-      setExecutionError(error?.message||'Не удалось применить выбранную коррекцию.');
-    }finally{setSubmitting(false);}
+      if (intentFence.current.isCurrent(ticket)) setExecutionError(error?.message||'Не удалось применить выбранную коррекцию.');
+    }finally{
+      if (intentFence.current.finish(ticket)) setSubmitting(false);
+    }
   };
   const handleGenerate=async()=>{
     const scope = maskToolsEnabled ? generativeScope : 'WHOLE_IMAGE';
@@ -74,11 +84,16 @@ export default function AICommandStudio({
     if(!canEdit||!generativeConfirmed||!plan.instruction||plan.kind==='FASHION'||
        (maskToolsEnabled&&plan.kind!=='GENERATIVE')||
        (scope==='MASKED'&&(!maskId||!maskConfirmed)))return;
+    const ticket = intentFence.current.begin();
+    if (ticket === null) return;
     setSubmitting(true);setExecutionError('');
     try{
       // Idempotent server-owned FREE account setup. No client-supplied balance,
       // grant amount, subscription, billing override or payment authority.
       await onPrepareFreeAccount?.();
+      // Account setup may finish after navigation or a source/selection change.
+      // Never dispatch the previously confirmed image to a new/stale context.
+      if (!intentFence.current.isCurrent(ticket)) return;
       await onExecuteGenerative({
       instruction:plan.instruction,
       mode:scope,
@@ -88,11 +103,13 @@ export default function AICommandStudio({
       expectedMaskArtifactId:scope==='MASKED'?maskId:null,
     });}
     catch(error){
-      setExecutionError(error?.code==='insufficient_credits'
+      if (intentFence.current.isCurrent(ticket)) setExecutionError(error?.code==='insufficient_credits'
         ? 'Бесплатный лимит облачной обработки исчерпан. Платная подписка не требуется и не предлагается.'
         : (error?.message||'Генерация недоступна для данного проекта.'));
     }
-    finally{setSubmitting(false);}
+    finally{
+      if (intentFence.current.finish(ticket)) setSubmitting(false);
+    }
   };
 
   const controls=plan.kind==='ADJUSTMENT'&&parameters&&(
