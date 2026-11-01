@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { createProjectRequestGate } from '../src/hooks/projectRequestGate.js';
 
@@ -44,4 +45,16 @@ test('route roundtrip does not revive an old request ticket', () => {
   const current = gate.begin('A');
   assert.equal(gate.isCurrent('A', original), false);
   assert.equal(gate.isCurrent('A', current), true);
+});
+
+test('Editor hook applies request fencing to reads, mutations and visible Project identity', async () => {
+  const source = await readFile(new URL('../src/hooks/useProject.js', import.meta.url), 'utf8');
+  assert.match(source, /gateRef\.current\.sync\(activeId\)/);
+  assert.match(source, /gate\.isCurrent\(activeId, ticket\)/);
+  assert.match(source, /return \(\) => gateRef\.current\.invalidate\(\)/);
+  assert.match(source, /stateOwnerId === activeId && project\?\.id === activeId/);
+  assert.match(source, /if \(!activeProject \|\| !activeId\) throw new Error\('Project is not loaded'\)/);
+  assert.match(source, /loaded\?\.id !== activeId/);
+  assert.match(source, /updated\?\.id !== activeId/);
+  assert.match(source, /projectService\.acceptFinal\(activeId, finalArtifactId, instruction\)/);
 });
