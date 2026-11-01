@@ -238,7 +238,7 @@ export default function CanonicalCollectionsView({ garments, disabled = false })
               className="h-8 flex-1 rounded-md border border-input bg-transparent px-2 text-xs"
               value={addGarmentId}
               onChange={(event) => setAddGarmentId(event.target.value)}
-              disabled={Boolean(busy) || availableToAdd.length === 0}
+              disabled={!canMutate || availableToAdd.length === 0}
             >
               <option value="">Add garment…</option>
               {availableToAdd.map((garment) => <option key={garment.id} value={garment.id}>{garment.name}</option>)}
