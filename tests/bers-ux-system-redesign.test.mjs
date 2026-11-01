@@ -49,7 +49,7 @@ test('Editor uses a spacious canvas-led workspace and explanatory editing modes'
   assert.match(navigation, /aria-pressed=\{active === item\.id\}/);
   assert.match(navigation, /onClick=\{\(\) => onChange\(item\.id\)\}/);
   assert.match(navigation, /current\?\.description/);
-  assert.match(editor, /aria-label=\\{t\\('editorUi\\.renameProject'\\)\\}/);
+  assert.ok(editor.includes("aria-label={t('editorUi.renameProject')}"));
   assert.match(editor, /View full-size image in a new tab/);
   assert.doesNotMatch(editor, /aria-label="Download"/, 'opening an image in a tab must not claim a file download');
 });
@@ -148,7 +148,7 @@ test('Editor project rename prompt and accessible name follow the active RU/EN l
     read('src/lib/i18n/locales/en/index.js'),
     read('src/lib/i18n/locales/ru/index.js'),
   ]);
-  assert.match(editor, /window\\.prompt\\(t\\('editorUi\\.renamePrompt'\\), project\\.name\\)/);
+  assert.ok(editor.includes("window.prompt(t('editorUi.renamePrompt'), project.name)"));
   assert.match(editor, /aria-label=\\{t\\('editorUi\\.renameProject'\\)\\}/);
   assert.ok(en.includes('"renameProject": "Rename project"'));
   assert.ok(en.includes('"renamePrompt": "Enter a new project name"'));
