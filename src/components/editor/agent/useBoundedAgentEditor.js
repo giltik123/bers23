@@ -11,7 +11,9 @@ const TERMINAL_DELIVERY_PREFIX = '/api/core/artifacts/results/';
 
 export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
   const mountedRef = useRef(false);
-  const operationRef = useRef(null);
+  // Locks are scoped to the canonical Project/source, so an old workflow
+  // cannot block recovery or a new operation in a different Project.
+  const operationRef = useRef(new Map());
   const contextGateRef = useRef(null);
   if (!contextGateRef.current) contextGateRef.current = createBoundedAgentContextGate(project?.id, project?.current_image_artifact_id);
   // Invalidate stale callbacks during render, before route-change effects run.
@@ -43,8 +45,10 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
   const runOperation = useCallback(async (name, operation, context) => {
     const ticket = contextGateRef.current.capture(project?.id, context.sourceArtifactId);
     if (!ticket) throw new Error('Bounded Agent Project or source changed before execution');
-    if (operationRef.current) throw new Error(`Bounded Agent ${name} cannot start while ${operationRef.current} is in progress`);
-    operationRef.current = name;
+    const lockKey = JSON.stringify([ticket.projectId, ticket.sourceArtifactId]);
+    const activeOperation = operationRef.current.get(lockKey);
+    if (activeOperation) throw new Error(`Bounded Agent ${name} cannot start while ${activeOperation} is in progress`);
+    operationRef.current.set(lockKey, name);
     publishScopedState(ticket, (previous) => Object.freeze({ ...previous, active: true, busy: true, error: null }));
     try {
       const outcome = await operation((view) => publishView(view, ticket));
@@ -96,7 +100,7 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
       publishScopedState(ticket, (previous) => Object.freeze({ ...previous, busy: false, error: error?.message || 'Bounded Agent failed' }));
       throw error;
     } finally {
-      operationRef.current = null;
+      operationRef.current.delete(lockKey);
     }
   }, [project?.id, publishView, publishScopedState]);
 
@@ -135,8 +139,10 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
     if (!project?.id || !executionId) return;
     const ticket = contextGateRef.current.capture(project?.id, project?.current_image_artifact_id);
     if (!ticket) throw new Error('Bounded Agent Project or source changed before cancellation');
-    if (operationRef.current) throw new Error(`Bounded Agent cancel cannot run while ${operationRef.current} is in progress`);
-    operationRef.current = 'cancel';
+    const lockKey = JSON.stringify([ticket.projectId, ticket.sourceArtifactId]);
+    const activeOperation = operationRef.current.get(lockKey);
+    if (activeOperation) throw new Error(`Bounded Agent cancel cannot run while ${activeOperation} is in progress`);
+    operationRef.current.set(lockKey, 'cancel');
     publishScopedState(ticket, (previous) => Object.freeze({ ...previous, busy: true, error: null }));
     try {
       const view = await createBoundedAgentRunner({ projectId: project.id }).cancel(executionId);
@@ -144,7 +150,7 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
       publishScopedState(ticket, Object.freeze({ active: false, busy: false, view, error: null }));
       return view;
     } finally {
-      operationRef.current = null;
+      operationRef.current.delete(lockKey);
     }
   }, [project?.id, project?.current_image_artifact_id, visibleState.view?.executionId, publishScopedState]);
 
@@ -166,7 +172,7 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
   }, [contextKey]);
 
   useEffect(() => {
-    if (!project?.id || !project.current_image_artifact_id || operationRef.current) return;
+    if (!project?.id || !project.current_image_artifact_id || operationRef.current.has(contextKey)) return;
     const hint = readHint(project.id);
     if (!hint?.executionId) return;
     if (hint.sourceArtifactId !== project.current_image_artifact_id) { clearHint(project.id); return; }
