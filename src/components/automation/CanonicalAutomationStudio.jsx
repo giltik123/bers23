@@ -5,6 +5,7 @@ import { automationClient } from '@/api/automationClient';
 import { coreClient } from '@/api/coreClient';
 import { createAutomationInvocationRunner } from '@/application/automation/createAutomationInvocationRunner';
 import { ORTHOGONAL_TRANSFORM_MODES } from '@/platform/creative/deterministic/OrthogonalTransformIdentity';
+import { canMutateAutomationCatalog, reconcileCatalogSelection } from './catalogFreshnessPolicy';
 
 const PLAN_KIND = 'BOUNDED_DETERMINISTIC_IMAGE_V1';
 const DEFAULT_DRAFT = Object.freeze({ name: 'Rotate and resize', orthogonal_mode: 'ROTATE_90_CW', target_width: 1024, target_height: 1024 });
@@ -18,6 +19,7 @@ export default function CanonicalAutomationStudio() {
   const [draft, setDraft] = useState(DEFAULT_DRAFT);
   const [invocation, setInvocation] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [catalogFresh, setCatalogFresh] = useState(false);
   const [error, setError] = useState('');
 
   const selected = useMemo(() => definitions.find(item => item.id === selectedAutomationId), [definitions, selectedAutomationId]);
@@ -27,7 +29,8 @@ export default function CanonicalAutomationStudio() {
     || draft.target_width !== selected.plan.target_width
     || draft.target_height !== selected.plan.target_height
   ));
-  const canRun = Boolean(selected?.status === 'ACTIVE' && selectedProjectId && !dirty && !busy);
+  const canChangeCatalog = canMutateAutomationCatalog(catalogFresh, busy);
+  const canRun = Boolean(canChangeCatalog && selected?.status === 'ACTIVE' && selectedProjectId && !dirty);
   const isTerminal = Boolean(invocation && TERMINAL_STATES.has(invocation.state));
   const resumePointer = selected && selectedProjectId ? recalledInvocation(selected.id, selectedProjectId) : '';
 
@@ -45,18 +48,23 @@ export default function CanonicalAutomationStudio() {
   }, [selected?.id, selected?.revision]);
 
   async function reload() {
-    setBusy(true); setError('');
+    setBusy(true); setCatalogFresh(false); setError('');
     try {
       const [nextDefinitions, nextProjects] = await Promise.all([automationClient.definitions.list(), coreClient.projects.list()]);
-      setDefinitions(Array.isArray(nextDefinitions) ? nextDefinitions : []);
-      setProjects(Array.isArray(nextProjects) ? nextProjects : []);
-      setSelectedAutomationId(current => current || nextDefinitions?.[0]?.id || '');
-      setSelectedProjectId(current => current || nextProjects?.[0]?.id || '');
+      if (!Array.isArray(nextDefinitions) || !Array.isArray(nextProjects)) {
+        throw new Error('Automation or Project list response was invalid.');
+      }
+      setDefinitions(nextDefinitions);
+      setProjects(nextProjects);
+      setSelectedAutomationId(current => reconcileCatalogSelection(current, nextDefinitions));
+      setSelectedProjectId(current => reconcileCatalogSelection(current, nextProjects));
+      setCatalogFresh(true);
     } catch (cause) { setError(message(cause)); }
     finally { setBusy(false); }
   }
 
   function newDefinition() {
+    if (!canChangeCatalog) return;
     setSelectedAutomationId('');
     setDraft({ ...DEFAULT_DRAFT });
     setInvocation(null);
@@ -64,6 +72,7 @@ export default function CanonicalAutomationStudio() {
   }
 
   async function save() {
+    if (!canChangeCatalog) return;
     setBusy(true); setError('');
     try {
       const plan = transportPlan(draft);
@@ -77,7 +86,7 @@ export default function CanonicalAutomationStudio() {
   }
 
   async function toggleArchive() {
-    if (!selected) return;
+    if (!selected || !canChangeCatalog) return;
     setBusy(true); setError('');
     try {
       const next = selected.status === 'ACTIVE'
@@ -89,7 +98,7 @@ export default function CanonicalAutomationStudio() {
   }
 
   async function run() {
-    if (!selected || !selectedProjectId || dirty) return;
+    if (!canRun) return;
     setBusy(true); setError('');
     try {
       const clientRequestId = loadOrCreateStartIntent(selected.id, selectedProjectId, selected.revision);
@@ -108,7 +117,7 @@ export default function CanonicalAutomationStudio() {
   }
 
   async function resumeLatest() {
-    if (!selected || !selectedProjectId || !resumePointer) return;
+    if (!selected || !selectedProjectId || !resumePointer || !canChangeCatalog) return;
     setBusy(true); setError('');
     try {
       const runner = createAutomationInvocationRunner({ projectId: selectedProjectId });
@@ -119,7 +128,7 @@ export default function CanonicalAutomationStudio() {
   }
 
   async function retry() {
-    if (!invocation || !selectedProjectId) return;
+    if (!invocation || !selectedProjectId || !canChangeCatalog) return;
     setBusy(true); setError('');
     try {
       const runner = createAutomationInvocationRunner({ projectId: selectedProjectId });
@@ -140,7 +149,7 @@ export default function CanonicalAutomationStudio() {
   }
 
   async function accept() {
-    if (invocation?.state !== 'SUCCESS' || !invocation.terminalArtifactId) return;
+    if (!canChangeCatalog || invocation?.state !== 'SUCCESS' || !invocation.terminalArtifactId) return;
     setBusy(true); setError('');
     try {
       await coreClient.projects.acceptFinal(invocation.projectId, invocation.terminalArtifactId, `Automation: ${selected?.name || invocation.automationId}`);
@@ -171,11 +180,12 @@ export default function CanonicalAutomationStudio() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => void reload()} disabled={busy}><RefreshCw className="h-4 w-4" />Reload</Button>
-          <Button variant="outline" onClick={newDefinition} disabled={busy}>New</Button>
+          <Button variant="outline" onClick={newDefinition} disabled={!canChangeCatalog}>New</Button>
         </div>
       </header>
 
       {error && <div role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+      {!catalogFresh && !busy && <p role="status" className="rounded-xl border border-amber-500/40 p-3 text-sm text-muted-foreground">Automation and Project lists are unverified. Reload before changing definitions, starting or resuming runs, retrying, or accepting results. An existing run can still be cancelled.</p>}
 
       <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
         <aside className="space-y-2 rounded-2xl border border-border/60 p-3">
@@ -194,8 +204,8 @@ export default function CanonicalAutomationStudio() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div><p className="font-medium">Bounded deterministic plan</p><p className="text-xs text-muted-foreground">Rotate/flip, then resize. No provider/model/schedule authority is exposed here.</p></div>
               <div className="flex gap-2">
-                {selected && <Button variant="outline" onClick={() => void toggleArchive()} disabled={busy}>{selected.status === 'ACTIVE' ? <Archive className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}{selected.status === 'ACTIVE' ? 'Archive' : 'Restore'}</Button>}
-                <Button onClick={() => void save()} disabled={busy || !draft.name.trim()}><Save className="h-4 w-4" />{selected ? 'Save revision' : 'Create'}</Button>
+                {selected && <Button variant="outline" onClick={() => void toggleArchive()} disabled={!canChangeCatalog}>{selected.status === 'ACTIVE' ? <Archive className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}{selected.status === 'ACTIVE' ? 'Archive' : 'Restore'}</Button>}
+                <Button onClick={() => void save()} disabled={!canChangeCatalog || !draft.name.trim()}><Save className="h-4 w-4" />{selected ? 'Save revision' : 'Create'}</Button>
               </div>
             </div>
 
@@ -213,12 +223,12 @@ export default function CanonicalAutomationStudio() {
             <label className="grid gap-1 text-sm">Project<select className="rounded-lg border border-input bg-background p-2" value={selectedProjectId} onChange={event => { setSelectedProjectId(event.target.value); setInvocation(null); }}>{projects.map(project => <option key={project.id} value={project.id}>{project.name || project.id}</option>)}</select></label>
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => void run()} disabled={!canRun}><Play className="h-4 w-4" />Run</Button>
-              <Button variant="outline" onClick={() => void resumeLatest()} disabled={!resumePointer || busy}><Undo2 className="h-4 w-4" />Resume latest</Button>
-              {invocation?.retryAvailable && <Button variant="outline" onClick={() => void retry()} disabled={busy}><RotateCcw className="h-4 w-4" />Retry</Button>}
+              <Button variant="outline" onClick={() => void resumeLatest()} disabled={!resumePointer || !canChangeCatalog}><Undo2 className="h-4 w-4" />Resume latest</Button>
+              {invocation?.retryAvailable && <Button variant="outline" onClick={() => void retry()} disabled={!canChangeCatalog}><RotateCcw className="h-4 w-4" />Retry</Button>}
               {invocation && !isTerminal && <Button variant="outline" onClick={() => void cancel()} disabled={busy}><Square className="h-4 w-4" />Cancel</Button>}
             </div>
 
-            {invocation && <InvocationPanel invocation={invocation} busy={busy} onAccept={accept} />}
+            {invocation && <InvocationPanel invocation={invocation} busy={busy} catalogFresh={catalogFresh} onAccept={accept} />}
           </section>
         </main>
       </div>
@@ -226,12 +236,12 @@ export default function CanonicalAutomationStudio() {
   );
 }
 
-function InvocationPanel({ invocation, busy, onAccept }) {
+function InvocationPanel({ invocation, busy, catalogFresh, onAccept }) {
   return <div className="space-y-3 rounded-xl bg-secondary/40 p-3">
     <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-medium">Invocation {invocation.invocationId}</p><p className="text-xs text-muted-foreground">Definition r{invocation.definitionRevision} · state {invocation.state}{invocation.attemptStatus ? ` · attempt ${invocation.attemptStatus}` : ''}</p></div>{invocation.failureCode && <span className="text-xs text-destructive">{invocation.failureCode}</span>}</div>
     {invocation.nextAction && <p className="text-xs text-muted-foreground">Core next action: {invocation.nextAction.operation}</p>}
     {invocation.state === 'SUCCESS' && invocation.terminalImageUrl && <img src={deliveryUrl(invocation.terminalImageUrl)} alt="Automation result preview" className="max-h-[480px] w-full rounded-xl bg-muted object-contain" />}
-    {invocation.state === 'SUCCESS' && invocation.terminalArtifactId && <Button onClick={() => void onAccept()} disabled={busy}>Accept result into Project</Button>}
+    {invocation.state === 'SUCCESS' && invocation.terminalArtifactId && <Button onClick={() => void onAccept()} disabled={busy || !catalogFresh}>Accept result into Project</Button>}
   </div>;
 }
 
