@@ -63,8 +63,8 @@ async function waitForPostgresLockWait(pool: Pool, waitingPid: number, blockerPi
       : [];
     if (
       activity?.wait_event_type === 'Lock' &&
-      /\\bcanonical_projects\\b/iu.test(query) &&
-      /\\bFOR\\s+UPDATE\\b/iu.test(query) &&
+      query.toLowerCase().includes('canonical_projects') &&
+      query.toUpperCase().includes('FOR UPDATE') &&
       blockers.includes(blockerPid)
     ) return;
     await new Promise(resolve => setTimeout(resolve, 10));
