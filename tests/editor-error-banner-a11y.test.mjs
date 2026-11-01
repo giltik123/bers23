@@ -16,7 +16,7 @@ test('Editor error messages are announced and Retry follows the shared language'
   assert.match(banner, /if \(!message\) return null;/u);
   assert.match(banner, /\{onRetry && \(/u);
   assert.match(banner, /<Button type="button" variant="outline" size="sm" onClick=\{onRetry\}/u);
-  assert.doesNotMatch(banner, /<\/RefreshCw> Retry|\/\> Retry/u);
+  assert.doesNotMatch(banner, /> Retry/u);
   for (const forbidden of ['coreClient', 'fetch(', 'localStorage', 'chargeCredits']) {
     assert.equal(banner.includes(forbidden), false, 'Error display must not acquire authority: ' + forbidden);
   }
