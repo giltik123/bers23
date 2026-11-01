@@ -92,6 +92,6 @@ test('login errors are announced and controls are disabled during pending submis
   assert.match(source, /role="alert"/);
   assert.match(source, /aria-busy=\{loading\}/);
   assert.match(source, /onClick=\{handleGoogle\}\s+disabled=\{loading\}/);
-  assert.equal((source.match(/disabled=\{loading\}/g) || []).length, 3);
+  assert.equal((source.match(/disabled=\{loading\}/g) || []).length, 4);
   assert.doesNotMatch(source, /setError\(err\.message/);
 });
