@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import './offline-queue-single-flight.test.mjs';
 
 test('Projects UI does not expose a fake Duplicate action', async () => {
   const [projects, card, menu] = await Promise.all([
@@ -24,7 +25,7 @@ test('Project upload retry copy matches the in-memory queue lifetime', async () 
     readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
   ]);
 
-  assert.match(queue, /constructor\(\) \{ this\.items = \[\]/);
+  assert.match(queue, /constructor\(\) \{\s*this\.items = \[\]/);
   assert.doesNotMatch(queue, /indexedDB|localStorage|sessionStorage/i);
 
   assert.match(projects, /projectUi\.retryQueued/);
