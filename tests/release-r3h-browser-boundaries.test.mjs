@@ -47,6 +47,7 @@ test('R3h product UI composes Managed Garment, revisioned Wardrobe and Collectio
 test('R3h browser is the product mutation actor while PostgreSQL remains a read-only correctness oracle', async () => {
   const harness = await readFile(HARNESS, 'utf8');
 
+  assert.match(harness, /browser\.newContext\(\{ locale: 'en-US' \}\)/);
   assert.match(harness, /path\.resolve\('dist'\)/);
   assert.match(harness, /path\.resolve\('dist-server\/server\.mjs'\)/);
   assert.match(harness, /NODE_ENV: 'production'/);
