@@ -1,0 +1,43 @@
+name: Settings performance diagnostics truthfulness
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'src/components/settings/PerformanceSettings.jsx'
+      - 'src/components/settings/performanceSnapshot.js'
+      - 'src/lib/i18n/locales/en/settings.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/settings-performance-truthfulness.test.mjs'
+      - '.github/workflows/settings-performance-truthfulness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  settings-performance-truthfulness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Verify exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Regression - Settings diagnostics and localization
+        run: node --test tests/settings-performance-truthfulness.test.mjs
+      - name: Frontend typecheck and production bundle
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Verify diff whitespace
+        if: github.event_name == 'pull_request'
+        run: git diff --check "${{ github.event.pull_request.base.sha }}"..HEAD
