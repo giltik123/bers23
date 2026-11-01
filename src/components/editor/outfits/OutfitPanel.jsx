@@ -332,7 +332,7 @@ export default function OutfitPanel({ onCanonicalChange }) {
                           aria-label={t('fashionUi.layerRoleFor', { name: garment?.name || entry.garmentId })}
                         >
                           {!currentRoleIsAllowed && <option value={entry.layerRole}>{localizedEnum(t, 'outfitLayerRoles', entry.layerRole)} · {t('fashionUi.review')}</option>}
-                          {allowedRoles.map((role) => <option key={role} value={role}>{label(role)}</option>)}
+                          {allowedRoles.map((role) => <option key={role} value={role}>{localizedEnum(t, 'outfitLayerRoles', role)}</option>)}
                         </select>
                         <div className="flex items-center">
                           <button type="button" aria-label={t('fashionUi.moveGarmentUp', { name: garment?.name || entry.garmentId })} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={Boolean(busy) || selected.status !== 'ACTIVE' || index === 0} onClick={() => mutateSelected(`up:${entry.entryId}`, (outfit) => model.moveEntry(outfit, entry.entryId, -1))}>

@@ -77,6 +77,8 @@ test('canonical Outfit panel localizes controls, readiness and taxonomies in Eng
   }
   assert.match(panel, /localizedEnum\(t, 'outfitReadiness'/);
   assert.match(panel, /localizedEnum\(t, 'garmentCategories'/);
+  assert.match(panel, /localizedEnum\(t, 'outfitLayerRoles', role\)/);
+  assert.doesNotMatch(panel, /\{label\(/);
 });
 
 test('active Outfit UI cannot revive legacy entity, execution, provider or financial authority', () => {
