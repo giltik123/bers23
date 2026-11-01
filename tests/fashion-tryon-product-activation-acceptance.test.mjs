@@ -34,7 +34,7 @@ test('one explicit Outfit entry is the only product selection admitted per Try-O
 test('READY is required for Run and no render/effect can advance execution', async () => {
   const [controls, runner] = await Promise.all([source('controls'), source('runner')]);
   assert.match(controls, /disabled=\{!ui\.canRun/);
-  assert.match(controls, /Check readiness/);
+  assert.match(controls, /t\\('fashionUi\\.checkReadiness'\\)/);
   assert.match(runner, /Selection alone never starts execution/);
   const effectStart = runner.indexOf('useEffect(() => {');
   const effectEnd = runner.indexOf('}, [load, outfitRevision]);', effectStart);
