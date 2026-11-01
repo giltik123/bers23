@@ -279,8 +279,7 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   "garmentForTryon": "Garment entry for deterministic Try-On",
   "locked": "Locked selection: {name}",
   "refreshError": "Try-On choices could not be refreshed. Reload canonical Outfits before trying again.",
-  "selectionInvalid": "Try-On selection is invalid."
-,
+  "selectionInvalid": "Try-On selection is invalid.",
   "controlsLabel": "Deterministic Try-On controls",
   "deterministicTryOn": "Deterministic Try-On",
   "close": "Close",
