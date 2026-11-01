@@ -290,7 +290,7 @@ export const modules = {
     "empty": "Материалы по заданным фильтрам не найдены.",
     "open": "Открыть проект",
     "projectType": "Проект",
-    "canonicalArtifactTag": "Проверенный материал",
+    "canonicalArtifactTag": "Канонический артефакт",
     "selectAsset": "Выберите материал, чтобы увидеть подробности.",
     "tags": "Теги",
     "related": "Связанные материалы",
