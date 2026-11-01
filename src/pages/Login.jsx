@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { coreClient } from "@/api/coreClient";
 import { Button } from "@/components/ui/button";
@@ -17,22 +17,34 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // React's disabled state may not render before a second submit event.
+  // Core remains the sole session authority; this only serializes UI intent.
+  const requestInFlight = useRef(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
     setError("");
     setLoading(true);
     try {
       await coreClient.auth.loginViaEmailPassword(email, password);
       window.location.href = "/";
     } catch (err) {
-      setError(err.message || t("authUi.invalidLogin"));
+      // Do not echo server/provider details into the public sign-in screen.
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403) {
+        setError(t("authUi.invalidLogin"));
+      } else {
+        setError(t(typeof err?.status === "number" ? "errors.generic" : "errors.network"));
+      }
     } finally {
+      requestInFlight.current = false;
       setLoading(false);
     }
   };
 
   const handleGoogle = () => {
+    if (requestInFlight.current) return;
     coreClient.auth.loginWithProvider("google", "/");
   };
 
@@ -56,6 +68,7 @@ export default function Login() {
             variant="outline"
             className="w-full h-12 text-sm font-medium mb-6"
             onClick={handleGoogle}
+            disabled={loading}
           >
             <GoogleIcon className="w-5 h-5 mr-2" />
             {t("authUi.continueGoogle")}
@@ -73,12 +86,12 @@ export default function Login() {
       )}
 
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+        <div role="alert" className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
           {error}
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4" aria-busy={loading}>
         <div className="space-y-2">
           <Label htmlFor="email">{t("authUi.email")}</Label>
           <div className="relative">
@@ -91,6 +104,7 @@ export default function Login() {
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              disabled={loading}
               className="pl-10 h-12"
               required
             />
@@ -112,6 +126,7 @@ export default function Login() {
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
               className="pl-10 h-12"
               required
             />
