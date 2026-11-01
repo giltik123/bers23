@@ -1161,7 +1161,7 @@ export default function Editor() {
   };
 
   const handleRename = async () => {
-    const name = window.prompt('Rename project', project.name);
+    const name = window.prompt(t('editorUi.renamePrompt'), project.name);
     if (name && name !== project.name) await rename(name);
   };
 
@@ -1187,7 +1187,7 @@ export default function Editor() {
             </Link>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="max-w-full truncate text-2xl font-semibold tracking-tight">{project.name}</h1>
-              <button type="button" onClick={handleRename} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground" aria-label="Rename project">
+              <button type="button" onClick={handleRename} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground" aria-label={t('editorUi.renameProject')}>
                 <Pencil className="h-4 w-4" aria-hidden="true" /> {language === 'ru' ? t('editorUi.rename') : 'Rename'}
               </button>
             </div>
