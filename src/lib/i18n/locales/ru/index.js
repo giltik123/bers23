@@ -276,8 +276,7 @@ export const modules = {
   "garmentForTryon": "Вещь для примерки",
   "locked": "Выбрано: {name}",
   "refreshError": "Не удалось обновить образы. Загрузите их повторно перед примеркой.",
-  "selectionInvalid": "Неверный выбор для примерки."
-,
+  "selectionInvalid": "Неверный выбор для примерки.",
   "controlsLabel": "Управление детерминированной примеркой",
   "deterministicTryOn": "Детерминированная примерка",
   "close": "Закрыть",
