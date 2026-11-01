@@ -9,7 +9,7 @@ test('browser source imports no transaction internals and canonical edit boundar
 async function collect(directory) { const entries = await readdir(directory, { withFileTypes: true }); return (await Promise.all(entries.map((entry) => entry.isDirectory() ? collect(join(directory, entry.name)) : [join(directory, entry.name)]))).flat().filter((file) => /\.(js|jsx|ts|tsx)$/.test(file)); }
 test('Editor selection uses the Core mask port and never manufactures a mask UUID', async () => { const source = await readFile('src/pages/Editor.jsx', 'utf8'); assert.match(source, /new CoreMaskArtifactPort\(project\.id\)/); assert.doesNotMatch(source, /persist:\s*async[\s\S]*randomUUID/); assert.match(source, /mask_artifact_id: artifact\.id/); });
 test('Core mask port sends exact alpha and maps the server artifact identity', async () => { const source = await readFile('src/application/selection/CoreMaskArtifactPort.js', 'utf8'); assert.match(source, /alpha: mask\.alpha/); assert.match(source, /id: response\.artifactId/); assert.match(source, /ALPHA_8_LOSSLESS/); });
-test('Editor invert stays bound to SelectionApplicationService and the toolbar exposes only stable editable states', async () => { const editor = await readFile('src/pages/Editor.jsx', 'utf8'); const toolbar = await readFile('src/components/editor/SelectionToolbar.jsx', 'utf8'); assert.match(editor, /onInvert=\{\(\) => updateSelection\(\(service\) => service\.invert\(\)\)\}/); assert.match(toolbar, /selectionUi\\.invertSelection/); assert.match(toolbar, /const editable = selection\.state === 'SELECTED' \|\| selection\.state === 'REFINING'/); assert.match(toolbar, /disabled=\{!editable\} onClick=\{onInvert\}/); assert.match(toolbar, /const canDone = editable && !selection\.quality\?\.empty/); assert.match(toolbar, /disabled=\{!canDone\} onClick=\{onDone\}/); });
+test('Editor invert stays bound to SelectionApplicationService and the toolbar exposes only stable editable states', async () => { const editor = await readFile('src/pages/Editor.jsx', 'utf8'); const toolbar = await readFile('src/components/editor/SelectionToolbar.jsx', 'utf8'); assert.match(editor, /onInvert=\{\(\) => updateSelection\(\(service\) => service\.invert\(\)\)\}/); assert.match(toolbar, /selectionUi[.]invertSelection/); assert.match(toolbar, /const editable = selection\.state === 'SELECTED' \|\| selection\.state === 'REFINING'/); assert.match(toolbar, /disabled=\{!editable\} onClick=\{onInvert\}/); assert.match(toolbar, /const canDone = editable && !selection\.quality\?\.empty/); assert.match(toolbar, /disabled=\{!canDone\} onClick=\{onDone\}/); });
 test('Editor selection morphology stays service-bound and exposes bounded accessible controls', async () => {
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
   const toolbar = await readFile('src/components/editor/SelectionToolbar.jsx', 'utf8');
@@ -19,12 +19,12 @@ test('Editor selection morphology stays service-bound and exposes bounded access
   assert.match(editor, /onOpen=\{\(\) => updateSelection\(\(service\) => service\.open\(selectionMorphologyRadius\)\)\}/);
   assert.match(editor, /onClose=\{\(\) => updateSelection\(\(service\) => service\.close\(selectionMorphologyRadius\)\)\}/);
   assert.match(editor, /onFeather=\{\(\) => updateSelection\(\(service\) => service\.feather\(selectionMorphologyRadius\)\)\}/);
-  assert.match(toolbar, /selectionUi\\.selectionEdgeRadius[^>]*min="1" max="32"/);
-  assert.match(toolbar, /selectionUi\\.growSelection disabled=\{busy \|\| !editable\}/);
-  assert.match(toolbar, /selectionUi\\.shrinkSelection disabled=\{busy \|\| !editable\}/);
-  assert.match(toolbar, /selectionUi\\.openSelection disabled=\{busy \|\| !editable\}/);
-  assert.match(toolbar, /selectionUi\\.closeSelection disabled=\{busy \|\| !editable\}/);
-  assert.match(toolbar, /selectionUi\\.featherSelection disabled=\{busy \|\| !editable\}/);
+  assert.match(toolbar, /selectionUi[.]selectionEdgeRadius[^>]*min="1" max="32"/);
+  assert.match(toolbar, /selectionUi[.]growSelection disabled=\{busy \|\| !editable\}/);
+  assert.match(toolbar, /selectionUi[.]shrinkSelection disabled=\{busy \|\| !editable\}/);
+  assert.match(toolbar, /selectionUi[.]openSelection disabled=\{busy \|\| !editable\}/);
+  assert.match(toolbar, /selectionUi[.]closeSelection disabled=\{busy \|\| !editable\}/);
+  assert.match(toolbar, /selectionUi[.]featherSelection disabled=\{busy \|\| !editable\}/);
 });
 
 test('Editor polygon selection keeps raster authority in SelectionApplicationService and preview SVG-only', async () => {
@@ -38,9 +38,9 @@ test('Editor polygon selection keeps raster authority in SelectionApplicationSer
   assert.match(editor, /service\.applyPolygon\(polygonComposition\)/);
   assert.match(editor, /service\.clearPolygon\(\)/);
   assert.match(toolbar, /\['POLYGON', 'polygonMode'\]/);
-  assert.match(toolbar, /selectionUi\\.polygonComposition/);
-  assert.match(toolbar, /selectionUi\\.applyPolygonSelection/);
-  assert.match(toolbar, /selectionUi\\.clearPolygonVertices/);
+  assert.match(toolbar, /selectionUi[.]polygonComposition/);
+  assert.match(toolbar, /selectionUi[.]applyPolygonSelection/);
+  assert.match(toolbar, /selectionUi[.]clearPolygonVertices/);
   const previewStart = canvas.indexOf('function PolygonPreview');
   const previewEnd = canvas.indexOf('function CropOverlay', previewStart);
   assert(previewStart >= 0 && previewEnd > previewStart);
@@ -64,9 +64,9 @@ test('Editor lasso captures pointer path but reuses deterministic polygon raster
   assert.match(editor, /service\.applyLasso\(polygonComposition\)/);
   assert.match(editor, /service\.clearLasso\(\)/);
   assert.match(toolbar, /\['LASSO', 'lassoMode'\]/);
-  assert.match(toolbar, /selectionUi\\.lassoComposition/);
-  assert.match(toolbar, /selectionUi\\.applyLassoSelection/);
-  assert.match(toolbar, /selectionUi\\.clearLassoPoints/);
+  assert.match(toolbar, /selectionUi[.]lassoComposition/);
+  assert.match(toolbar, /selectionUi[.]applyLassoSelection/);
+  assert.match(toolbar, /selectionUi[.]clearLassoPoints/);
   assert.match(toolbar, /\{selection\.warning\}/);
   assert.match(canvas, /selection\?\.mode !== 'POLYGON' && selection\?\.mode !== 'LASSO'/);
   assert.match(canvas, /onPointerMove=\{pointer\('move'\)\}/);
@@ -93,8 +93,8 @@ test('Editor rectangle and ellipse keep raster authority in SelectionApplication
   assert.match(editor, /onShapeHandlePointer=\{PRODUCTION_MASK_UI_ENABLED \? selectionShapeHandlePointer : undefined\}/);
   assert.match(toolbar, /\['RECTANGLE', 'rectangleMode'\]/);
   assert.match(toolbar, /\['ELLIPSE', 'ellipseMode'\]/);
-  assert.match(toolbar, /selectionUi\\.shapeComposition/);
-  assert.match(toolbar, /selectionUi\\.shapeKeyboardNudging/);
+  assert.match(toolbar, /selectionUi[.]shapeComposition/);
+  assert.match(toolbar, /selectionUi[.]shapeKeyboardNudging/);
   assert.match(toolbar, /event\.shiftKey \? 10 : 1/);
   assert.match(toolbar, /selectionUi\.arrowMoveHint/);
   const start = canvas.indexOf('function ShapePreview');

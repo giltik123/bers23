@@ -37,21 +37,21 @@ test('masked exposure, white balance and levels appear only when a saved mask ex
   const maskGate = noSelection.indexOf('{hasSelectedMask ? (');
   const firstSlider = noSelection.indexOf('selectionUi.maskedExposure');
   assert.ok(maskGate >= 0 && firstSlider > maskGate);
-  assert.match(noSelection, /<details[^>]*>[\s\S]*<summary[^>]*>selectionUi\\.adjustSelectedArea/);
-  assert.match(noSelection, /selectionUi\\.adjustSelectedAreaHint/);
-  assert.match(noSelection, /selectionUi\\.maskedExposure[\s\S]*?onChange=\{\(event\) => onExposureEighthStops\(Number\(event\.target\.value\)\)\}/);
-  assert.match(noSelection, /selectionUi\\.maskedWhiteBalanceTemperature[\s\S]*?onChange=\{\(event\) => onWhiteBalanceTemperatureQ8\(Number\(event\.target\.value\)\)\}/);
-  assert.match(noSelection, /selectionUi\\.previewMaskedLevels[^>]*onClick=\{onApplyLevels\}/);
-  assert.match(noSelection, /selectionUi\\.adjustPartOfImageHint/);
+  assert.match(noSelection, /<details[^>]*>[\s\S]*<summary[^>]*>selectionUi[.]adjustSelectedArea/);
+  assert.match(noSelection, /selectionUi[.]adjustSelectedAreaHint/);
+  assert.match(noSelection, /selectionUi[.]maskedExposure[\s\S]*?onChange=\{\(event\) => onExposureEighthStops\(Number\(event\.target\.value\)\)\}/);
+  assert.match(noSelection, /selectionUi[.]maskedWhiteBalanceTemperature[\s\S]*?onChange=\{\(event\) => onWhiteBalanceTemperatureQ8\(Number\(event\.target\.value\)\)\}/);
+  assert.match(noSelection, /selectionUi[.]previewMaskedLevels[^>]*onClick=\{onApplyLevels\}/);
+  assert.match(noSelection, /selectionUi[.]adjustPartOfImageHint/);
 });
 
 test('brush and edge controls are contextual but retain real edit callbacks', () => {
   assert.match(selection, /\{\(selection\.mode === 'BRUSH_ADD' \|\| selection\.mode === 'BRUSH_SUBTRACT'\) && <>/);
-  assert.match(selection, /selectionUi\\.brushSize[^>]*onChange=\{\(event\) => onBrushSize\(Number\(event\.target\.value\)\)\}/);
-  assert.match(selection, /selectionUi\\.brushHardness[^>]*onChange=\{\(event\) => onBrushHardness\(Number\(event\.target\.value\)\)\}/);
-  assert.match(selection, /<summary[^>]*>selectionUi\\.refineSelectionEdges<\/summary>/);
+  assert.match(selection, /selectionUi[.]brushSize[^>]*onChange=\{\(event\) => onBrushSize\(Number\(event\.target\.value\)\)\}/);
+  assert.match(selection, /selectionUi[.]brushHardness[^>]*onChange=\{\(event\) => onBrushHardness\(Number\(event\.target\.value\)\)\}/);
+  assert.match(selection, /<summary[^>]*>selectionUi[.]refineSelectionEdges<\/summary>/);
   for (const name of ['Grow', 'Shrink', 'Open', 'Close', 'Feather']) {
-    assert.match(selection, new RegExp('selectionUi\\.' + name.toLowerCase() + 'Selection[^>]*onClick=\\\\{on' + name + '\\\\}'));
+    assert.match(selection, new RegExp('selectionUi[.]' + name.toLowerCase() + 'Selection[^>]*onClick=\\{on' + name + '\\}'));
   }
   assert.match(selection, /disabled=\{!canDone\} onClick=\{onDone\}/);
 });
