@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { readProjectNavigationContext, projectNavigationTargets } from '../src/lib/navigation/projectNavigation.js';
 
 const read = (path) => readFile(path, 'utf8');
 
@@ -140,4 +141,39 @@ test('Free generation uses explicit consent, server-owned account setup and no b
   assert.ok(studio.includes('generativeConfirmed'));
   assert.ok(studio.includes('бесплатно в пределах серверного лимита'));
   assert.ok(editor.includes('onPrepareFreeAccount={() => creativeEditApplicationService.prepareAccount()}'));
+});
+
+test('workspace context survives Editor → Assets → Editor and Wardrobe → Fashion without browser authority', () => {
+  const projectId = '11111111-1111-4111-8111-111111111111';
+  assert.equal(readProjectNavigationContext('/editor', `?id=${projectId}&mode=fashion`), projectId);
+  const editorTargets = projectNavigationTargets(projectId, '/editor');
+  assert.equal(editorTargets.assets, `/assets?project=${projectId}`);
+  assert.equal(readProjectNavigationContext('/assets', `?project=${projectId}`), projectId);
+  assert.equal(projectNavigationTargets(projectId, '/assets').workspace, `/editor?id=${projectId}`);
+  assert.equal(projectNavigationTargets(projectId, '/wardrobe').workspace, `/editor?id=${projectId}&mode=fashion`);
+  assert.equal(readProjectNavigationContext('/wardrobe', `?project=${projectId}`), projectId);
+  assert.equal(readProjectNavigationContext('/automations', `?project=${projectId}`), null,
+    'Automation Studio must validate its own selected Project, not inherit a navigation hint');
+});
+
+test('workspace links fail closed for missing, malformed or untrusted route context', () => {
+  assert.equal(readProjectNavigationContext('/editor', '?id='), null);
+  assert.equal(readProjectNavigationContext('/editor', '?id=%2Fother'), null);
+  assert.equal(readProjectNavigationContext('/assets', '?project=bad%20id'), null);
+  assert.equal(readProjectNavigationContext('/projects', '?project=valid-id'), null);
+  assert.deepEqual(projectNavigationTargets(null, '/editor'), { workspace: null, assets: '/assets' });
+  assert.deepEqual(projectNavigationTargets('../unsafe', '/editor'), { workspace: null, assets: '/assets' });
+  assert.deepEqual(projectNavigationTargets(' ', '/wardrobe'), { workspace: null, assets: '/assets' });
+});
+
+test('top navigation exposes a contextual workspace link without inventing a Project authority', async () => {
+  const app = await read('src/components/AppLayout.jsx');
+  assert.match(app, /readProjectNavigationContext\(location\.pathname, location\.search\)/);
+  assert.match(app, /projectNavigationTargets\(projectContextId, location\.pathname\)/);
+  assert.match(app, /path: '\/editor', to: projectTargets\.workspace/);
+  assert.match(app, /path: '\/assets', to: projectTargets\.assets/);
+  assert.match(app, /label: t\('editorUi\.workspace'\)/);
+  assert.match(app, /to=\{to\}/);
+  assert.match(app, /const isActive = \(path\) => location\.pathname === path/);
+  assert.doesNotMatch(app, /localStorage\.setItem\(['"]project|sessionStorage\.setItem\(['"]project/);
 });
