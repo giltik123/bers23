@@ -2,7 +2,7 @@ import React from 'react';
 import { Clock3, Link2, Tag } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n/TranslationProvider';
 
-export default function AssetDetails({ asset, history, onAddToCollection }) {
+export default function AssetDetails({ asset, history = [], onAddToCollection }) {
   const { t } = useTranslation();
   if (!asset) return <aside className="rounded-2xl border border-border/60 p-4 text-sm text-muted-foreground">{t('assetUi.selectAsset')}</aside>;
 
