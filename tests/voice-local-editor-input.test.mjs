@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { getVoiceConfirmationLabel } from '../src/application/voice/voiceConfirmationLabel.js';
 import { readFile } from 'node:fs/promises';
 import {
   buildVoiceIntentDraft, applyConfirmedVoiceDraft,
@@ -273,4 +274,24 @@ test('voice integration preserves canonical Core download, Scene MASK and accept
   assert.doesNotMatch(voicePort,/globalThis\.webkitSpeechRecognition|new\s+webkitSpeechRecognition|=\s*webkitSpeechRecognition/);
   assert.match(voiceUi,/onClick=\{confirm\}/);
   assert.doesNotMatch(voiceUi,/coreClient|applyEdit\(|pushEdit\(|runGenerative/);
+});
+
+test('voice confirmation copy names the reviewed action instead of always claiming text confirmation', async () => {
+  assert.equal(getVoiceConfirmationLabel('PROMPT_REPLACE'), 'Подтвердить текст');
+  assert.equal(getVoiceConfirmationLabel('PROMPT_APPEND'), 'Добавить текст в промпт');
+  assert.equal(getVoiceConfirmationLabel('PROMPT_CLEAR'), 'Очистить промпт');
+  assert.equal(getVoiceConfirmationLabel('NAVIGATE'), 'Перейти к разделу');
+  assert.equal(getVoiceConfirmationLabel('WARDROBE_QUERY'), 'Открыть поиск в гардеробе');
+  assert.equal(getVoiceConfirmationLabel('TRYON_SELECT_PROPOSAL'), 'Подготовить выбор вещи для примерки');
+  assert.equal(getVoiceConfirmationLabel('AGENT_PROPOSAL'), 'Подготовить задачу Agent');
+  assert.equal(getVoiceConfirmationLabel('HISTORY_UNDO'), 'Отменить последнее редактирование');
+  assert.equal(getVoiceConfirmationLabel('HISTORY_REDO'), 'Повторить редактирование');
+  assert.equal(getVoiceConfirmationLabel('HISTORY_RESTORE'), 'Вернуть оригинал');
+  assert.equal(getVoiceConfirmationLabel('TRANSFORM'), 'Создать предпросмотр поворота или отражения');
+  assert.equal(getVoiceConfirmationLabel('RESIZE'), 'Создать предпросмотр изменения размера');
+  assert.equal(getVoiceConfirmationLabel('UNKNOWN_KIND'), 'Подтвердить действие');
+
+  const ui = await readFile('src/components/editor/VoiceInputPanel.jsx', 'utf8');
+  assert.ok(ui.includes('getVoiceConfirmationLabel(draft.kind)'));
+  assert.ok(!ui.includes('Подтвердить текст\n            </Button>'));
 });

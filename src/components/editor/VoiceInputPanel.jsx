@@ -5,6 +5,7 @@ import {
   buildVoiceIntentDraft,applyConfirmedVoiceDraft,
 } from '@/application/voice/VoiceIntentDraftV1';
 import { createLocalVoiceSession, installLocalRussianVoicePack } from '@/application/voice/createLocalVoiceSession';
+import { getVoiceConfirmationLabel } from '@/application/voice/voiceConfirmationLabel';
 
 const MAX_TRANSCRIPT=1024;
 const INTENT_LABELS={
@@ -203,7 +204,7 @@ export default function VoiceInputPanel({
           {draft&&!['ACTION_NEEDS_UI','AMBIGUOUS','REQUIRES_CANONICAL_CONTEXT'].includes(draft.kind)&&(
             <Button type="button" size="sm" disabled={disabled||submitting||phase==='RECORDING'||phase==='PREPARING'||phase==='STOPPING'||transcriptSource!==sourceKey}
               onClick={confirm}>
-              <Check className="mr-1 h-4 w-4"/>Подтвердить текст
+              <Check className="mr-1 h-4 w-4"/>{getVoiceConfirmationLabel(draft.kind)}
             </Button>
           )}
         </div>
