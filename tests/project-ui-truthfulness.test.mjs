@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import './offline-queue-single-flight.test.mjs';
 
 test('Projects UI does not expose a fake Duplicate action', async () => {
   const [projects, card, menu] = await Promise.all([
@@ -34,3 +33,6 @@ test('Project upload retry copy matches the in-memory queue lifetime', async () 
   assert.match(english, /If you reload or close it, choose the file again\./);
   assert.doesNotMatch(projects, /This upload will retry when your connection returns\./);
 });
+
+// Run the queue's behavioral regressions in the existing exact-head Project UI gate.
+import './offline-queue-single-flight.test.mjs';
