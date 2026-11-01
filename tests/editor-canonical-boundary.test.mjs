@@ -642,6 +642,7 @@ test('bounded Agent UI checks current context before publishing progress and ter
   assert.match(hook, /operationRef\.current\.get\(lockKey\)/);
   assert.match(hook, /operationRef\.current\.delete\(lockKey\)/);
   assert.match(hook, /operationRef\.current\.has\(contextKey\)/);
+  assert.match(hook, /return runOperation\('start', async \(onView\) => \{\s*writeHint\(project\.id/);
 });
 
 test('bounded Agent panel serializes same-context actions and exposes recoverable errors', async () => {
