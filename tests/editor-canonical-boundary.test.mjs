@@ -67,7 +67,7 @@ test('Editor lasso captures pointer path but reuses deterministic polygon raster
   assert.match(toolbar, /selectionUi[.]lassoComposition/);
   assert.match(toolbar, /selectionUi[.]applyLassoSelection/);
   assert.match(toolbar, /selectionUi[.]clearLassoPoints/);
-  assert.match(toolbar, /\{selection\.warning\}/);
+  assert.match(toolbar, /\{selectionWarning\}/);
   assert.match(canvas, /selection\?\.mode !== 'POLYGON' && selection\?\.mode !== 'LASSO'/);
   assert.match(canvas, /onPointerMove=\{pointer\('move'\)\}/);
   assert.match(canvas, /onPointerCancel=\{pointer\('cancel'\)\}/);

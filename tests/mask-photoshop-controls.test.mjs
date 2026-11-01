@@ -133,5 +133,5 @@ test('brush cursor reports the actual radius as a noninteractive image overlay',
   assert.match(canvas, /width: brushSize \* 2/);
   assert.match(canvas, /height: brushSize \* 2/);
   assert.match(canvas, /pointer-events-none absolute/);
-  assert.match(toolbar, />Brush radius/);
+  assert.match(toolbar, /selectionUi[.]brushRadius/);
 });

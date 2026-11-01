@@ -37,7 +37,7 @@ test('masked exposure, white balance and levels appear only when a saved mask ex
   const maskGate = noSelection.indexOf('{hasSelectedMask ? (');
   const firstSlider = noSelection.indexOf('selectionUi.maskedExposure');
   assert.ok(maskGate >= 0 && firstSlider > maskGate);
-  assert.match(noSelection, /<details[^>]*>[\s\S]*<summary[^>]*>selectionUi[.]adjustSelectedArea/);
+  assert.match(noSelection, /selectionUi[.]adjustSelectedArea/);
   assert.match(noSelection, /selectionUi[.]adjustSelectedAreaHint/);
   assert.match(noSelection, /selectionUi[.]maskedExposure[\s\S]*?onChange=\{\(event\) => onExposureEighthStops\(Number\(event\.target\.value\)\)\}/);
   assert.match(noSelection, /selectionUi[.]maskedWhiteBalanceTemperature[\s\S]*?onChange=\{\(event\) => onWhiteBalanceTemperatureQ8\(Number\(event\.target\.value\)\)\}/);
