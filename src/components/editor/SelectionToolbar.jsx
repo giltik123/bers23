@@ -22,6 +22,8 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
   const { t } = useTranslation();
   const modes = modeKeys.map(([id, key]) => [id, t('selectionUi.' + key)]);
   const modeHints = Object.fromEntries(Object.entries(modeHintKeys).map(([id, key]) => [id, t('selectionUi.' + key)]));
+  const lassoLimit = selection?.warning?.match(/^Lasso point limit reached \((\d+)\)\. Apply or clear the current path\.$/);
+  const selectionWarning = lassoLimit ? t('selectionUi.lassoPointLimit', { count: lassoLimit[1] }) : selection?.warning;
   const levelsIdentity = levelsInputBlack === 0 && levelsInputMidpoint === 128 && levelsInputWhite === 255 && levelsOutputBlack === 0 && levelsOutputWhite === 255;
   if (!selection) return (
     <section className="space-y-4" aria-label={t('selectionUi.imageSelectionAndAdjustments')}>
@@ -315,7 +317,7 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
         <Button type="button" size="sm" disabled={!canDone} onClick={onDone} title={t('selectionUi.doneSelectionTitle')}>{t('selectionUi.doneSelection')}</Button>
       </div>
       {selection.state === 'SELECTING' && <p className="text-xs text-muted-foreground" role="status">{t('selectionUi.preparingSmartSelection')}</p>}
-      {selection.warning && <p className="text-xs text-amber-600" role="status">{selection.warning}</p>}
+      {selection.warning && <p className="text-xs text-amber-600" role="status">{selectionWarning}</p>}
       {selection.quality?.warning === 'EMPTY' && <p className="text-xs text-amber-600" role="status">{t('selectionUi.selectionEmpty')}</p>}
       {selection.quality?.warning === 'TINY' && <p className="text-xs text-amber-600" role="status">{t('selectionUi.selectionTiny')}</p>}
       {selection.quality?.warning === 'SUSPICIOUSLY_FULL' && <p className="text-xs text-amber-600" role="status">{t('selectionUi.selectionSuspiciouslyFull')}</p>}
