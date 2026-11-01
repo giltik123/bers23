@@ -30,9 +30,9 @@ test('Photoshop-inspired Select & Mask keeps actual seven selection modes, mask 
 });
 
 test('brush opacity slider actually modifies ORIGINAL-resolution mask bytes before Core persist', () => {
-  assert.match(toolbar, /aria-label={t('selectionUi.brushSize')}[^>]*type="range"[^>]*min="2" max="96"/);
-  assert.match(toolbar, /aria-label={t('selectionUi.brushHardness')}[^>]*type="range" min="0" max="100"/);
-  assert.match(toolbar, /aria-label={t('selectionUi.brushOpacity')}[^>]*type="range" min="0" max="100"/);
+  assert.match(toolbar, /aria-label=\{t\('selectionUi\.brushSize'\)\}[^>]*type="range"[^>]*min="2" max="96"/);
+  assert.match(toolbar, /aria-label=\{t\('selectionUi\.brushHardness'\)\}[^>]*type="range" min="0" max="100"/);
+  assert.match(toolbar, /aria-label=\{t\('selectionUi\.brushOpacity'\)\}[^>]*type="range" min="0" max="100"/);
   assert.match(toolbar, /onChange=\{\(event\) => onBrushOpacity\(Number\(event\.target\.value\)\)\}/);
   assert.match(editor, /brushOpacity, setBrushOpacity\] = useState\(100\)/);
   assert.match(editor, /opacity: brushOpacity \/ 100, view \}\)\)/);
@@ -51,8 +51,8 @@ test('mask overlay color, visibility and opacity are view-only controls with no 
     assert.match(editor, new RegExp(setting + '=\\{' + setting + '\\}'));
   }
   for (const key of ['teal', 'magenta', 'amber']) assert.match(toolbar, new RegExp("id: '" + key + "'"));
-  assert.match(toolbar, /aria-label={t('selectionUi.showMaskOverlay')} checked=\{maskOverlayVisible\} onChange=\{\(event\) => onMaskOverlayVisible\(event\.target\.checked\)\}/);
-  assert.match(toolbar, /aria-label={t('selectionUi.maskOverlayOpacity')} min="0" max="100" step="1" value=\{maskOverlayOpacity\} onChange=\{\(event\) => onMaskOverlayOpacity\(Number\(event\.target\.value\)\)\}/);
+  assert.match(toolbar, /aria-label=\{t\('selectionUi\.showMaskOverlay'\)\} checked=\{maskOverlayVisible\} onChange=\{\(event\) => onMaskOverlayVisible\(event\.target\.checked\)\}/);
+  assert.match(toolbar, /aria-label=\{t\('selectionUi\.maskOverlayOpacity'\)\} min="0" max="100" step="1" value=\{maskOverlayOpacity\} onChange=\{\(event\) => onMaskOverlayOpacity\(Number\(event\.target\.value\)\)\}/);
   assert.match(toolbar, /onClick=\{\(\) => onMaskOverlayColor\(choice\.id\)\}/);
   assert.match(canvas, /maskOverlayVisible && <SelectionOverlay selection=\{selection\} overlayColor=\{maskOverlayColor\} overlayOpacity=\{maskOverlayOpacity\}/);
   assert.match(canvas, /Math\.round\(alpha \* opacity\)/);
@@ -62,10 +62,10 @@ test('mask overlay color, visibility and opacity are view-only controls with no 
 });
 
 test('saved-mask exposure and white balance have calibrated sliders, resets and real preview handlers', () => {
-  assert.match(toolbar, /aria-label={t('selectionUi.maskedExposure')}[\s\S]*?type="range"[\s\S]*?min="-32"[\s\S]*?max="32"/);
+  assert.match(toolbar, /aria-label=\{t\('selectionUi\.maskedExposure'\)\}[\s\S]*?type="range"[\s\S]*?min="-32"[\s\S]*?max="32"/);
   assert.match(toolbar, /onClick=\{\(\) => onExposureEighthStops\(0\)\}/);
-  assert.match(toolbar, /aria-label={t('selectionUi.maskedWhiteBalanceTemperature')}[\s\S]*?min="-128"[\s\S]*?max="128"/);
-  assert.match(toolbar, /aria-label={t('selectionUi.maskedWhiteBalanceTint')}[\s\S]*?min="-64"[\s\S]*?max="64"/);
+  assert.match(toolbar, /aria-label=\{t\('selectionUi\.maskedWhiteBalanceTemperature'\)\}[\s\S]*?min="-128"[\s\S]*?max="128"/);
+  assert.match(toolbar, /aria-label=\{t\('selectionUi\.maskedWhiteBalanceTint'\)\}[\s\S]*?min="-64"[\s\S]*?max="64"/);
   assert.match(toolbar, /onWhiteBalanceTemperatureQ8\(0\); onWhiteBalanceTintQ8\(0\)/);
   assert.match(toolbar, /aria-label=\{t\('selectionUi\.previewMaskedExposure'\)\}[^>]*onClick=\{onApplyExposure\}/);
   assert.match(toolbar, /aria-label=\{t\('selectionUi\.previewMaskedWhiteBalance'\)\}[^>]*onClick=\{onApplyWhiteBalance\}/);
@@ -82,17 +82,17 @@ test('five Levels sliders and exact numeric inputs drive canonical masked Levels
     assert.ok((toolbar.match(new RegExp(handler + '\\(Number\\(event\\.target\\.value\\)\\)', 'g')) ?? []).length >= 2, key);
   }
   assert.match(toolbar, /onLevelsInputBlack\(0\); onLevelsInputMidpoint\(128\); onLevelsInputWhite\(255\); onLevelsOutputBlack\(0\); onLevelsOutputWhite\(255\)/);
-  assert.match(toolbar, /aria-label={t('selectionUi.previewMaskedLevels')} disabled=\{startDisabled \|\| !canApplyLevels \|\| applyingLevels \|\| levelsIdentity\} onClick=\{onApplyLevels\}/);
+  assert.match(toolbar, /aria-label=\{t\('selectionUi\.previewMaskedLevels'\)\} disabled=\{startDisabled \|\| !canApplyLevels \|\| applyingLevels \|\| levelsIdentity\} onClick=\{onApplyLevels\}/);
   assert.match(editor, /Boolean\(exactMaskedLevelsParameters\(/);
   assert.match(editor, /kind: 'MASKED_LEVELS'/);
   assert.match(editor, /finalArtifactId: result\.canonicalArtifactId/);
 });
 
 test('mask feather and grow/shrink/open/close preserve service authority and bounded radius', () => {
-  assert.match(toolbar, /aria-label="Selection edge radius" type="range" min="1" max="32"/);
-  for (const [name, action] of [['Grow','grow'], ['Shrink','shrink'], ['Open','open'], ['Close','close'], ['Feather','feather']]) {
-    assert.match(toolbar, new RegExp('aria-label="' + name + ' selection"[^>]*onClick=\\{on' + name + '\\}'));
-    assert.match(editor, new RegExp('service\\.' + action + '\\(selectionMorphologyRadius\\)'));
+  assert.match(toolbar, /aria-label=\{t\('selectionUi\.selectionEdgeRadius'\)\} type="range" min="1" max="32"/);
+  for (const [key, action] of [['growSelection','Grow'], ['shrinkSelection','Shrink'], ['openSelection','Open'], ['closeSelection','Close'], ['featherSelection','Feather']]) {
+    assert.match(toolbar, new RegExp('selectionUi\\.' + key + '[^>]*onClick=\\{on' + action + '\\}'));
+    assert.match(editor, new RegExp('service\\.' + action.toLowerCase() + '\\(selectionMorphologyRadius\\)'));
   }
   assert.match(service, /MAX_SELECTION_MORPHOLOGY_RADIUS = 32/);
 });
