@@ -174,7 +174,7 @@ export default function VoiceInputPanel({
           {phase==='RECORDING'&&<p role="status" className="text-xs">
             <MicOff className="mr-1 inline h-4 w-4"/>Запись с микрофона (не более 30 секунд)
           </p>}
-          {partial&&<p className="text-xs text-muted-foreground" aria-label="Промежуточная расшифровка">{partial}</p>}
+          {partial&&<p className="text-xs text-muted-foreground" role="status" aria-live="polite" aria-atomic="true" aria-label="Промежуточная расшифровка">{partial}</p>}
           <label className="block text-xs" htmlFor="bers-voice-transcript">
             Распознанная фраза — можно исправить перед подтверждением
           </label>

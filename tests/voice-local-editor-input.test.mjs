@@ -293,5 +293,6 @@ test('voice confirmation copy names the reviewed action instead of always claimi
 
   const ui = await readFile('src/components/editor/VoiceInputPanel.jsx', 'utf8');
   assert.ok(ui.includes('getVoiceConfirmationLabel(draft.kind)'));
+  assert.match(ui, /role="status" aria-live="polite" aria-atomic="true" aria-label="Промежуточная расшифровка"/);
   assert.ok(!ui.includes('Подтвердить текст\n            </Button>'));
 });
