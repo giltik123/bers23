@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 import { productionBrowserCsp } from '../vite.config.js';
 
 const retiredTokenApi = /(?:\.|\b)(?:hasToken|getToken|setToken|clearToken|storeAccessToken|persistedToken)\s*(?:\(|:|=)/;
@@ -172,3 +173,104 @@ async function sourceFiles(root) {
   }
   return output;
 }
+
+async function registerOtpHandlersFromSource(overrides = {}) {
+  // Exercise the real React component's three async handlers without mounting
+  // the browser or calling Core. This extracts only the non-JSX handler block.
+  const source = await readFile('src/pages/Register.jsx', 'utf8');
+  const start = source.indexOf('  const handleSubmit = async (e) => {');
+  const end = source.indexOf('  const handleGoogle =');
+  assert.ok(start >= 0 && end > start, 'registration handlers must be present');
+  const context = {
+    coreClient: { auth: {} },
+    t: key => key,
+    email: 'user@example.test',
+    password: 'password',
+    confirmPassword: 'password',
+    otpCode: '123456',
+    verificationHandle: 'verified-attempt-handle',
+    requestInFlight: { current: false },
+    setError: () => {},
+    setLoading: () => {},
+    setShowOtp: () => {},
+    setVerificationHandle: () => {},
+    toast: () => {},
+    window: { location: { href: '/register' } },
+    ...overrides,
+  };
+  const handlers = runInNewContext(
+    source.slice(start, end) + '\n({ handleSubmit, handleVerify, handleResend })',
+    context,
+  );
+  return { ...handlers, context, source };
+}
+
+test('registration cannot submit twice before React loading state renders', async () => {
+  let resolveRegistration;
+  const pending = new Promise(resolve => { resolveRegistration = resolve; });
+  let requests = 0;
+  let shown = false;
+  let savedHandle = '';
+  const { handleSubmit, context } = await registerOtpHandlersFromSource({
+    coreClient: { auth: { register: () => { requests += 1; return pending; } } },
+    setShowOtp: value => { shown = value; },
+    setVerificationHandle: value => { savedHandle = value; },
+  });
+  const event = { preventDefault() {} };
+  const first = handleSubmit(event);
+  const second = handleSubmit(event);
+  assert.equal(requests, 1);
+  resolveRegistration({ verification_handle: 'verified-attempt-handle' });
+  await Promise.all([first, second]);
+  assert.equal(savedHandle, 'verified-attempt-handle');
+  assert.equal(shown, true);
+  assert.equal(context.requestInFlight.current, false);
+});
+
+test('malformed registration response never opens an unusable OTP screen', async () => {
+  let shown = false;
+  const errors = [];
+  const { handleSubmit, context } = await registerOtpHandlersFromSource({
+    coreClient: { auth: { register: async () => ({}) } },
+    setShowOtp: value => { shown = value; },
+    setError: value => errors.push(value),
+  });
+  await handleSubmit({ preventDefault() {} });
+  assert.equal(shown, false);
+  assert.ok(errors.includes('authUi.registrationFailed'));
+  assert.equal(context.requestInFlight.current, false);
+});
+
+test('OTP resend and verification share a lock, and resend failures permit retry', async () => {
+  let rejectResend;
+  const pending = new Promise((_, reject) => { rejectResend = reject; });
+  let resendCalls = 0;
+  let verifyCalls = 0;
+  const loading = [];
+  const errors = [];
+  const { handleResend, handleVerify, context, source } = await registerOtpHandlersFromSource({
+    coreClient: { auth: {
+      resendOtp: () => { resendCalls += 1; return resendCalls === 1 ? pending : Promise.resolve({}); },
+      verifyOtp: async () => { verifyCalls += 1; },
+    } },
+    setLoading: value => loading.push(value),
+    setError: value => errors.push(value),
+  });
+  const first = handleResend();
+  await handleResend();
+  await handleVerify();
+  assert.equal(resendCalls, 1);
+  assert.equal(verifyCalls, 0);
+  rejectResend(new Error('offline'));
+  await first;
+  assert.ok(errors.includes('offline'));
+  assert.equal(context.requestInFlight.current, false);
+  await handleResend();
+  await handleVerify();
+  assert.equal(resendCalls, 2);
+  assert.equal(verifyCalls, 1);
+  assert.equal(loading.at(-1), false);
+  assert.match(source, /disabled=\{loading \|\| !verificationHandle\}/);
+  assert.match(source, /<InputOTP[^>]*disabled=\{loading\}/);
+  assert.match(source, /role="alert"/);
+});
