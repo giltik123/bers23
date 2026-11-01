@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { Link } from 'react-router-dom';
 import { Search } from 'lucide-react';
@@ -7,23 +7,9 @@ import { Button } from '@/components/ui/button';
 import { coreClient } from '@/api/coreClient';
 import AssetCard from '@/components/assets/AssetCard';
 import AssetDetails from '@/components/assets/AssetDetails';
-
-function projectAsset(project) {
-  const artifactId = project.current_image_artifact_id;
-  return Object.freeze({
-    id: `project:${project.id}:${artifactId}`,
-    asset_key: `project:${project.id}:${artifactId}`,
-    canonical_artifact_id: artifactId,
-    project_id: project.id,
-    type: 'project',
-    name: project.name || 'Untitled project',
-    thumbnail: project.thumbnail_url || project.current_image_url,
-    preview: project.current_image_url,
-    favorite: Boolean(project.favorite),
-    tags: Object.freeze(['project', 'canonical artifact']),
-    relations: Object.freeze([]),
-  });
-}
+import {
+  createLatestAssetLoadGate, projectAsset, projectConfirmedFavorite, selectionAfterFavorite,
+} from '@/application/assets/projectAssetIndex';
 
 export default function AssetLibrary() {
   const { t } = useTranslation();
@@ -33,22 +19,34 @@ export default function AssetLibrary() {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const favoriteInFlight = useRef(false);
+  const loadGate = useRef(null);
+  if (!loadGate.current) loadGate.current = createLatestAssetLoadGate();
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    const requestId = loadGate.current.start();
     setLoading(true);
     setError('');
     try {
       const projects = await coreClient.projects.list();
+      if (!loadGate.current.isCurrent(requestId)) return;
+      if (!Array.isArray(projects)) throw new Error('Invalid Core Project list response');
       setAssets(projects.filter((project) => project.current_image_artifact_id).map(projectAsset));
     } catch (loadError) {
+      if (!loadGate.current.isCurrent(requestId)) return;
       setAssets([]);
       setError(loadError?.message || t('assetUi.loadFailed'));
     } finally {
-      setLoading(false);
+      if (loadGate.current.isCurrent(requestId)) setLoading(false);
     }
-  };
+  }, [t]);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    return () => loadGate.current.invalidate();
+  }, [load]);
 
   const visible = useMemo(() => {
     const query = text.trim().toLowerCase();
@@ -62,10 +60,25 @@ export default function AssetLibrary() {
   const selected = assets.find((asset) => asset.id === selectedId) || null;
 
   const toggleFavorite = async (asset) => {
-    const project = await coreClient.projects.update(asset.project_id, { favorite: !asset.favorite });
-    const updated = projectAsset(project);
-    setAssets((items) => items.map((item) => item.project_id === updated.project_id ? updated : item));
-    setSelectedId(updated.id);
+    // A second click must not dispatch another Core mutation before the first resolves.
+    if (favoriteInFlight.current || loading || error) return;
+    favoriteInFlight.current = true;
+    setFavoriteBusy(true);
+    setActionError('');
+    try {
+      const project = await coreClient.projects.update(asset.project_id, { favorite: !asset.favorite });
+      const updated = projectConfirmedFavorite(asset, project);
+      setAssets((items) => items.map((item) => item.project_id === updated.project_id ? updated : item));
+      // Do not steal the user's newer selection while the Core request was in flight.
+      setSelectedId((current) => selectionAfterFavorite(current, asset.id, updated.id));
+    } catch (updateError) {
+      // A failed request may have committed on the server: reconcile before another edit.
+      await load();
+      setActionError(updateError?.message || t('assetUi.loadFailed'));
+    } finally {
+      favoriteInFlight.current = false;
+      setFavoriteBusy(false);
+    }
   };
 
   return (
@@ -87,9 +100,10 @@ export default function AssetLibrary() {
         <Button variant={favoritesOnly ? 'default' : 'outline'} onClick={() => setFavoritesOnly((value) => !value)}>{t('assetUi.favorites')}</Button>
       </div>
 
-      {error && <div className="rounded-xl border border-destructive/30 p-3 text-sm text-destructive">{error} <button className="underline" onClick={() => void load()}>{t('common.retry')}</button></div>}
+      {error && <div className="rounded-xl border border-destructive/30 p-3 text-sm text-destructive" role="alert">{error} <button type="button" className="underline" disabled={favoriteBusy} onClick={() => void load()}>{t('common.retry')}</button></div>}
+      {actionError && <div className="rounded-xl border border-destructive/30 p-3 text-sm text-destructive" role="alert">{actionError} <button type="button" className="underline" disabled={favoriteBusy} onClick={() => { setActionError(''); void load(); }}>{t('common.retry')}</button></div>}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]" aria-busy={loading || favoriteBusy}>
         <main>
           {loading ? (
             <p className="py-12 text-center text-sm text-muted-foreground">{t('assetUi.loading')}</p>
