@@ -41,8 +41,10 @@ test('unverified catalog blocks new mutations but preserves cancellation of exis
   assert.match(studio, /async function run\(\) \{\s*if \(!canRun\) return;/);
   assert.match(studio, /async function resumeLatest\(\) \{\s*if \(!selected \|\| !selectedProjectId \|\| !resumePointer \|\| !canChangeCatalog\) return;/);
   assert.match(studio, /async function retry\(\) \{\s*if \(!invocation \|\| !selectedProjectId \|\| !canChangeCatalog\) return;/);
-  assert.match(studio, /async function accept\(\) \{\s*if \(!canChangeCatalog \|\| invocation\?\.state !== 'SUCCESS'/);
-  assert.match(studio, /disabled=\{busy \|\| !catalogFresh\}>Accept result into Project/);
+  assert.match(studio, /const canAcceptInvocation = Boolean\(canChangeCatalog && invocation && selected\?\.id === invocation\.automationId && selectedProjectId === invocation\.projectId\)/);
+  assert.match(studio, /async function accept\(\) \{\s*if \(!canAcceptInvocation \|\| invocation\?\.state !== 'SUCCESS'/);
+  assert.match(studio, /disabled=\{busy \|\| !canAccept\}>Accept result into Project/);
+  assert.match(studio, /\[selectedAutomationId, selected\?\.id, selected\?\.revision, selectedProjectId\]/);
   assert.match(studio, /async function cancel\(\) \{\s*if \(!invocation \|\| !selectedProjectId\) return;/);
   assert.doesNotMatch(studio, /async function cancel\(\) \{\s*if \([^)]*canChangeCatalog/);
 });
