@@ -12,7 +12,7 @@ const ASSET_KEYS = [
 test('Asset Library favorite is a separate keyboard-accessible button', async () => {
   const card = await read('src/components/assets/AssetCard.jsx');
   assert.match(card, /useTranslation/);
-  const selection = card.match(/<button type="button" onClick=\{\(\) => onSelect\(asset\)\}[\s\S]*?<\/button>/);
+  const selection = card.match(/<button type="button"[^>]*onClick=\{\(\) => onSelect\(asset\)\}[\s\S]*?<\/button>/);
   assert.ok(selection, 'asset selection must be a real button');
   assert.doesNotMatch(selection[0].slice(selection[0].indexOf('>') + 1), /<button\b|role="button"/, 'no nested interactive controls');
   assert.match(card.slice(card.indexOf(selection[0]) + selection[0].length), /<button[\s\S]*?onClick=\{\(\) => onFavorite\(asset\)\}/);
