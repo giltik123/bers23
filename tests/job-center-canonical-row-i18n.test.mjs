@@ -22,6 +22,8 @@ test('canonical Job Center labels have matching RU/EN keys and non-empty copy', 
     assert.equal(typeof enJobs.canonical[key], 'string', `English jobs.canonical.${key}`);
     assert.equal(typeof ruModules.jobs.canonical[key], 'string', `Russian jobs.canonical.${key}`);
   }
+  assert.equal(enJobs.canonical.final, 'FINAL');
+  assert.equal(ruModules.jobs.canonical.final, 'FINAL');
   assert.ok(enJobs.canonical.expires.includes('{date}'));
   assert.ok(ruModules.jobs.canonical.expires.includes('{date}'));
 });
