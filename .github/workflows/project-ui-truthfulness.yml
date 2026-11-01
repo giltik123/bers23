@@ -5,6 +5,8 @@ on:
     branches: [ "main" ]
     paths:
       - 'src/pages/Projects.jsx'
+      - 'src/lib/PageNotFound.jsx'
+      - 'tests/not-found-route-recovery.test.mjs'
       - 'src/components/projects/ProjectCard.jsx'
       - 'src/components/projects/ProjectActionsMenu.jsx'
       - 'src/lib/performance/offlineQueue.js'
@@ -37,7 +39,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Prove Project UI truthfulness contract
-        run: node --test tests/project-ui-truthfulness.test.mjs
+        run: node --test tests/project-ui-truthfulness.test.mjs tests/not-found-route-recovery.test.mjs
       - name: Typecheck and build browser
         run: |
           npm run typecheck
