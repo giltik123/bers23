@@ -20,6 +20,10 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
   const finalCallbackRef = useRef(onFinalCandidate);
   finalCallbackRef.current = onFinalCandidate;
   const [state, setState] = useState(EMPTY_STATE);
+  const stateOwnerRef = useRef(contextKey);
+  // Do not render the previous Project's workflow even for the first paint
+  // before the route-change cleanup effect can reset React state.
+  const visibleState = stateOwnerRef.current === contextKey ? state : EMPTY_STATE;
 
   // Recheck inside React's queued state updater as well as at dispatch time.
   // A route change can occur between enqueue and commit.
@@ -117,17 +121,17 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
   }, [project?.id, project?.current_image_artifact_id, project?.current_image_url, runOperation]);
 
   const retry = useCallback(async () => {
-    const view = state.view;
+    const view = visibleState.view;
     const hint = readHint(project?.id);
     if (!project?.id || !view?.executionId || !view.retryAvailable || !hint?.sourceArtifactId) throw new Error('Bounded Agent retry is not available');
     if (hint.sourceArtifactId !== project.current_image_artifact_id) throw new Error('Bounded Agent retry source is no longer the current canonical Project IMAGE');
     const context = Object.freeze({ sourceArtifactId: hint.sourceArtifactId, beforeUrl: project.current_image_url, mode: hint.mode, width: hint.width, height: hint.height });
     const runner = createBoundedAgentRunner({ projectId: project.id });
     return runOperation('retry', (onView) => runner.retry(view.executionId, onView), context);
-  }, [project, runOperation, state.view]);
+  }, [project, runOperation, visibleState.view]);
 
   const cancel = useCallback(async () => {
-    const executionId = state.view?.executionId ?? readHint(project?.id)?.executionId;
+    const executionId = visibleState.view?.executionId ?? readHint(project?.id)?.executionId;
     if (!project?.id || !executionId) return;
     const ticket = contextGateRef.current.capture(project?.id, project?.current_image_artifact_id);
     if (!ticket) throw new Error('Bounded Agent Project or source changed before cancellation');
@@ -142,7 +146,7 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
     } finally {
       operationRef.current = null;
     }
-  }, [project?.id, project?.current_image_artifact_id, state.view?.executionId, publishScopedState]);
+  }, [project?.id, project?.current_image_artifact_id, visibleState.view?.executionId, publishScopedState]);
 
   const dismiss = useCallback(() => {
     clearHint(project?.id);
@@ -156,7 +160,10 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
 
   // An old Project's progress, retry or error must not remain visible after
   // navigation or after a new canonical source becomes current.
-  useEffect(() => { setState(EMPTY_STATE); }, [contextKey]);
+  useEffect(() => {
+    stateOwnerRef.current = contextKey;
+    setState(EMPTY_STATE);
+  }, [contextKey]);
 
   useEffect(() => {
     if (!project?.id || !project.current_image_artifact_id || operationRef.current) return;
@@ -169,7 +176,7 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
       .catch(() => undefined);
   }, [project?.id, project?.current_image_artifact_id, project?.current_image_url, runOperation]);
 
-  return Object.freeze({ state, busy: state.busy, start, retry, cancel, dismiss });
+  return Object.freeze({ state: visibleState, busy: visibleState.busy, start, retry, cancel, dismiss });
 }
 
 async function terminalPreviewUrl(view, localPreview) {
