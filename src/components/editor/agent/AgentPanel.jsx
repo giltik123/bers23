@@ -26,6 +26,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
   const contextRef = useRef(contextKey);
   contextRef.current = contextKey;
   const active = Boolean(state?.active);
+  const actionPending = actionBusy || actionLocksRef.current.has(contextKey);
   useEffect(()=>{
     setVoiceReview(false);
     setTaskDraft(null);
@@ -54,7 +55,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
   const validTarget = useMemo(() => Number.isSafeInteger(width) && Number.isSafeInteger(height)
     && width > 0 && height > 0 && width <= RESIZE_MAX_DIMENSION && height <= RESIZE_MAX_DIMENSION
     && width * height <= RESIZE_MAX_OUTPUT_PIXELS, [width, height]);
-  const canPrepare = Boolean(project?.current_image_artifact_id) && !disabled && !busy && !actionBusy && !active;
+  const canPrepare = Boolean(project?.current_image_artifact_id) && !disabled && !busy && !actionPending && !active;
   const canStart = canPrepare && validTarget;
   const stepLabel = view?.nextAction?.operation === 'ORTHOGONAL_TRANSFORM'
     ? 'Running orthogonal transform'
@@ -107,7 +108,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">Что хотите сделать с фотографией?</span>
           <textarea rows={3} maxLength={850} value={taskText}
-            disabled={disabled || busy || actionBusy}
+            disabled={disabled || busy || actionPending}
             placeholder="Поверни фото вправо и затем сделай 1024 на 1024"
             onChange={(event) => { setTaskText(event.target.value); setTaskDraft(null); }}
             className="min-h-24 w-full resize-y rounded-lg border bg-background px-3 py-2 text-sm" />
@@ -157,7 +158,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
               className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
               value={mode}
               onChange={(event) => setMode(event.target.value)}
-              disabled={disabled || busy || actionBusy}
+              disabled={disabled || busy || actionPending}
             >
               {MODES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
@@ -168,7 +169,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
               className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
               type="number" min="1" max={RESIZE_MAX_DIMENSION} step="1" value={width}
               onChange={(event) => setWidth(Number(event.target.value))}
-              disabled={disabled || busy || actionBusy}
+              disabled={disabled || busy || actionPending}
             />
           </label>
           <label className="space-y-1">
@@ -177,7 +178,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
               className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
               type="number" min="1" max={RESIZE_MAX_DIMENSION} step="1" value={height}
               onChange={(event) => setHeight(Number(event.target.value))}
-              disabled={disabled || busy || actionBusy}
+              disabled={disabled || busy || actionPending}
             />
           </label>
           {!validTarget && <p className="text-xs text-destructive sm:col-span-2">Target must use positive integer dimensions within the deterministic Resize limits.</p>}
@@ -192,7 +193,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
         </div>
       )}
 
-      {(active || busy || actionBusy) && (
+      {(active || busy || actionPending) && (
         <div className="space-y-3 rounded-xl border bg-card p-3" role="status">
           <div className="flex items-center gap-2 text-sm">
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -201,11 +202,11 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
           {view?.executionId && <p className="break-all text-[11px] text-muted-foreground">Workflow: {view.executionId}</p>}
           {view?.retryAvailable ? (
             <div className="flex gap-2">
-              <Button size="sm" onClick={() => invoke(() => onRetry?.())} disabled={busy || actionBusy}>Retry exact step</Button>
-              <Button size="sm" variant="outline" onClick={() => invoke(() => onCancel?.())} disabled={busy || actionBusy}><X className="mr-1 h-3.5 w-3.5" />Cancel</Button>
+              <Button size="sm" onClick={() => invoke(() => onRetry?.())} disabled={busy || actionPending}>Retry exact step</Button>
+              <Button size="sm" variant="outline" onClick={() => invoke(() => onCancel?.())} disabled={busy || actionPending}><X className="mr-1 h-3.5 w-3.5" />Cancel</Button>
             </div>
           ) : view?.state && !['SUCCESS','FAILED','CANCELLED','UNKNOWN'].includes(view.state) ? (
-            <Button size="sm" variant="outline" onClick={() => invoke(() => onCancel?.())} disabled={busy || actionBusy}><X className="mr-1 h-3.5 w-3.5" />Cancel workflow</Button>
+            <Button size="sm" variant="outline" onClick={() => invoke(() => onCancel?.())} disabled={busy || actionPending}><X className="mr-1 h-3.5 w-3.5" />Cancel workflow</Button>
           ) : null}
         </div>
       )}
