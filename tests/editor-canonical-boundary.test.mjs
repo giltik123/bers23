@@ -643,3 +643,14 @@ test('bounded Agent UI checks current context before publishing progress and ter
   assert.match(hook, /operationRef\.current\.delete\(lockKey\)/);
   assert.match(hook, /operationRef\.current\.has\(contextKey\)/);
 });
+
+test('bounded Agent panel serializes same-context actions and exposes recoverable errors', async () => {
+  const panel = await readFile('src/components/editor/agent/AgentPanel.jsx', 'utf8');
+  assert.match(panel, /actionLocksRef\.current\.has\(contextKey\)/);
+  assert.match(panel, /actionLocksRef\.current\.add\(contextKey\)/);
+  assert.match(panel, /actionLocksRef\.current\.delete\(contextKey\)/);
+  assert.match(panel, /if \(contextRef\.current === contextKey\)\s*setActionError/);
+  assert.match(panel, /disabled=\{busy \|\| actionBusy\}/);
+  assert.match(panel, /\(state\?\.error \|\| actionError\).*role="alert"/);
+  assert.doesNotMatch(panel, /catch\(\(\) => undefined\)/);
+});
