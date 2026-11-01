@@ -149,7 +149,7 @@ test('Editor project rename prompt and accessible name follow the active RU/EN l
     read('src/lib/i18n/locales/ru/index.js'),
   ]);
   assert.ok(editor.includes("window.prompt(t('editorUi.renamePrompt'), project.name)"));
-  assert.match(editor, /aria-label=\\{t\\('editorUi\\.renameProject'\\)\\}/);
+  assert.ok(editor.includes("aria-label={t('editorUi.renameProject')}"));
   assert.ok(en.includes('"renameProject": "Rename project"'));
   assert.ok(en.includes('"renamePrompt": "Enter a new project name"'));
   assert.ok(ru.includes('"renameProject": "Переименовать проект"'));
