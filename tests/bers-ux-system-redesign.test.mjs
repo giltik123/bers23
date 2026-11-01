@@ -177,3 +177,13 @@ test('top navigation exposes a contextual workspace link without inventing a Pro
   assert.match(app, /const isActive = \(path\) => location\.pathname === path/);
   assert.doesNotMatch(app, /localStorage\.setItem\(['"]project|sessionStorage\.setItem\(['"]project/);
 });
+
+test('Project-scoped notifications navigate safely without resetting the active Editor', async () => {
+  const notifications = await read('src/components/NotificationCenter.jsx');
+  assert.match(notifications, /projectNavigationTargets\(item\.project_id, ''\)\.workspace/);
+  assert.match(notifications, /notificationCenter\.markRead\(item\.id\)/);
+  assert.match(notifications, /readProjectNavigationContext\(location\.pathname, location\.search\) !== item\.project_id/);
+  assert.match(notifications, /if \(target\) \{/);
+  assert.match(notifications, /navigate\(target\)/);
+  assert.doesNotMatch(notifications, /window\.location\.href\s*=/);
+});
