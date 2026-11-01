@@ -5,9 +5,11 @@ on:
     paths:
       - 'src/pages/AutomationStudio.jsx'
       - 'src/components/automation/CanonicalAutomationStudio.jsx'
+      - 'src/components/automation/automationAcceptance.js'
       - 'src/api/automationClient.js'
       - 'src/application/automation/**'
       - 'tests/automation-studio-c3c-boundary.test.mjs'
+      - 'tests/automation-studio-acceptance.test.mjs'
       - 'tests/automation-invocation-runner.test.ts'
       - '.github/workflows/automation-studio-c3c.yml'
   workflow_dispatch:
@@ -31,7 +33,7 @@ jobs:
       - name: Exact-head guard
         run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
       - name: C3c authority boundary
-        run: node --test tests/automation-studio-c3c-boundary.test.mjs
+        run: node --test tests/automation-studio-c3c-boundary.test.mjs tests/automation-studio-acceptance.test.mjs
       - name: C3c invocation runner
         run: |
           mkdir -p .test-cache/c3c
