@@ -22,7 +22,8 @@ test('R3g drives visible zero-object navigation into canonical Fashion and Outfi
   assert.match(navigation, /aria-pressed=\{active === item\.id\}/);
   assert.match(navigation, /type="button"/);
   assert.match(fashion, /aria-label="Canonical fashion wardrobe"/);
-  assert.match(outfits, /aria-label="Canonical Outfit builder"/);
+  assert.ok(outfits.includes("aria-label={t('fashionUi.outfitPanelLabel')}"));
+  assert.match(harness, /browser\.newContext\(\{ locale: 'en-US' \}\)/);
   assert.match(tryOnRunner, /aria-label="Canonical deterministic Try-On runner"/);
   assert.ok(harness.includes("getByRole('button', { name: 'Открыть гардероб', exact: true })"));
   assert.ok(harness.includes("url.pathname === '/wardrobe'"));
