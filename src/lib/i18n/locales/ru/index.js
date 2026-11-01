@@ -13,7 +13,22 @@ export const modules = {
   jobs: { title: 'Центр задач', queued: 'В очереди', running: 'Выполняется', waiting: 'Ожидание', completed: 'Завершено', failed: 'Ошибка', cancelled: 'Отменено', retrying: 'Повтор', cancel: 'Отменить', pause: 'Пауза', resume: 'Продолжить', empty: 'Нет активных задач.' },
   creative: { title: 'Креатив-студия', goal: 'Цель', ideas: 'Идеи', moodBoards: 'Мудборды', strategy: 'Стратегия', generate: 'Сгенерировать идеи', apply: 'Применить стратегию' },
   brand: { title: 'Бренд-студия', profile: 'Профиль бренда', colors: 'Цвета', fonts: 'Шрифты', voice: 'Тон', guidelines: 'Гайдлайны' },
-  assets: { title: 'Библиотека ресурсов', collections: 'Коллекции', pinned: 'Закреплённые', smart: 'Умные', searchPlaceholder: 'Поиск ресурсов…', empty: 'Ресурсов пока нет.', details: 'Подробности' },
+  assets: {
+    title: 'Библиотека ресурсов', collections: 'Коллекции', pinned: 'Закреплённые', smart: 'Умные',
+    searchPlaceholder: 'Поиск ресурсов…', empty: 'Ресурсов пока нет.', details: 'Подробности',
+    selectToViewDetails: 'Выберите ресурс, чтобы посмотреть подробности.',
+    favorite: 'Избранное', addFavorite: 'Добавить в избранное', removeFavorite: 'Убрать из избранного',
+    tagsHeading: 'Теги', relatedAssets: 'Связанные ресурсы', addToCollection: 'Добавить в текущую коллекцию',
+    usageHistory: 'История использования', recentInteractions: 'Недавних действий: {count}', noUsage: 'История использования пока пуста',
+    types: {
+      project: 'Проект', original: 'Оригинал', final: 'Итог', mask: 'Маска',
+      image: 'Изображение', garment: 'Вещь', outfit: 'Образ', collection: 'Коллекция',
+    },
+    tags: {
+      project: 'Проект', canonicalArtifact: 'Канонический артефакт',
+      original: 'Оригинал', final: 'Итог', mask: 'Маска',
+    },
+  },
   authUi: {
     "brand": "Творческая студия",
     "workspace": "Ваше пространство для творчества",
