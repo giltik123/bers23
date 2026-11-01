@@ -1578,6 +1578,7 @@ export default function Editor() {
                 allowWholeImage={!PRODUCTION_MASK_UI_ENABLED || objects.length === 0}
                 instruction={instruction}
                 onInstructionChange={setInstruction}
+                planReady={Boolean(plan && plan.status === 'ready')}
                 onApply={() => applyEdit(false)}
                 applying={editorBusy || committing}
               />
