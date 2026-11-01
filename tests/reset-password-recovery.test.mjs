@@ -75,3 +75,64 @@ test('reset errors are announced and provide a localized new-link recovery path'
   assert.match(source, /disabled=\{loading\}/);
   assert.doesNotMatch(source, /setError\(err\.message/);
 });
+
+const requestSource = readFileSync('src/pages/ForgotPassword.jsx', 'utf8');
+const requestMatch = requestSource.match(/const handleSubmit = async \(e\) => \{([\s\S]*?)\n  \};/);
+assert.ok(requestMatch, 'ForgotPassword submit handler must remain testable');
+
+function requestHarness(response) {
+  const submitting = { current: false };
+  const errors = [];
+  const loading = [];
+  const sent = [];
+  const calls = [];
+  const coreClient = { auth: { resetPasswordRequest: (email) => {
+    calls.push(email);
+    return response();
+  } } };
+  const build = new Function(
+    'submitting', 'setError', 'setLoading', 'coreClient', 'email', 'setSent', 't',
+    'return async (e) => {' + requestMatch[1] + '\n};',
+  );
+  const handler = build(submitting, (value) => errors.push(value),
+    (value) => loading.push(value), coreClient, 'person@example.test',
+    (value) => sent.push(value), (key) => key);
+  return { submit: () => handler({ preventDefault() {} }), submitting, errors, loading, sent, calls };
+}
+
+test('reset-link request is single-flight and shows non-enumerating success after response', async () => {
+  let resolve;
+  const pending = new Promise((done) => { resolve = done; });
+  const h = requestHarness(() => pending);
+  const first = h.submit();
+  const second = h.submit();
+  assert.deepEqual(h.calls, ['person@example.test']);
+  assert.deepEqual(h.sent, []);
+  resolve();
+  await Promise.all([first, second]);
+  assert.deepEqual(h.sent, [true]);
+  assert.deepEqual(h.loading, [true, false]);
+});
+
+test('HTTP denial remains indistinguishable from accepted email, including rate limits', async () => {
+  const h = requestHarness(async () => { throw Object.assign(Error('sensitive response'), { status: 429 }); });
+  await h.submit();
+  assert.deepEqual(h.sent, [true]);
+  assert.equal(h.errors.at(-1), undefined);
+});
+
+test('network failure does not falsely claim a reset email was sent and can retry', async () => {
+  let attempts = 0;
+  const h = requestHarness(async () => {
+    if (++attempts === 1) throw TypeError('Failed to fetch');
+  });
+  await h.submit();
+  assert.deepEqual(h.sent, []);
+  assert.equal(h.errors.at(-1), 'errors.network');
+  assert.equal(h.submitting.current, false);
+  await h.submit();
+  assert.deepEqual(h.sent, [true]);
+  assert.equal(h.calls.length, 2);
+  assert.match(requestSource, /role="alert"/);
+  assert.match(requestSource, /aria-busy=\{loading\}/);
+});
