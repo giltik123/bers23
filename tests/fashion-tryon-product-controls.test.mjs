@@ -178,33 +178,9 @@ test('canonical Try-On control copy is complete in both English and Russian with
     readFile('src/components/editor/outfits/CanonicalTryOnProductControls.jsx', 'utf8'),
   ]);
   const extractFashionUi = (source) => {
-    const marker = source.indexOf('fashionUi: {');
-    assert.notEqual(marker, -1, 'fashionUi catalog exists');
-    const start = source.indexOf('{', marker);
-    let depth = 0;
-    let quote = null;
-    let escaped = false;
-    let end = -1;
-    for (let index = start; index < source.length; index += 1) {
-      const character = source[index];
-      if (quote) {
-        if (escaped) escaped = false;
-        else if (character === '\\\\') escaped = true;
-        else if (character === quote) quote = null;
-        continue;
-      }
-      if (character === '"' || character === "'" || character === '`') {
-        quote = character;
-        continue;
-      }
-      if (character === '{') depth += 1;
-      else if (character === '}') {
-        depth -= 1;
-        if (depth === 0) { end = index; break; }
-      }
-    }
-    assert.notEqual(end, -1, 'fashionUi catalog closes');
-    return JSON.parse(source.slice(start, end + 1));
+    const match = source.match(/fashionUi:\s*(\{[\s\S]*?\n\}),\n  assetUi:/);
+    assert.ok(match, 'fashionUi catalog exists');
+    return JSON.parse(match[1]);
   };
   const english = extractFashionUi(englishSource);
   const russian = extractFashionUi(russianSource);
