@@ -170,12 +170,17 @@ test('local editing subpanels use a complete matching RU/EN catalog without chan
   const englishBlock = englishSource.match(/const localEditorUi = \{([\\s\\S]*?)\\n\\};/u)?.[1];
   const russianBlock = russianSource.match(/localEditorUi: \{([\\s\\S]*?)\\n  \},/u)?.[1];
   assert.ok(englishBlock && russianBlock, 'both locale catalogs must define localEditorUi');
-  const catalogKeys = block => [...block.matchAll(/([A-Za-z][A-Za-z0-9-]*):/gu)].map(match => match[1]).sort();
+  const catalogKeys = block => {
+    const keysOnly = block
+      .replace(/"([A-Za-z][A-Za-z0-9-]*)"(?=\\s*:)/gu, '$1')
+      .replace(/"[^"]*"/gu, '""');
+    return [...keysOnly.matchAll(/\\b([A-Za-z][A-Za-z0-9-]*):/gu)].map(match => match[1]).sort();
+  };
   assert.deepEqual(catalogKeys(russianBlock), catalogKeys(englishBlock), 'every local editing key needs both locales');
   const nestedKeys = (block, name) => {
     const nested = block.match(new RegExp(name + ': \\{([^}]*)\\}', 'u'))?.[1];
     assert.ok(nested, 'localEditorUi.' + name + ' must exist');
-    return [...nested.matchAll(/([A-Za-z][A-Za-z0-9-]*):/gu)].map(match => match[1]).sort();
+    return catalogKeys(nested);
   };
   for (const name of ['channel', 'hue', 'gradient', 'annotationTool', 'annotationColor']) {
     assert.deepEqual(nestedKeys(russianBlock, name), nestedKeys(englishBlock, name), 'localEditorUi.' + name + ' needs matching keys');
