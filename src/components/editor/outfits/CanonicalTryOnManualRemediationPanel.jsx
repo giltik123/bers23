@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { Loader2, RefreshCw, ScanLine, UserRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,6 +9,22 @@ import {
 import CanonicalTryOnContourEditor from './CanonicalTryOnContourEditor';
 import CanonicalTryOnBodyAnchorEditor from './CanonicalTryOnBodyAnchorEditor';
 import { manualTryOnSelectionKey, isFreshManualTryOnLoad } from '@/application/fashion/manualTryOnSelectionGuard';
+
+function remediationMessage(remediation, t) {
+  if (!remediation) return t('fashion.manualTryOn.checkReadinessFirst');
+  if (remediation.mode === 'RECHECK_REQUIRED') return t('fashion.manualTryOn.savedRecheck');
+  if (remediation.mode === 'CONTOUR') return t(remediation.ambiguous
+    ? 'fashion.manualTryOn.ambiguousContour'
+    : 'fashion.manualTryOn.contourRequired');
+  if (remediation.mode === 'BODY_ANCHORS') return t(remediation.ambiguous
+    ? 'fashion.manualTryOn.ambiguousBodyAnchors'
+    : 'fashion.manualTryOn.bodyAnchorsRequired');
+  const statusKeys = {
+    READY: 'readyNoManual', SOURCE_UNAVAILABLE: 'sourceUnavailable', STALE_SOURCE: 'staleSource',
+    GARMENT_UNAVAILABLE: 'garmentUnavailable', GARMENT_UNSUPPORTED: 'garmentUnsupported', EVIDENCE_INVALID: 'evidenceInvalid',
+  };
+  return t('fashion.manualTryOn.' + (statusKeys[remediation.readiness?.status] || 'cannotRemediate'));
+}
 
 export default function CanonicalTryOnManualRemediationPanel({
   selection,
@@ -19,6 +36,7 @@ export default function CanonicalTryOnManualRemediationPanel({
   onSaveBodyAnchors,
   onRecheck,
 }) {
+  const { t } = useTranslation();
   const [editorMode, setEditorMode] = useState(null);
   const [openedPolicy, setOpenedPolicy] = useState(null);
   const [contourSource, setContourSource] = useState(null);
@@ -48,9 +66,9 @@ export default function CanonicalTryOnManualRemediationPanel({
         error: '',
       });
     } catch (cause) {
-      return Object.freeze({ policy: null, error: cause?.message || 'Manual Try-On remediation is unavailable.' });
+      return Object.freeze({ policy: null, error: cause?.message || t('fashion.manualTryOn.remediationUnavailable') });
     }
-  }, [policyInput, result]);
+  }, [policyInput, result, t]);
 
   // A fresh explicit readiness result supersedes the local post-save sentinel.
   // A save clears the stale result in the Editor hook, so result=null must not
@@ -110,7 +128,7 @@ export default function CanonicalTryOnManualRemediationPanel({
   const openContour = async () => {
     if (busy || disabled || livePolicy?.mode !== 'CONTOUR' || !livePolicy.canOpen) return;
     if (typeof onLoadContourSource !== 'function') {
-      setError('Manual contour source loading is unavailable.');
+      setError(t('fashion.manualTryOn.contourSourceLoadingUnavailable'));
       return;
     }
     // Snapshot the exact policy that authorized this editor before any async
@@ -126,7 +144,7 @@ export default function CanonicalTryOnManualRemediationPanel({
       if (!isFreshManualTryOnLoad(sequence, loadSequenceRef.current,
         requestedSelectionKey, currentSelectionKeyRef.current)) return;
       if (source?.garmentId !== livePolicy.contourRequest.garmentId) {
-        throw new Error('Loaded Garment source no longer matches the selected Outfit entry.');
+        throw new Error(t('fashion.manualTryOn.contourSourceMismatch'));
       }
       setContourSource(source);
       setEditorMode('CONTOUR');
@@ -135,7 +153,7 @@ export default function CanonicalTryOnManualRemediationPanel({
         requestedSelectionKey, currentSelectionKeyRef.current)) return;
       openedSelectionKeyRef.current = null;
       setOpenedPolicy(null);
-      setError(cause?.message || 'Managed garment source could not be loaded for contour editing.');
+      setError(cause?.message || t('fashion.manualTryOn.contourSourceFailed'));
     } finally {
       if (isFreshManualTryOnLoad(sequence, loadSequenceRef.current,
         requestedSelectionKey, currentSelectionKeyRef.current)) {
@@ -164,31 +182,31 @@ export default function CanonicalTryOnManualRemediationPanel({
     : null;
 
   return (
-    <section className="rounded-xl border border-border bg-secondary/10 p-2.5 space-y-2" aria-label="Canonical Try-On manual remediation">
+    <section className="rounded-xl border border-border bg-secondary/10 p-2.5 space-y-2" aria-label={t('fashion.manualTryOn.remediationPanel')}>
       {policyState.error ? (
         <p className="text-xs text-destructive" role="alert">{policyState.error}</p>
       ) : (
         <>
-          <p className="text-[11px] text-muted-foreground" role="status">{remediation?.message}</p>
+          <p className="text-[11px] text-muted-foreground" role="status">{remediationMessage(remediation, t)}</p>
 
           {remediation?.mode === 'RECHECK_REQUIRED' && (
             <Button type="button" size="sm" variant="secondary" onClick={recheck} disabled={busy || disabled || typeof onRecheck !== 'function'}>
               {busy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
-              Check readiness again
+              {t('fashion.manualTryOn.checkReadinessAgain')}
             </Button>
           )}
 
           {!savedState && livePolicy?.mode === 'CONTOUR' && !editorMode && (
             <Button type="button" size="sm" variant="secondary" onClick={openContour} disabled={busy || disabled || loadingSource}>
               {loadingSource ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <ScanLine className="h-3.5 w-3.5 mr-1" />}
-              {livePolicy.ambiguous ? 'Draw newer contour' : 'Draw garment contour'}
+              {t(livePolicy.ambiguous ? 'fashion.manualTryOn.drawNewerContour' : 'fashion.manualTryOn.drawGarmentContour')}
             </Button>
           )}
 
           {!savedState && livePolicy?.mode === 'BODY_ANCHORS' && !editorMode && (
             <Button type="button" size="sm" variant="secondary" onClick={openBodyAnchors} disabled={busy || disabled}>
               <UserRound className="h-3.5 w-3.5 mr-1" />
-              {livePolicy.ambiguous ? 'Place newer body anchors' : 'Place body anchors'}
+              {t(livePolicy.ambiguous ? 'fashion.manualTryOn.placeNewerBodyAnchors' : 'fashion.manualTryOn.placeBodyAnchors')}
             </Button>
           )}
 

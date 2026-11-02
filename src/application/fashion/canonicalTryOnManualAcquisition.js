@@ -96,7 +96,7 @@ export function deterministicTryOnSupportedCategory(category) {
 }
 
 /** Exact known Core geometry codes are surfaced as actionable copy. */
-export function manualAcquisitionErrorMessage(error) {
+export function manualAcquisitionErrorMessage(error, translate) {
   const code = typeof error?.code === 'string' ? error.code : '';
   const messages = {
     manual_parametric_invalid_schema: 'Contour data is incomplete. Draw the garment outline again.',
@@ -112,12 +112,25 @@ export function manualAcquisitionErrorMessage(error) {
     body_anchor_required_anchor_missing: 'Add the highlighted body anchors required for this garment.',
     body_anchor_destination_geometry_invalid: 'The selected body anchors would invert or collapse the garment. Reposition them.',
     body_anchor_category_unsupported: 'This garment category is not supported by deterministic Try-On.',
+    TRYON_MANUAL_CONTOUR_SAVED_RELOAD_PENDING: 'Contour save was accepted, but the managed garment could not be refreshed. Reopen the garment before continuing.',
   };
 
   let message;
-  if (code && messages[code]) message = messages[code];
-  else if (typeof error?.message === 'string' && error.message.trim()) message = error.message.trim();
-  else message = code ? `Try-On acquisition failed (${code}).` : 'Try-On acquisition failed.';
+  if (code && messages[code]) {
+    message = typeof translate === 'function'
+      ? translate('fashion.manualTryOn.errors.' + code)
+      : messages[code];
+  } else if (typeof error?.message === 'string' && error.message.trim()) {
+    message = error.message.trim();
+  } else if (code) {
+    message = typeof translate === 'function'
+      ? translate('fashion.manualTryOn.errors.failedWithCode', { code })
+      : `Try-On acquisition failed (${code}).`;
+  } else {
+    message = typeof translate === 'function'
+      ? translate('fashion.manualTryOn.errors.failed')
+      : 'Try-On acquisition failed.';
+  }
   return appendCanonicalTryOnSupportId(message, error);
 }
 

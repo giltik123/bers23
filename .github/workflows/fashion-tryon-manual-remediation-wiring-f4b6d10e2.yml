@@ -80,7 +80,7 @@ jobs:
           grep -q 'lockedSelection.sourceArtifactId' "$RUNNER"
           grep -q 'lockedSelection.beforeUrl' "$RUNNER"
           grep -q "mode === 'RECHECK_REQUIRED'" "$PANEL"
-          grep -q 'Check readiness again' "$PANEL"
+          grep -q 'fashion.manualTryOn.checkReadinessAgain' "$PANEL"
           grep -q 'onLoadManualGarmentSource={tryOn.loadManualGarmentSource}' "$EDITOR"
           grep -q 'onSaveManualContour={tryOn.saveManualContour}' "$EDITOR"
           grep -q 'onSaveManualBodyAnchors={tryOn.saveManualBodyAnchors}' "$EDITOR"

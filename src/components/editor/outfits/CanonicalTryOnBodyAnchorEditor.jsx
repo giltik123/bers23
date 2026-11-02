@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { Loader2, MapPin, Save, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +8,6 @@ import {
   manualAcquisitionErrorMessage,
 } from '@/application/fashion/canonicalTryOnManualAcquisition';
 import {
-  bodyAnchorLabel,
   normalizeManualBodyAnchorEditorSource,
   validateManualBodyAnchorDraft,
 } from '@/application/fashion/canonicalTryOnManualBodyAnchorDraft';
@@ -22,6 +22,20 @@ function emptyCoordinateDrafts() {
   return Object.fromEntries(BODY_ANCHOR_NAMES.map((name) => [name, { x: '', y: '' }]));
 }
 
+function anchorLabel(name, t) {
+  return t('fashion.manualTryOn.anchors.' + name);
+}
+
+function bodyAnchorFeedbackMessage(feedback, t) {
+  const keys = {
+    unsupported_category: 'unsupported', invalid: 'unavailable', invalid_name: 'unknownName',
+    invalid_point: 'invalidPoint', too_few_anchors: 'tooFew', required_anchor_missing: 'required', ready: 'ready',
+  };
+  return t('fashion.manualTryOn.bodyFeedback.' + (keys[feedback.code] || 'unavailable'), {
+    anchors: (feedback.missing || []).map((name) => anchorLabel(name, t)).join(', '),
+  });
+}
+
 export default function CanonicalTryOnBodyAnchorEditor({
   source,
   onSave,
@@ -29,13 +43,14 @@ export default function CanonicalTryOnBodyAnchorEditor({
   onCancel,
   disabled = false,
 }) {
+  const { t } = useTranslation();
   const sourceState = useMemo(() => {
     try {
       return Object.freeze({ source: normalizeManualBodyAnchorEditorSource(source), error: '' });
     } catch {
-      return Object.freeze({ source: null, error: 'The canonical project image is unavailable for body-anchor editing.' });
+      return Object.freeze({ source: null, error: t('fashion.manualTryOn.bodySourceUnavailable') });
     }
-  }, [source]);
+  }, [source, t]);
   const safeSource = sourceState.source;
   const sourceKey = safeSource
     ? `${safeSource.projectId}:${safeSource.sourceArtifactId}:${safeSource.imageUrl}:${safeSource.category}`
@@ -103,7 +118,7 @@ export default function CanonicalTryOnBodyAnchorEditor({
     const x = explicitCoordinate(drafts[name]?.x);
     const y = explicitCoordinate(drafts[name]?.y);
     if (x === null || y === null) {
-      setError(`${bodyAnchorLabel(name)} requires explicit X and Y coordinates from 0 to 1.`);
+      setError(t('fashion.manualTryOn.explicitCoordinates', { anchor: anchorLabel(name, t) }));
       return;
     }
     placeAnchor(name, [x, y]);
@@ -133,10 +148,10 @@ export default function CanonicalTryOnBodyAnchorEditor({
         anchors,
       });
       setLocked(true);
-      setStatus('Body anchors saved. Recheck canonical Try-On readiness before another submission.');
+      setStatus(t('fashion.manualTryOn.bodyAnchorsSaved'));
       if (typeof onSaved === 'function') onSaved();
     } catch (cause) {
-      setError(manualAcquisitionErrorMessage(cause));
+      setError(manualAcquisitionErrorMessage(cause, t));
     } finally {
       setBusy(false);
     }
@@ -144,30 +159,30 @@ export default function CanonicalTryOnBodyAnchorEditor({
 
   if (!safeSource) {
     return (
-      <section className="rounded-xl border border-border p-3" aria-label="Manual body-anchor editor">
+      <section className="rounded-xl border border-border p-3" aria-label={t('fashion.manualTryOn.bodyAnchorEditor')}>
         <p className="text-xs text-destructive" role="alert">{sourceState.error}</p>
       </section>
     );
   }
 
   return (
-    <section className="rounded-xl border border-border p-3 space-y-3" aria-label="Manual body-anchor editor">
+    <section className="rounded-xl border border-border p-3 space-y-3" aria-label={t('fashion.manualTryOn.bodyAnchorEditor')}>
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-sm font-medium">Body anchors</p>
+          <p className="text-sm font-medium">{t('fashion.manualTryOn.bodyAnchorsTitle')}</p>
           <p className="text-[11px] text-muted-foreground">
-            Select an anchor, then place only the point you explicitly choose on the current project image. Required anchors are marked below.
+            {t('fashion.manualTryOn.bodyAnchorsDescription')}
           </p>
         </div>
         {typeof onCancel === 'function' && (
-          <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={busy} aria-label="Close manual body-anchor editor">
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={busy} aria-label={t('fashion.manualTryOn.closeBodyAnchorEditor')}>
             <X className="h-3.5 w-3.5" />
           </Button>
         )}
       </div>
 
       {!safeSource.supported && (
-        <p className="text-xs text-destructive" role="alert">This garment category is not supported by deterministic Try-On.</p>
+        <p className="text-xs text-destructive" role="alert">{t('fashion.manualTryOn.unsupportedCategory')}</p>
       )}
 
       <div
@@ -178,7 +193,7 @@ export default function CanonicalTryOnBodyAnchorEditor({
         <img
           ref={imageRef}
           src={safeSource.imageUrl}
-          alt="Current canonical project image for manual body-anchor editing"
+          alt={t('fashion.manualTryOn.projectImageAlt')}
           className="block h-auto w-full select-none"
           draggable={false}
         />
@@ -196,7 +211,7 @@ export default function CanonicalTryOnBodyAnchorEditor({
         </svg>
       </div>
 
-      <div className="space-y-1" aria-label="Body anchor controls">
+      <div className="space-y-1" aria-label={t('fashion.manualTryOn.bodyAnchorControls')}>
         {BODY_ANCHOR_NAMES.map((name) => {
           const point = anchors[name];
           const isRequired = required.has(name);
@@ -208,10 +223,10 @@ export default function CanonicalTryOnBodyAnchorEditor({
                 onClick={() => setSelectedName(name)}
                 disabled={blocked}
                 aria-pressed={selectedName === name}
-                aria-label={`Select ${bodyAnchorLabel(name)} anchor${isRequired ? ', required' : ''}`}
+                aria-label={t('fashion.manualTryOn.selectAnchor', { anchor: anchorLabel(name, t), requiredSuffix: isRequired ? t('fashion.manualTryOn.requiredSuffix') : '' })}
               >
                 <MapPin className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{bodyAnchorLabel(name)}{isRequired ? ' *' : ''}</span>
+                <span className="truncate">{anchorLabel(name, t)}{isRequired ? ' *' : ''}</span>
               </button>
               <Input
                 type="number"
@@ -221,8 +236,8 @@ export default function CanonicalTryOnBodyAnchorEditor({
                 inputMode="decimal"
                 value={drafts[name]?.x ?? ''}
                 onChange={(event) => updateDraft(name, 'x', event.target.value)}
-                placeholder="X 0…1"
-                aria-label={`${bodyAnchorLabel(name)} x`}
+                placeholder={t('fashion.manualTryOn.xRange')}
+                aria-label={t('fashion.manualTryOn.anchorX', { anchor: anchorLabel(name, t) })}
                 disabled={blocked}
               />
               <Input
@@ -233,19 +248,19 @@ export default function CanonicalTryOnBodyAnchorEditor({
                 inputMode="decimal"
                 value={drafts[name]?.y ?? ''}
                 onChange={(event) => updateDraft(name, 'y', event.target.value)}
-                placeholder="Y 0…1"
-                aria-label={`${bodyAnchorLabel(name)} y`}
+                placeholder={t('fashion.manualTryOn.yRange')}
+                aria-label={t('fashion.manualTryOn.anchorY', { anchor: anchorLabel(name, t) })}
                 disabled={blocked}
               />
-              <Button type="button" variant="secondary" size="sm" onClick={() => applyTypedAnchor(name)} disabled={blocked} aria-label={`Set ${bodyAnchorLabel(name)} coordinates`}>
-                Set
+              <Button type="button" variant="secondary" size="sm" onClick={() => applyTypedAnchor(name)} disabled={blocked} aria-label={t('fashion.manualTryOn.setAnchor', { anchor: anchorLabel(name, t) })}>
+                {t('fashion.manualTryOn.setAnchorButton')}
               </Button>
               <button
                 type="button"
                 className="rounded-md p-1 text-destructive disabled:opacity-40"
                 onClick={() => removeAnchor(name)}
                 disabled={blocked || !point}
-                aria-label={`Remove ${bodyAnchorLabel(name)} anchor`}
+                aria-label={t('fashion.manualTryOn.removeAnchor', { anchor: anchorLabel(name, t) })}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -256,7 +271,7 @@ export default function CanonicalTryOnBodyAnchorEditor({
 
       <div id="manual-body-anchor-feedback" className="space-y-1">
         <p className={`text-[11px] ${feedback.canSave ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-300'}`} role="status">
-          {feedback.message} {Object.keys(anchors).length}/{BODY_ANCHOR_NAMES.length} anchors.
+          {bodyAnchorFeedbackMessage(feedback, t)} {t('fashion.manualTryOn.bodyAnchorCount', { count: Object.keys(anchors).length, total: BODY_ANCHOR_NAMES.length })}
         </p>
         {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
         {status && <p className="text-xs text-muted-foreground" role="status">{status}</p>}
@@ -265,7 +280,7 @@ export default function CanonicalTryOnBodyAnchorEditor({
       <div className="flex justify-end">
         <Button type="button" size="sm" onClick={save} disabled={blocked || !feedback.canSave || typeof onSave !== 'function'}>
           {busy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
-          Save body anchors
+          {t('fashion.manualTryOn.saveBodyAnchors')}
         </Button>
       </div>
     </section>

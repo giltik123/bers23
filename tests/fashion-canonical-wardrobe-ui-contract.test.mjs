@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { GARMENT_CATEGORIES } from '../src/lib/fashion/garmentCategories.js';
+import enFashion from '../src/lib/i18n/locales/en/fashion.js';
+import { modules as ruModules } from '../src/lib/i18n/locales/ru/index.js';
 
 const ADD = 'src/components/editor/fashion/AddGarmentDialog.jsx';
 const WARDROBE_CLIENT = 'src/api/managedWardrobeClient.js';
@@ -33,7 +35,7 @@ test('Fashion category and season inputs exactly match the canonical Wardrobe br
 
   assert.deepEqual(uiCategories, canonicalCategories, 'Fashion category picker must not drift from canonical Wardrobe categories');
   assert.deepEqual(dialogSeasons, canonicalSeasons, 'Fashion season picker must not drift from canonical Wardrobe seasons');
-  assert.match(dialog, /aria-label="Material"[\s\S]{0,180}maxLength=\{50\}/, 'Material UI bound must match the canonical 50-character contract');
+  assert.match(dialog, /aria-label=\{t\('fashion\.garmentDialog\.material'\)\}[\s\S]{0,180}maxLength=\{50\}/, 'Material UI bound must match the canonical 50-character contract');
   assert.match(wardrobe, /normalized\.length > 50/);
 });
 
@@ -57,5 +59,7 @@ test('new Fashion UI exposes only metadata that has canonical F2 mutation author
   for (const legacyField of ['brand:', 'size:', 'dominant_color:', 'source:', 'original_image_url']) {
     assert.equal(dialog.includes(legacyField), false, `Fashion create UI must not emit unsupported legacy field ${legacyField}`);
   }
-  assert.match(dialog, /Brand, size and color are not shown here until they have a canonical server-owned metadata contract\./);
+  assert.match(dialog, /fashion\.garmentDialog\.metadataNotice/);
+  assert.match(enFashion.garmentDialog.metadataNotice, /Brand, size and color are not shown here until they have a canonical server-owned metadata contract/);
+  assert.match(ruModules.fashion.garmentDialog.metadataNotice, /Бренд, размер и цвет появятся здесь/);
 });

@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { canonicalTryOnManualSaveTransition } from '../src/application/fashion/canonicalTryOnManualRemediationPolicy.js';
+import { BODY_ANCHOR_NAMES } from '../src/application/fashion/canonicalTryOnManualAcquisition.js';
+import enFashion from '../src/lib/i18n/locales/en/fashion.js';
+import { modules as ruModules } from '../src/lib/i18n/locales/ru/index.js';
 
 const HOOK = 'src/components/editor/outfits/useCanonicalTryOnEditor.js';
 const RUNNER = 'src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx';
@@ -91,7 +94,7 @@ test('manual editors are explicit and post-save state permits only a fresh readi
   assert.match(panel, /setOpenedPolicy\(livePolicy\)/);
   assert.match(panel, /canonicalTryOnManualSaveTransition\(sourcePolicy\)/);
   assert.match(panel, /remediation\?\.mode === 'RECHECK_REQUIRED'/);
-  assert.match(panel, /Check readiness again/);
+  assert.match(panel, /fashion\.manualTryOn\.checkReadinessAgain/);
   assert.match(panel, /onRecheck\(\)/);
   assert.doesNotMatch(panel, /onRun|onResume|onRecover|onRetry/);
   const effectStart = panel.indexOf('useEffect(() => {');
@@ -118,4 +121,15 @@ test('10e2 Try-On React boundary retains no execution or canonical evidence iden
     'sessionStorage', 'indexedDB',
   ]) assert.equal(tryOnBoundary.includes(forbidden), false, forbidden);
   assert.doesNotMatch(editor, /createCanonicalTryOnProductRuntime|createCanonicalTryOnProductSession|createCanonicalTryOnEditorController|tryonEngine|\.manual\b/);
+});
+
+
+test('manual Try-On English and Russian packs cover all explicit anchors, feedback and Core errors', () => {
+  const en = enFashion.manualTryOn;
+  const ru = ruModules.fashion.manualTryOn;
+  assert.deepEqual(Object.keys(ru).sort(), Object.keys(en).sort());
+  assert.deepEqual(Object.keys(ru.anchors).sort(), [...BODY_ANCHOR_NAMES].sort());
+  assert.deepEqual(Object.keys(ru.errors).sort(), Object.keys(en.errors).sort());
+  assert.deepEqual(Object.keys(ru.bodyFeedback).sort(), Object.keys(en.bodyFeedback).sort());
+  assert.deepEqual(Object.keys(ru.contourFeedback).sort(), Object.keys(en.contourFeedback).sort());
 });

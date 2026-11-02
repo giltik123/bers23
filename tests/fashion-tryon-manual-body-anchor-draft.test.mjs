@@ -119,8 +119,8 @@ test('React body-anchor editor is explicit-point only, accessible and authority-
   assert.match(component, /validateManualBodyAnchorDraft\(safeSource\?\.category, anchors\)/);
   assert.match(component, /BODY_ANCHOR_NAMES\.map\(\(name\)/);
   assert.match(component, /onPointerDown=\{placeSelectedFromImage\}/);
-  assert.match(component, /aria-label="Manual body-anchor editor"/);
-  assert.match(component, /aria-label="Body anchor controls"/);
+  assert.match(component, /fashion\.manualTryOn\.bodyAnchorEditor/);
+  assert.match(component, /fashion\.manualTryOn\.bodyAnchorControls/);
   assert.match(component, /aria-pressed=\{selectedName === name\}/);
   assert.match(component, /onSave\(\{\s*projectId: safeSource\.projectId,\s*sourceArtifactId: safeSource\.sourceArtifactId,\s*anchors,\s*\}\)/s);
   assert.match(component, /setLocked\(true\)/);

@@ -56,3 +56,22 @@ test('ordinary validation errors remain dialog-local instead of being mislabeled
   assert.doesNotMatch(catchBody[1], /setCaptureItem\(null\)[\s\S]*else/);
   assert.match(dialog, /setError\(cause\?\.message/);
 });
+
+
+test('revision-bound garment capture dialog localizes recommendations and keeps append intent unchanged', async () => {
+  const en = (await import('../src/lib/i18n/locales/en/fashion.js')).default.garmentDialog;
+  const ru = (await import('../src/lib/i18n/locales/ru/index.js')).modules.fashion.garmentDialog;
+  assert.equal(typeof en.addViewTitle, 'string');
+  assert.equal(typeof ru.addViewTitle, 'string');
+  assert.deepEqual(Object.keys(ru.viewKinds).sort(), Object.keys(en.viewKinds).sort());
+
+  assert.match(dialog, /useTranslation/);
+  assert.match(dialog, /requestLabel\(request, t\)/);
+  assert.match(dialog, /fashion\.garmentDialog\.lowResolution/);
+  assert.match(dialog, /fashion\.garmentDialog\.captureRequirementsSatisfied/);
+  assert.match(dialog, /onAppend\(item, \{ viewKind, image \}\)/);
+  assert.match(dialog, /aria-label=\{t\('fashion\.garmentDialog\.chooseImage'\)\}/);
+  for (const forbidden of ['coreClient', 'managedGarmentClient', 'coreClient.entities', '/assets', 'provider', 'billing']) {
+    assert.equal(dialog.includes(forbidden), false, forbidden);
+  }
+});

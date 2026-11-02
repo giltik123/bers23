@@ -1,22 +1,28 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { Camera, Loader2, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const VIEW_KINDS = Object.freeze([
-  ['FRONT', 'Front'],
-  ['BACK', 'Back'],
-  ['LEFT', 'Left side'],
-  ['RIGHT', 'Right side'],
-  ['DETAIL', 'Detail'],
+  ['FRONT', 'front'],
+  ['BACK', 'back'],
+  ['LEFT', 'left'],
+  ['RIGHT', 'right'],
+  ['DETAIL', 'detail'],
 ]);
+const VIEW_KIND_KEYS = Object.freeze({ FRONT: 'front', BACK: 'back', LEFT: 'left', RIGHT: 'right', DETAIL: 'detail' });
 
-function requestLabel(request) {
-  if (request.reason === 'LOW_RESOLUTION_CARDINAL_VIEW') return `${request.viewKind}: replace with a higher-resolution image`;
-  return `${request.viewKind}: missing`;
+function requestLabel(request, t) {
+  const viewKey = VIEW_KIND_KEYS[request.viewKind] || 'unknown';
+  const reason = request.reason === 'LOW_RESOLUTION_CARDINAL_VIEW'
+    ? t('fashion.garmentDialog.lowResolution')
+    : t('fashion.garmentDialog.missing');
+  return t('fashion.garmentDialog.viewKinds.' + viewKey) + ': ' + reason;
 }
 
 export default function GarmentCaptureDialog({ open, item, onClose, onAppend }) {
+  const { t } = useTranslation();
   const requestedKind = item?.captureAssessment?.nextCaptureRequests?.[0]?.viewKind || 'DETAIL';
   const [viewKind, setViewKind] = useState(requestedKind);
   const [image, setImage] = useState(null);
@@ -52,7 +58,7 @@ export default function GarmentCaptureDialog({ open, item, onClose, onAppend }) 
       await onAppend(item, { viewKind, image });
       resetAndClose();
     } catch (cause) {
-      setError(cause?.message || 'The view could not be appended. The wardrobe was refreshed; check the latest capture state before retrying.');
+      setError(cause?.message || t('fashion.garmentDialog.appendFailed'));
     } finally {
       setSaving(false);
     }
@@ -65,40 +71,40 @@ export default function GarmentCaptureDialog({ open, item, onClose, onAppend }) 
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Camera className="h-4 w-4" /> Add garment view
+            <Camera className="h-4 w-4" /> {t('fashion.garmentDialog.addViewTitle')}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
           <div>
-            <p className="text-sm font-medium">{item?.name || 'Garment'}</p>
+            <p className="text-sm font-medium">{item?.name || t('fashion.garmentDialog.garmentFallback')}</p>
             <p className="text-xs text-muted-foreground">
-              Capture evidence is server-owned. Additional views are immutable and revision-bound.
+              {t('fashion.garmentDialog.captureEvidenceNotice')}
             </p>
           </div>
 
           {requests.length > 0 ? (
             <div className="rounded-lg bg-secondary/50 p-2 text-xs">
-              <p className="font-medium mb-1">Recommended next captures</p>
+              <p className="font-medium mb-1">{t('fashion.garmentDialog.recommendedNextCaptures')}</p>
               <ul className="space-y-0.5 text-muted-foreground">
-                {requests.map((request) => <li key={`${request.viewKind}:${request.reason}`}>{requestLabel(request)}</li>)}
+                {requests.map((request) => <li key={`${request.viewKind}:${request.reason}`}>{requestLabel(request, t)}</li>)}
               </ul>
             </div>
           ) : (
             <p className="rounded-lg bg-secondary/50 p-2 text-xs text-muted-foreground">
-              Cardinal capture requirements are satisfied. You can still add a detail or replacement view.
+              {t('fashion.garmentDialog.captureRequirementsSatisfied')}
             </p>
           )}
 
           <label className="block space-y-1 text-xs">
-            <span className="font-medium">View</span>
+            <span className="font-medium">{t('fashion.garmentDialog.view')}</span>
             <select
               className="h-9 w-full rounded-md border border-input bg-transparent px-2"
               value={viewKind}
               onChange={(event) => setViewKind(event.target.value)}
               disabled={saving}
             >
-              {VIEW_KINDS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              {VIEW_KINDS.map(([value, key]) => <option key={value} value={value}>{t('fashion.garmentDialog.viewKinds.' + key)}</option>)}
             </select>
           </label>
 
@@ -107,15 +113,16 @@ export default function GarmentCaptureDialog({ open, item, onClose, onAppend }) 
               type="file"
               accept="image/png,image/jpeg,image/webp"
               className="sr-only"
+              aria-label={t('fashion.garmentDialog.chooseImage')}
               disabled={saving}
               onChange={(event) => { setImage(event.target.files?.[0] ?? null); setError(''); }}
             />
             {previewUrl ? (
-              <img src={previewUrl} alt="Local capture preview" className="mx-auto max-h-56 rounded-lg object-contain" />
+              <img src={previewUrl} alt={t('fashion.garmentDialog.localCapturePreview')} className="mx-auto max-h-56 rounded-lg object-contain" />
             ) : (
               <div className="flex flex-col items-center gap-1 text-xs text-muted-foreground">
                 <Upload className="h-5 w-5" />
-                Choose PNG, JPEG or WebP
+                {t('fashion.garmentDialog.chooseImage')}
               </div>
             )}
           </label>
@@ -124,10 +131,10 @@ export default function GarmentCaptureDialog({ open, item, onClose, onAppend }) 
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={close} disabled={saving}>Cancel</Button>
+          <Button variant="outline" onClick={close} disabled={saving}>{t('fashion.garmentDialog.cancel')}</Button>
           <Button onClick={append} disabled={!image || saving}>
             {saving && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
-            Append view
+            {t('fashion.garmentDialog.appendView')}
           </Button>
         </DialogFooter>
       </DialogContent>
