@@ -1,8 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import english from '../src/lib/i18n/locales/en/index.js';
-import russian from '../src/lib/i18n/locales/ru/index.js';
 
 const [panel, controls, storage, recipe, chromeE2e, workflow] = await Promise.all([
   readFile('src/components/editor/local/LocalAdjustmentsPanel.jsx', 'utf8'),
@@ -87,10 +85,17 @@ test('exact-head CI includes both pure storage and UI wiring tests', () => {
 });
 
 
-test('browser-draft privacy copy is explicit in both supported locales', () => {
-  assert.match(english.localEditorUi.devicePrivacy, /unencrypted/);
-  assert.match(english.localEditorUi.devicePrivacy, /NOT automatically saved/);
-  assert.match(english.localEditorUi.devicePrivacy, /previously saved browser draft/);
-  assert.match(russian.localEditorUi.devicePrivacy, /без шифрования/);
-  assert.match(russian.localEditorUi.devicePrivacy, /НЕ сохраняются автоматически/);
+test('browser-draft privacy copy is explicit in both supported locales', async () => {
+  const [englishLocale, russianLocale] = await Promise.all([
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+  const englishPrivacy = englishLocale.match(/devicePrivacy: "([^"]+)"/u)?.[1];
+  const russianPrivacy = russianLocale.match(/devicePrivacy: "([^"]+)"/u)?.[1];
+  assert.ok(englishPrivacy && russianPrivacy, 'both locale privacy notices must exist');
+  assert.match(englishPrivacy, /unencrypted/);
+  assert.match(englishPrivacy, /NOT automatically saved/);
+  assert.match(englishPrivacy, /previously saved browser draft/);
+  assert.match(russianPrivacy, /без шифрования/);
+  assert.match(russianPrivacy, /НЕ сохраняются автоматически/);
 });
