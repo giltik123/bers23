@@ -21,7 +21,7 @@ test('R3g drives visible zero-object navigation into canonical Fashion and Outfi
   assert.match(navigation, /<button[\s\S]*key=\{item\.id\}[\s\S]*onClick=\{\(\) => onChange\(item\.id\)\}/);
   assert.match(navigation, /aria-pressed=\{active === item\.id\}/);
   assert.match(navigation, /type="button"/);
-  assert.match(fashion, /aria-label="Canonical fashion wardrobe"/);
+  assert.match(fashion, /aria-label=\{t\('fashionUi\.panelLabel'\)\}/);
   assert.match(outfits, /aria-label="Canonical Outfit builder"/);
   assert.match(tryOnRunner, /aria-label="Canonical deterministic Try-On runner"/);
   assert.ok(harness.includes("getByRole('button', { name: 'Открыть гардероб', exact: true })"));
@@ -31,7 +31,7 @@ test('R3g drives visible zero-object navigation into canonical Fashion and Outfi
     "getByRole('button', { name: 'Prompt', exact: true })",
     "getByRole('button', { name: 'Fashion', exact: true })",
     "getByRole('button', { name: 'More', exact: true })",
-    "getByRole('region', { name: 'Canonical fashion wardrobe', exact: true })",
+    "getByRole('region', { name: 'Canonical wardrobe and collections', exact: true })",
     "getByRole('region', { name: 'Canonical Outfit builder', exact: true })",
   ]) assert.equal(harness.includes(text), true, `R3g harness must drive ${text}`);
 
