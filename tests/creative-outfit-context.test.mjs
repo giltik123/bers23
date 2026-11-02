@@ -186,13 +186,18 @@ test('Creative Studio cards expose localized labels and accessible selected stat
   assert.equal(creativeThemeKey('Golden hour'), 'golden_hour');
   assert.match(goalPicker, /useTranslation/u);
   assert.match(goalPicker, /aria-pressed/u);
+  assert.match(goalPicker, /type="button"/u);
+  assert.match(goalPicker, /role="group"/u);
   assert.match(goalPicker, /creative\.goals\./u);
   assert.match(ideaCard, /useTranslation/u);
   assert.match(ideaCard, /aria-pressed/u);
+  assert.match(ideaCard, /type="button"/u);
+  assert.match(ideaCard, /creative\.ideaDescription/u);
   assert.match(ideaCard, /creative\.themes\./u);
   assert.match(moodBoardCard, /creative\.lighting\./u);
   assert.match(moodBoardCard, /creative\.composition\./u);
   assert.match(moodBoardCard, /creative\.palette\./u);
+  assert.match(moodBoardCard, /paletteLabel/u);
   assert.match(generator, /goalId: goal\.id/u);
   assert.match(generator, /themeKey: creativeThemeKey\(theme\)/u);
   assert.match(generator, /orientation,/u);
