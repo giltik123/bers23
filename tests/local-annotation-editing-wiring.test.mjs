@@ -10,7 +10,7 @@ const [panel, controls, geometry, release] = await Promise.all([
 ]);
 
 test('saved vector annotations can be selected individually and retain visible selection state', () => {
-  assert.match(controls, /aria-label=\{'Select annotation ' \+ \(index \+ 1\)\}/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.selectAnnotation', \{ index: index \+ 1 \}\)\}/);
   assert.match(controls, /aria-pressed=\{selectedIndex === index\}/);
   assert.match(controls, /onSelect\(selectedIndex === index \? null : index\)/);
   assert.match(panel, /selectedIndex=\{selectedAnnotationIndex\}/);
