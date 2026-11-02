@@ -616,7 +616,10 @@ test('Creative Studio saved strategy identity is Project-scoped and stale contex
   assert.equal(base.id, 'creative-fashion-0');
   assert.equal(Object.isFrozen(first), true);
   assert.throws(() => scopeCreativeStrategyToProject(base, ''), /Project ID/u);
-  assert.throws(() => scopeCreativeStrategyToProject(base, 'bad\\u0000id'), /printable/u);
+  assert.throws(
+    () => scopeCreativeStrategyToProject(base, `bad${String.fromCharCode(0)}id`),
+    /printable/u,
+  );
 
   const saved = Object.freeze({ id: first.id, favorite: true });
   assert.equal(savedCreativeStrategyForCurrent(saved, first, first), saved);
@@ -625,9 +628,9 @@ test('Creative Studio saved strategy identity is Project-scoped and stale contex
   assert.equal(savedCreativeStrategyForCurrent({ id: second.id }, second, first), null);
 
   const panel = await readFile('src/components/editor/creative/CreativeStudioPanel.jsx', 'utf8');
-  assert.match(panel, /scopeCreativeStrategyToProject\\(/u);
-  assert.match(panel, /savedCreativeStrategyForCurrent\\(saved, savedStrategy, strategy\\)/u);
-  assert.match(panel, /saved=\\{currentSaved\\}/u);
-  assert.match(panel, /setSavedStrategy\\(strategy\\)/u);
-  assert.doesNotMatch(panel, /const entry = saved \\|\\| creativeHistory\\.save\\(strategy\\)/u);
+  assert.ok(panel.includes('scopeCreativeStrategyToProject('));
+  assert.ok(panel.includes('savedCreativeStrategyForCurrent(saved, savedStrategy, strategy)'));
+  assert.ok(panel.includes('saved={currentSaved}'));
+  assert.ok(panel.includes('setSavedStrategy(strategy)'));
+  assert.equal(panel.includes('const entry = saved || creativeHistory.save(strategy)'), false);
 });
