@@ -283,7 +283,7 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   "panelLabel": "Canonical wardrobe and collections",
   "backToEditor": "Back to editor",
   "backToProjects": "Back to projects",
-  "pageDescription": "Manage garments, photos and collections outside the main workspace."
+  "pageDescription": "Manage garments, photos and collections outside the main workspace.",
   "loadFailed": "The canonical wardrobe could not be loaded.",
   "appendOutcomeUncertain": "The garment view may already be saved. Refresh the wardrobe before uploading again.",
   "mutationConflict": "The wardrobe changed elsewhere. It has been refreshed; review the latest state before trying again.",
