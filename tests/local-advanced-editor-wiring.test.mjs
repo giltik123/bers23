@@ -170,10 +170,10 @@ test('local editing subpanels use a complete matching RU/EN catalog without chan
   const englishBlock = englishSource.match(/const localEditorUi = \{([\\s\\S]*?)\\n\\};/u)?.[1];
   const russianBlock = russianSource.match(/localEditorUi: \{([\\s\\S]*?)\\n  \},/u)?.[1];
   assert.ok(englishBlock && russianBlock, 'both locale catalogs must define localEditorUi');
-  const topLevelKeys = block => [...block.matchAll(/^  ([A-Za-z][A-Za-z0-9]*):/gmu)].map(match => match[1]).sort();
-  assert.deepEqual(topLevelKeys(russianBlock), topLevelKeys(englishBlock), 'every top-level local editing key needs both locales');
+  const catalogKeys = block => [...block.matchAll(/([A-Za-z][A-Za-z0-9-]*):/gu)].map(match => match[1]).sort();
+  assert.deepEqual(catalogKeys(russianBlock), catalogKeys(englishBlock), 'every local editing key needs both locales');
   const nestedKeys = (block, name) => {
-    const nested = block.match(new RegExp('^  ' + name + ': \\{([^}]*)\\}', 'mu'))?.[1];
+    const nested = block.match(new RegExp(name + ': \\{([^}]*)\\}', 'u'))?.[1];
     assert.ok(nested, 'localEditorUi.' + name + ' must exist');
     return [...nested.matchAll(/([A-Za-z][A-Za-z0-9-]*):/gu)].map(match => match[1]).sort();
   };
@@ -184,9 +184,13 @@ test('local editing subpanels use a complete matching RU/EN catalog without chan
   assert.match(englishBlock, /edits are NOT automatically saved/u);
   assert.match(russianBlock, /devicePrivacy: ".*без шифрования/u);
   assert.match(russianBlock, /изменения НЕ сохраняются автоматически/u);
+  const englishKeys = new Set(catalogKeys(englishBlock));
   for (const source of [controls, annotationControls, recipeControls]) {
     assert.match(source, /useTranslation/);
     assert.match(source, /localEditorUi\./);
+    for (const match of source.matchAll(/t\('localEditorUi\.([A-Za-z0-9-]+)/gu)) {
+      assert.ok(englishKeys.has(match[1]), 'localEditorUi.' + match[1] + ' must exist in both locales');
+    }
   }
   for (const key of [
     'toneCurve', 'selectiveHsl', 'gradientMask', 'manualCloneStamp',
