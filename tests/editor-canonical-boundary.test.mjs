@@ -4,6 +4,80 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 test('Editor single-edit path crosses only an application boundary', async () => { const source = await readFile('src/pages/Editor.jsx', 'utf8'); for (const forbidden of ['editingEngine', 'creditsEngine', 'reveProvider', 'providers/fal', 'provider-runtime', 'server/transactions']) assert.equal(source.includes(forbidden), false, forbidden); assert.match(source, /creativeEditApplicationService\.execute/); });
+
+test('recipe cards and detail controls use localized UI copy with separate accessible actions', async () => {
+  const [card, detail, preview, variables] = await Promise.all([
+    readFile('src/components/editor/recipes/RecipeCard.jsx', 'utf8'),
+    readFile('src/components/editor/recipes/RecipeDetail.jsx', 'utf8'),
+    readFile('src/components/editor/recipes/RecipePromptPreview.jsx', 'utf8'),
+    readFile('src/components/editor/recipes/RecipeVariablesForm.jsx', 'utf8'),
+  ]);
+  assert.equal((card.match(/<button\s+type="button"/g) || []).length, 2);
+  assert.doesNotMatch(card, /role=["']button["']/);
+  assert.match(card, /aria-pressed=\{Boolean\(isFavorite\)\}/);
+  assert.match(card, /editor\.recipeUi\.openRecipe/);
+  assert.match(card, /editor\.recipeUi\.openPremiumRecipe/);
+  assert.match(card, /editor\.recipeUi\.addFavorite/);
+  assert.match(card, /editor\.recipeUi\.removeFavorite/);
+  assert.match(card, /editor\.recipeUi\.creditsEstimate/);
+  assert.match(detail, /editor\.recipeUi\.allRecipes/);
+  assert.match(detail, /onUse\(prompt, recipe\)/);
+  assert.match(preview, /editor\.recipeUi\.generatedPrompt/);
+  assert.match(preview, /editor\.recipeUi\.target/);
+  assert.match(preview, /editor\.recipeUi\.keeps/);
+  assert.match(preview, /editor\.recipeUi\.creditsEstimate/);
+  assert.match(preview, /editor\.recipeUi\.estimatedSeconds/);
+  assert.match(preview, /editor\.recipeUi\.useRecipe/);
+  assert.match(preview, /value=\{prompt\}/);
+  assert.match(variables, /SLIDER_STRENGTH_KEYS/);
+  assert.match(variables, /htmlFor=\{controlId\}/);
+  assert.match(variables, /SelectTrigger id=\{controlId\} aria-label=\{def\.label\}/);
+  assert.match(variables, /Slider id=\{controlId\} aria-label=\{def\.label\}/);
+  assert.match(variables, /Input id=\{controlId\} aria-label=\{def\.label\}/);
+  assert.match(variables, /sliderWord/);
+  assert.match(variables, /editor\.recipeUi\.sliderStrength/);
+});
+
+test('Russian and English recipe-detail catalogs cover the same UI labels and interpolation values', async () => {
+  const [english, russian] = await Promise.all([
+    readFile('src/lib/i18n/locales/en/editor.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+  const keys = [
+    'allRecipes', 'openRecipe', 'openPremiumRecipe', 'addFavorite', 'removeFavorite', 'creditsEstimate',
+    'generatedPrompt', 'editable', 'target', 'keeps', 'estimatedSeconds', 'useRecipe',
+    'sliderStrength', 'verySubtle', 'subtle', 'gentle', 'light', 'moderate',
+    'noticeable', 'strong', 'veryStrong', 'intense', 'maximum',
+  ];
+  for (const key of keys) {
+    assert.match(english, new RegExp('\\b' + key + ':'));
+    assert.match(russian, new RegExp('\\b' + key + ':'));
+  }
+  for (const placeholder of ['{name}', '{count}', '{target}', '{value}', '{seconds}']) {
+    assert.ok(english.includes(placeholder), 'English locale is missing ' + placeholder);
+    assert.ok(russian.includes(placeholder), 'Russian locale is missing ' + placeholder);
+  }
+});
+
+test('recipe localization leaves recipe definitions and compiled prompt values unchanged', async () => {
+  const [card, detail, preview, variables] = await Promise.all([
+    readFile('src/components/editor/recipes/RecipeCard.jsx', 'utf8'),
+    readFile('src/components/editor/recipes/RecipeDetail.jsx', 'utf8'),
+    readFile('src/components/editor/recipes/RecipePromptPreview.jsx', 'utf8'),
+    readFile('src/components/editor/recipes/RecipeVariablesForm.jsx', 'utf8'),
+  ]);
+  assert.match(card, /recipe\.name/);
+  assert.match(card, /recipe\.description/);
+  assert.match(detail, /recipeEngine\.compile\(recipe, next\)\.prompt/);
+  assert.match(detail, /onUse\(prompt, recipe\)/);
+  assert.match(preview, /value=\{prompt\}/);
+  assert.match(preview, /\{sp\.action\}/);
+  assert.match(preview, /target: sp\.target/);
+  assert.match(preview, /sp\.preserve/);
+  assert.match(variables, /\{def\.label\}/);
+  assert.match(variables, /def\.options\.map/);
+});
+
 test('application edit adapter sends no server-authoritative fields', async () => { const source = await readFile('src/application/creative/CreativeEditApplicationService.js', 'utf8'); assert.match(source, /coreClient\.creative\.execute/); for (const forbidden of ['walletBalance', 'reservationStatus', 'authorizationResult', 'retryCount', 'FAL_KEY', 'REVE_KEY']) assert.equal(source.includes(forbidden), false); });
 test('browser source imports no transaction internals and canonical edit boundaries contain no provider secrets', async () => { for (const file of await collect('src')) { const source = await readFile(file, 'utf8'); assert.equal(/from ['"][^'"]*server\/transactions/.test(source), false, file); } for (const file of ['src/pages/Editor.jsx', 'src/application/creative/CreativeEditApplicationService.js', 'src/api/coreClient.js']) { const source = await readFile(file, 'utf8'); assert.equal(/\b(FAL_KEY|REVE_KEY|FASHN_KEY)\b/.test(source), false, file); } });
 async function collect(directory) { const entries = await readdir(directory, { withFileTypes: true }); return (await Promise.all(entries.map((entry) => entry.isDirectory() ? collect(join(directory, entry.name)) : [join(directory, entry.name)]))).flat().filter((file) => /\.(js|jsx|ts|tsx)$/.test(file)); }

@@ -4,9 +4,11 @@ import RecipeIcon from '@/components/editor/recipes/RecipeIcon';
 import RecipeVariablesForm from '@/components/editor/recipes/RecipeVariablesForm';
 import RecipePromptPreview from '@/components/editor/recipes/RecipePromptPreview';
 import { recipeEngine } from '@/lib/recipes/recipeEngine';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 
 // Selected recipe: variables → live compiled prompt (editable) → hand off to the Planner flow.
 export default function RecipeDetail({ recipe, onBack, onUse, disabled }) {
+  const { t } = useTranslation();
   const [values, setValues] = useState(() => recipeEngine.defaults(recipe));
   const definitions = recipeEngine.variableDefs(recipe);
   const compiled = useMemo(() => recipeEngine.compile(recipe, values), [recipe, values]);
@@ -21,8 +23,8 @@ export default function RecipeDetail({ recipe, onBack, onUse, disabled }) {
 
   return (
     <div className="space-y-3">
-      <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-        <ArrowLeft className="w-3.5 h-3.5" /> All recipes
+      <button type="button" onClick={onBack} aria-label={t('editor.recipeUi.allRecipes')} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+        <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> {t('editor.recipeUi.allRecipes')}
       </button>
       <div className="flex items-center gap-2">
         <span className="p-2 rounded-lg bg-secondary"><RecipeIcon name={recipe.icon} /></span>
