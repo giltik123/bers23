@@ -38,3 +38,18 @@ export function projectReadyCreativeOutfits(values) {
 
   return Object.freeze(projected);
 }
+
+
+const EMPTY_CREATIVE_OUTFITS = Object.freeze([]);
+
+// A principal switch can render once before useEffect cleanup runs. Bind the
+// cached projection to the identity that loaded it and fail closed synchronously.
+export function creativeOutfitsForPrincipal({ outfits, status, loadedPrincipalKey, principalKey }) {
+  if (status !== 'ready' || typeof principalKey !== 'string' || !principalKey || loadedPrincipalKey !== principalKey) {
+    return EMPTY_CREATIVE_OUTFITS;
+  }
+  if (!Array.isArray(outfits)) {
+    throw new TypeError('Ready Creative Outfit context must be an array');
+  }
+  return outfits;
+}
