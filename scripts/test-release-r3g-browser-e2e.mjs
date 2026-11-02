@@ -169,7 +169,7 @@ try {
   await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
   await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
   await wardrobeLoad;
-  await page.getByRole('region', { name: 'Canonical fashion wardrobe', exact: true })
+  await page.getByRole('region', { name: 'Canonical wardrobe and collections', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
   await page.getByText('No managed garments yet. Add a garment photo to create the first stable wardrobe item.', { exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
