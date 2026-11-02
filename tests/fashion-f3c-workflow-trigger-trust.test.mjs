@@ -132,16 +132,16 @@ test('F3c trigger alignment preserves the accepted body except the bounded read-
   );
   normalized = replaceExactBlock(
     normalized,
-    '      - name: Prove bounded Creative Studio browser compile\\n',
-    '      - name: Reject legacy, execution and financial authority widening\\n',
+    '      - name: Prove bounded Creative Studio browser compile\n',
+    '      - name: Reject legacy, execution and financial authority widening\n',
     CREATIVE_STUDIO_COMPILE_STEP,
     '',
     'Creative Studio browser compile step',
   );
   normalized = replaceExactBlock(
     normalized,
-    '      - name: Allow only read-only canonical Outfit context in Creative Studio\\n',
-    '      - name: Check committed diff whitespace\\n',
+    '      - name: Allow only read-only canonical Outfit context in Creative Studio\n',
+    '      - name: Check committed diff whitespace\n',
     CREATIVE_STUDIO_POLICY_STEP,
     ACCEPTED_CREATIVE_STUDIO_POLICY_STEP,
     'Creative Studio read-only authority guard',
