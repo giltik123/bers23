@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">BERS</title>
+  <rect width="512" height="512" rx="112" fill="#09090b"/>
+  <g transform="scale(4.74074074)" fill="#fafafa" fill-rule="evenodd">
+    <path d="M32 16h26c18 0 28 8 28 21 0 9-5 15-13 18 10 3 16 10 16 20 0 16-12 25-32 25H32V16zm17 14v17h8c8 0 12-3 12-9s-4-8-12-8h-8zm0 29v17h9c9 0 14-3 14-9s-5-8-14-8h-9z"/>
+  </g>
+</svg>
