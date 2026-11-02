@@ -169,7 +169,7 @@ export default function CreativeStudioPanel({ project, objects }) {
         </div>
       </div>
       <div className="rounded-xl bg-secondary/50 p-3 text-xs text-muted-foreground">
-        {t('creative.suggestedWorkspace')}: <span className="font-medium text-foreground">{strategy.recommendations.workspace}</span>
+        {t('creative.suggestedWorkspace')}: <span className="font-medium text-foreground">{t('creative.workspaces.' + strategy.recommendations.workspace)}</span>
       </div>
       <CreativeStrategySummary
         strategy={strategy}
