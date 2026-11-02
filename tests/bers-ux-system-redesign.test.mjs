@@ -150,10 +150,12 @@ test('unknown-route recovery is localized in Russian and English', async () => {
     read('src/lib/i18n/locales/ru/index.js'),
   ]);
 
+  const englishNotFound = english.slice(english.lastIndexOf('notFoundUi:'));
+  const russianNotFound = russian.slice(russian.lastIndexOf('notFoundUi:'));
   for (const key of ['title', 'description', 'adminTitle', 'adminMessage', 'goHome']) {
-    assert.match(page, new RegExp('notFoundUi\\.' + key));
-    assert.match(english, new RegExp(key + ':'));
-    assert.match(russian, new RegExp(key + ':'));
+    assert.ok(page.includes('notFoundUi.' + key), 'PageNotFound key missing: ' + key);
+    assert.ok(englishNotFound.includes(key + ':'), 'English notFoundUi key missing: ' + key);
+    assert.ok(russianNotFound.includes(key + ':'), 'Russian notFoundUi key missing: ' + key);
   }
   assert.match(page, /useTranslation/);
   assert.match(page, /coreClient\.auth\.me\(\)/);
