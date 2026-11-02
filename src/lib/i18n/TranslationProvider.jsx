@@ -1,9 +1,13 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { localizationManager } from '@/lib/i18n/LocalizationManager';
+import { setCoreErrorTranslator } from './coreErrorMessage.js';
 import { formattingService } from '@/lib/i18n/FormattingService';
 import { isRTL } from '@/lib/i18n/languages';
 
 const TranslationContext = createContext(null);
+
+// Keep low-level Core error copy on the same locale authority without making Core clients import Vite-backed localization modules.
+setCoreErrorTranslator((key) => localizationManager.t(key));
 
 // Wraps the app: initializes localization, re-renders on language change, and
 // exposes t / plural / format helpers. Interface-only — never localizes user prompts.

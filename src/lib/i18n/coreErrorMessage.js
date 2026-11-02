@@ -29,6 +29,12 @@ const CODE_KEYS = Object.freeze({
   model_artifact_not_found: 'errors.modelUnavailable',
 });
 
+let activeTranslator;
+
+export function setCoreErrorTranslator(translate) {
+  activeTranslator = typeof translate === 'function' ? translate : undefined;
+}
+
 const STATUS_KEYS = Object.freeze({
   400: 'errors.validation',
   401: 'errors.sessionExpired',
@@ -54,7 +60,8 @@ export function resolveCoreErrorPresentation(status, code, translate) {
   const key = coreErrorMessageKey(status, code);
   let translated;
   try {
-    translated = typeof translate === 'function' ? translate(key) : undefined;
+    const translator = typeof translate === 'function' ? translate : activeTranslator;
+    translated = typeof translator === 'function' ? translator(key) : undefined;
   } catch {
     translated = undefined;
   }

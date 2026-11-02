@@ -1,5 +1,4 @@
 import '@/lib/app-params';
-import { localizationManager } from '@/lib/i18n/LocalizationManager';
 import { resolveCoreErrorPresentation } from '@/lib/i18n/coreErrorMessage.js';
 import { createManagedGarmentClient } from './managedGarmentClient.js';
 import { createManagedGarmentCollectionClient } from './managedGarmentCollectionClient.js';
@@ -57,7 +56,7 @@ async function requestBytes(path, options = {}) {
 function throwResponseError(response, data, path) {
   if (response.status === 401 && path === '/auth/context') browserCsrfToken = undefined;
   const code = data?.code ?? data?.error;
-  const presentation = resolveCoreErrorPresentation(response.status, code, (key) => localizationManager.t(key));
+  const presentation = resolveCoreErrorPresentation(response.status, code);
   const error = new Error(presentation.message);
   error.status = response.status;
   error.code = code;

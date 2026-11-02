@@ -3,7 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { productionBrowserCsp } from '../vite.config.js';
-import { resolveCoreErrorPresentation } from '../src/lib/i18n/coreErrorMessage.js';
+import { resolveCoreErrorPresentation, setCoreErrorTranslator } from '../src/lib/i18n/coreErrorMessage.js';
 
 const retiredTokenApi = /(?:\.|\b)(?:hasToken|getToken|setToken|clearToken|storeAccessToken|persistedToken)\s*(?:\(|:|=)/;
 
@@ -202,9 +202,10 @@ test('Core HTTP errors map stable server codes to localized, non-sensitive user 
 });
 
 test('Core browser client uses localized allowlisted error presentation instead of backend message text', async () => {
-  const [client, helper, english, russian] = await Promise.all([
+  const [client, helper, provider, english, russian] = await Promise.all([
     readFile('src/api/coreClient.js', 'utf8'),
     readFile('src/lib/i18n/coreErrorMessage.js', 'utf8'),
+    readFile('src/lib/i18n/TranslationProvider.jsx', 'utf8'),
     readFile('src/lib/i18n/locales/en/errors.js', 'utf8'),
     readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
   ]);
@@ -218,4 +219,14 @@ test('Core browser client uses localized allowlisted error presentation instead 
     assert.match(english, new RegExp('\\b' + key + ':'));
     assert.match(russian, new RegExp('\\b' + key + ':'));
   }
+});
+
+
+test('Core error presentation uses the translator registered by the existing app localization provider', () => {
+  setCoreErrorTranslator(key => `ru:${key}`);
+  assert.equal(
+    resolveCoreErrorPresentation(409, 'project_source_conflict').message,
+    'ru:errors.projectChanged',
+  );
+  setCoreErrorTranslator(undefined);
 });
