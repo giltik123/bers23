@@ -145,11 +145,11 @@ export default {
       failed: 'Try-On acquisition failed.',
     },
     anchors: {
-      leftShoulder: 'Left shoulder', rightShoulder: 'Right shoulder',
-      leftWaist: 'Left waist', rightWaist: 'Right waist',
-      leftHip: 'Left hip', rightHip: 'Right hip',
-      leftAnkle: 'Left ankle', rightAnkle: 'Right ankle',
-      leftToe: 'Left toe', rightToe: 'Right toe',
+      leftShoulder: 'left shoulder', rightShoulder: 'right shoulder',
+      leftWaist: 'left waist', rightWaist: 'right waist',
+      leftHip: 'left hip', rightHip: 'right hip',
+      leftAnkle: 'left ankle', rightAnkle: 'right ankle',
+      leftToe: 'left toe', rightToe: 'right toe',
     },
   },
 };
