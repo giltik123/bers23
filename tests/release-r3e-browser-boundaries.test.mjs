@@ -130,6 +130,22 @@ test('R3e manual Selection and deterministic MASK consumer cannot silently cross
   assert.doesNotMatch(harness, /financialAccount|financialTrial|credit_grants|credit_wallets/);
 });
 
+test('R3e proves canonical ORIGINAL and accepted FINAL downloads follow Preview, Discard, Undo and Redo', async () => {
+  const harness = await readFile(HARNESS, 'utf8');
+  for (const text of [
+    "getByRole('button', { name: 'Download current Core image', exact: true })",
+    'downloadCurrentCanonicalProjectImage(page)',
+    'readCurrentProjectImageBytes(page)',
+    'pending candidate Preview must never be downloadable as the current Project FINAL',
+    'ORIGINAL download must match the exact current signed Core delivery bytes',
+    'accepted FINAL download must match the exact current signed Core delivery bytes',
+    'Undo must restore byte-identical ORIGINAL export bytes',
+    'Redo must restore byte-identical accepted FINAL export bytes',
+  ]) assert.equal(harness.includes(text), true, `R3e canonical export journey must prove ${text}`);
+  assert.match(harness, /credentials: 'include', redirect: 'error'/);
+  assert.match(harness, /assert\.deepEqual\(await readProjectState\(projectId\), (initial|accepted|undone|redone)/);
+});
+
 test('R3 release workflow makes R3e cumulative Selection MASK evidence an exact-head merge gate', async () => {
   const workflow = await readFile(WORKFLOW, 'utf8');
 

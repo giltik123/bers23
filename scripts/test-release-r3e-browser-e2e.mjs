@@ -145,6 +145,17 @@ try {
   assert.deepEqual(initial.objects, []);
   assert.equal((await readMasks(projectId)).length, 0);
 
+  // Export is a read-only Project action: the ORIGINAL download must be the
+  // exact signed Core bytes currently rendered by the Project, never a local
+  // draft or a transient Preview.
+  const originalExport = await downloadCurrentCanonicalProjectImage(page);
+  assert.match(originalExport.filename, /\.(png|jpe?g|webp)$/iu);
+  assert.deepEqual(originalExport.bytes, await readCurrentProjectImageBytes(page),
+    'ORIGINAL download must match the exact current signed Core delivery bytes');
+  assert.deepEqual(await readProjectState(projectId), initial,
+    'downloading ORIGINAL must not create Project history or mutate Project state');
+  const canonicalDownloadButton = page.getByRole('button', { name: 'Download current Core image', exact: true });
+
   // Local-only browser workspace: real uploaded-in-memory PNG, real pixel
   // processing and a real downloadable file. The canonical Core Project must
   // remain byte-for-byte unchanged; no AI provider or local execution ticket.
@@ -687,6 +698,8 @@ try {
   const firstIsolationRequests = diagnostics.localExecutionRequests.length;
   await runBackgroundIsolation(page);
   await waitImage(page, 'Unaccepted edited image', 12, 8);
+  assert.equal(await canonicalDownloadButton.isDisabled(), true,
+    'a pending candidate Preview must never be downloadable as the current Project FINAL');
   assert.equal(diagnostics.localExecutionRequests.length, firstIsolationRequests + 4, 'Background Isolation must use exactly prepare/input/upload/result semantic requests');
   assert.deepEqual(await readProjectState(projectId), isolationDiscardBefore, 'Background Isolation Preview must not mutate Project before explicit Accept');
   const firstTicket = await readLatestBackgroundIsolationTicket(projectId);
@@ -701,6 +714,8 @@ try {
   const secondIsolationRequests = diagnostics.localExecutionRequests.length;
   await runBackgroundIsolation(page);
   await waitImage(page, 'Unaccepted edited image', 12, 8);
+  assert.equal(await canonicalDownloadButton.isDisabled(), true,
+    'the second pending candidate must also remain outside the canonical download path');
   assert.equal(diagnostics.localExecutionRequests.length, secondIsolationRequests + 4);
   assert.equal((await readMasks(projectId)).length, 1, 'repeated Background Isolation must reuse the exact canonical MASK rather than minting another');
   const secondTicket = await readLatestBackgroundIsolationTicket(projectId);
@@ -725,6 +740,11 @@ try {
   const acceptedStorageId = accepted.project.current_image_storage_id;
 
   const acceptedFinal = await readImageArtifact(acceptedStorageId, projectId);
+  const acceptedExport = await downloadCurrentCanonicalProjectImage(page);
+  assert.deepEqual(acceptedExport.bytes, await readCurrentProjectImageBytes(page),
+    'accepted FINAL download must match the exact current signed Core delivery bytes');
+  assert.deepEqual(await readProjectState(projectId), accepted,
+    'exporting an accepted FINAL must not create another Project mutation');
   assert.equal(acceptedFinal.producer_operation, 'BACKGROUND_ISOLATION');
   assert.equal(acceptedFinal.source_image_storage_id, sourceStorageId);
   assert.equal(acceptedFinal.mask_storage_id, canonicalMask.storage_id, 'accepted FINAL must durably bind the exact manual MASK row');
@@ -741,6 +761,13 @@ try {
   const undone = await readProjectState(projectId);
   assert.equal(undone.project.current_image_storage_id, sourceStorageId);
   assert.equal(undone.cursor.ordinal, 0);
+  const undoExport = await downloadCurrentCanonicalProjectImage(page);
+  assert.deepEqual(undoExport.bytes, await readCurrentProjectImageBytes(page),
+    'Undo download must match the restored ORIGINAL Core delivery');
+  assert.deepEqual(undoExport.bytes, originalExport.bytes,
+    'Undo must restore byte-identical ORIGINAL export bytes');
+  assert.deepEqual(await readProjectState(projectId), undone,
+    'exporting after Undo must not mutate Project history');
 
   await waitEnabledButton(page, 'Redo');
   const undoneProjectImageSrc = await projectImage.evaluate(element => element.src);
@@ -752,6 +779,13 @@ try {
   const redone = await readProjectState(projectId);
   assert.equal(redone.project.current_image_storage_id, acceptedStorageId);
   assert.equal(redone.cursor.ordinal, 1);
+  const redoExport = await downloadCurrentCanonicalProjectImage(page);
+  assert.deepEqual(redoExport.bytes, await readCurrentProjectImageBytes(page),
+    'Redo download must match the restored accepted FINAL Core delivery');
+  assert.deepEqual(redoExport.bytes, acceptedExport.bytes,
+    'Redo must restore byte-identical accepted FINAL export bytes');
+  assert.deepEqual(await readProjectState(projectId), redone,
+    'exporting after Redo must not mutate Project history');
 
   assert.deepEqual(diagnostics.maskRequests, ['POST /api/core/artifacts/masks'], 'manual release-floor Selection must create exactly one Core MASK');
   assert.deepEqual(diagnostics.segmentationRequests, [], 'manual release-floor selection must remain model-independent');
@@ -922,6 +956,30 @@ function summarize(state) {
     objects: state.objects.map(object => ({ id: object.id, selected: object.selected, maskArtifactId: object.mask_artifact_id })),
     history: state.history.map(entry => ({ ordinal: entry.ordinal, kind: entry.kind, image: entry.image_storage_id, source: entry.source_image_storage_id, dimensions: [entry.width, entry.height] })),
   });
+}
+
+async function downloadCurrentCanonicalProjectImage(page) {
+  const pending = page.waitForEvent('download', { timeout: 10_000 });
+  await page.getByRole('button', { name: 'Download current Core image', exact: true }).click();
+  const download = await pending;
+  const bytes = await fs.readFile(await download.path());
+  const metadata = await sharp(bytes).metadata();
+  assert.equal(metadata.width, 12, 'canonical download must retain the current Project width');
+  assert.equal(metadata.height, 8, 'canonical download must retain the current Project height');
+  assert.ok(['png', 'jpeg', 'webp'].includes(metadata.format), 'canonical download must be a decoded supported image');
+  return Object.freeze({ filename: download.suggestedFilename(), bytes, metadata });
+}
+
+async function readCurrentProjectImageBytes(page) {
+  const image = page.getByRole('img', { name: 'Project', exact: true });
+  const imageUrl = await image.evaluate(element => element.currentSrc || element.src);
+  assert.equal(new URL(imageUrl).origin, coreOrigin, 'Project image must be delivered by canonical Core');
+  const values = await page.evaluate(async url => {
+    const response = await fetch(url, { method: 'GET', credentials: 'include', redirect: 'error' });
+    if (!response.ok) throw new Error(`Current Project image read failed (HTTP ${response.status})`);
+    return Array.from(new Uint8Array(await response.arrayBuffer()));
+  }, imageUrl);
+  return Buffer.from(values);
 }
 
 async function waitImage(page, accessibleName, width, height, timeout = 20_000) {
