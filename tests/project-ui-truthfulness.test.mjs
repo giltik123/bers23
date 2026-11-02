@@ -16,6 +16,17 @@ test('Projects UI does not expose a fake Duplicate action', async () => {
   assert.doesNotMatch(menu, /\bCopy\b/);
 });
 
+test('Projects recovery is localized, accessible and does not expose raw service errors', async () => {
+  const projects = await readFile('src/pages/Projects.jsx', 'utf8');
+
+  for (const key of ['listFailed', 'createFailed', 'renameFailed', 'favoriteFailed', 'archiveFailed', 'deleteFailed']) {
+    assert.match(projects, new RegExp(`t\\('projectUi\\.${key}'\\)`), key);
+  }
+  assert.doesNotMatch(projects, /set(?:Load|Upload|Action)Error\(error\?\.message/);
+  assert.match(projects, /aria-label=\{t\('projectUi\.startEditing'\)\}/);
+  assert.match(projects, /aria-label=\{t\('projectUi\.projectLibrary'\)\}/);
+});
+
 test('Project upload retry copy matches the in-memory queue lifetime', async () => {
   const [projects, queue, english, russian] = await Promise.all([
     readFile('src/pages/Projects.jsx', 'utf8'),
