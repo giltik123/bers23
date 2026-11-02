@@ -12,7 +12,7 @@ test('Editor and Job Center share one localized accessible region name', async (
   assert.ok(editor.includes("title={t('editorUi.jobCenter')}"));
   assert.ok(center.includes("aria-label={t('editorUi.jobCenter')}"));
   assert.ok(center.includes("{t('editorUi.jobCenter')}</p>"));
-  assert.ok(center.includes("role="region""));
+  assert.ok(center.includes('role="region"'));
 });
 
 test('canonical Job Center loading, stale, empty and blocked states are announced accessibly', async () => {
