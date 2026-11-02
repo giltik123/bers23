@@ -202,8 +202,9 @@ test('Core HTTP errors map stable server codes to localized, non-sensitive user 
 });
 
 test('Core browser client uses localized allowlisted error presentation instead of backend message text', async () => {
-  const [client, helper, provider, english, russian] = await Promise.all([
+  const [client, automationClient, helper, provider, english, russian] = await Promise.all([
     readFile('src/api/coreClient.js', 'utf8'),
+    readFile('src/api/automationClient.js', 'utf8'),
     readFile('src/lib/i18n/coreErrorMessage.js', 'utf8'),
     readFile('src/lib/i18n/TranslationProvider.jsx', 'utf8'),
     readFile('src/lib/i18n/locales/en/errors.js', 'utf8'),
@@ -215,6 +216,9 @@ test('Core browser client uses localized allowlisted error presentation instead 
   assert.match(helper, /export function setCoreErrorTranslator/);
   assert.match(client, /error\.userMessageKey = presentation\.key/);
   assert.doesNotMatch(client, /new Error\(data\?\.message/);
+  assert.match(automationClient, /resolveCoreErrorPresentation/);
+  assert.match(automationClient, /error\\.userMessageKey = presentation\\.key/);
+  assert.doesNotMatch(automationClient, /new Error\\(data\\?\\.message/);
   assert.match(helper, /const CODE_KEYS = Object\.freeze\(\{/);
   assert.match(helper, /errors\.serviceUnavailable/);
   for (const key of ['authentication', 'sessionExpired', 'permission', 'notFound', 'conflict', 'projectChanged', 'executionRunNotFound', 'automationNotFound', 'uploadTooLarge', 'unsupportedFile', 'rateLimited', 'serviceUnavailable', 'modelUnavailable']) {

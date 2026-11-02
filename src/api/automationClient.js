@@ -1,3 +1,5 @@
+import { resolveCoreErrorPresentation } from '../lib/i18n/coreErrorMessage.js';
+
 const API_ROOT = (import.meta.env ?? {}).VITE_CORE_API_URL || '/api/core';
 const CSRF_HEADER = 'X-Bers-CSRF-Token';
 const EXPECTED_REVISION_HEADER = 'X-Expected-Automation-Revision';
@@ -31,9 +33,12 @@ async function request(path, options = {}) {
 
 function throwResponseError(response, data, path) {
   if (response.status === 401) browserCsrfToken = undefined;
-  const error = new Error(data?.message || `Automation Core request failed (${response.status})`);
+  const code = data?.code ?? data?.error;
+  const presentation = resolveCoreErrorPresentation(response.status, code);
+  const error = new Error(presentation.message);
   error.status = response.status;
-  error.code = data?.code ?? data?.error;
+  error.code = code;
+  error.userMessageKey = presentation.key;
   error.correlationId = data?.correlationId;
   error.path = path;
   error.data = data;
