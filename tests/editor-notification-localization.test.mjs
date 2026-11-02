@@ -14,3 +14,15 @@ test('accepted edit notification uses the shared RU/EN translation catalog', asy
   assert.match(english, /savedMessage:\s*'Your accepted result has been added to project history\.'/);
   assert.match(russian, /savedMessage:\s*'Принятый результат добавлен в историю проекта\.'/);
 });
+test('Project favorite tooltips reuse the shared RU/EN Project labels', async () => {
+  const card = await readFile('src/components/projects/ProjectCard.jsx', 'utf8');
+  const english = await readFile('src/lib/i18n/locales/en/index.js', 'utf8');
+  const russian = await readFile('src/lib/i18n/locales/ru/index.js', 'utf8');
+
+  assert.match(card, /title=\{project\.favorite \? t\('projectUi\.removeFavorite'\) : t\('projectUi\.addFavorite'\)\}/);
+  assert.doesNotMatch(card, /title=\{project\.favorite \? "Remove from favorites"/);
+  for (const catalog of [english, russian]) {
+    assert.match(catalog, /removeFavorite:/);
+    assert.match(catalog, /addFavorite:/);
+  }
+});
