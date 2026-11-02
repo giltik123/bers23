@@ -16,6 +16,10 @@ See [CORE_RUNTIME.md](CORE_RUNTIME.md) for the checked-in Node Core entrypoint, 
 
 See [SECURITY_CONFIGURATION.md](SECURITY_CONFIGURATION.md) for server-side security configuration. Sprint 6.39C established the canonical browser/session boundary: HttpOnly browser sessions, Origin + session-bound CSRF enforcement, browser exploit-containment headers, PostgreSQL session authority, abuse controls, rotation and revocation.
 
+## Android
+
+See [ANDROID_RELEASE.md](ANDROID_RELEASE.md) for the Trusted Web Activity contour, SDK 36 build, fail-closed signing preflight, Digital Asset Links deployment and physical-device/Play release checklist. The wrapper preserves the canonical first-party Auth/Core boundary; a debug build is not production acceptance.
+
 ## PostgreSQL transaction authority
 
 See [POSTGRESQL_TRANSACTION_STORE.md](POSTGRESQL_TRANSACTION_STORE.md) for the financial source-of-truth decision, invariants, isolation/lock order, recovery and real-PostgreSQL acceptance requirements.
