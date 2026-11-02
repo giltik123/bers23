@@ -7,7 +7,6 @@ import { colorManager } from '@/lib/pipeline/colorManager';
 import { maskProcessor } from '@/lib/pipeline/maskProcessor';
 import { cropManager } from '@/lib/pipeline/cropManager';
 import { previewGenerator } from '@/lib/pipeline/previewGenerator';
-import { exportManager } from '@/lib/pipeline/exportManager';
 import { pipelineLogger } from '@/lib/pipeline/pipelineLogger';
 import { pipelineEvents } from '@/lib/pipeline/pipelineEvents';
 import { coreClient } from '@/api/coreClient';
@@ -108,13 +107,6 @@ class ImagePipeline {
     return restored;
   }
 
-  // exportResult — final export in the requested format/resolution.
-  async exportResult(imageUrl, options) {
-    pipelineEvents.emit({ status: 'processing', stage: 'export' });
-    const out = await exportManager.exportImage(imageUrl, options);
-    pipelineEvents.emit({ status: 'ready', stage: null });
-    return out;
-  }
 }
 
 export const imagePipeline = new ImagePipeline();
