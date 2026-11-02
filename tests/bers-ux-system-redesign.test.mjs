@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import './editor-error-banner-a11y.test.mjs';
 
 const read = (path) => readFile(path, 'utf8');
 
