@@ -71,7 +71,13 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
     "invalidLink": "Invalid reset link",
     "invalidLinkHint": "This password reset link is missing or invalid",
     "requestNewLink": "Request a new link",
-    "invalidLinkHelp": "The link you used appears to be incomplete. Please request a new password reset email."
+    "invalidLinkHelp": "The link you used appears to be incomplete. Please request a new password reset email.",
+    "accessRestricted": "Access restricted",
+    "accessRestrictedMessage": "You are not registered to use this application. Please contact the app administrator to request access.",
+    "accessRestrictedHint": "If you believe this is an error, you can:",
+    "verifyAccount": "Verify you are logged in with the correct account",
+    "contactAdministrator": "Contact the app administrator for access",
+    "signOutAndBackIn": "Try logging out and back in again"
   },
   projectUi: {
     "workspace": "Your workspace",
