@@ -204,7 +204,7 @@ export default function CanonicalAutomationStudio() {
               <div><p className="font-medium">{t('automation.boundedPlan')}</p><p className="text-xs text-muted-foreground">{t('automation.boundedPlanHint')}</p></div>
               <div className="flex gap-2">
                 {selected && <Button variant="outline" onClick={() => void toggleArchive()} disabled={busy}>{selected.status === 'ACTIVE' ? <Archive className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}{selected.status === 'ACTIVE' ? t('automation.archive') : t('automation.restore')}</Button>}
-                <Button onClick={() => void save()} disabled={busy || !draft.name.trim()}><Save className="h-4 w-4" />{selected ? t('automation.saveRevision') : 'Create'}</Button>
+                <Button onClick={() => void save()} disabled={busy || !draft.name.trim()}><Save className="h-4 w-4" />{selected ? t('automation.saveRevision') : t('common.create')}</Button>
               </div>
             </div>
 
@@ -221,7 +221,7 @@ export default function CanonicalAutomationStudio() {
             <div><p className="font-medium">{t('automation.manualRun')}</p><p className="text-xs text-muted-foreground">{t('automation.manualRunHint')}</p></div>
             <label className="grid gap-1 text-sm">{t('automation.project')}<select className="rounded-lg border border-input bg-background p-2" value={selectedProjectId} onChange={event => { setSelectedProjectId(event.target.value); setInvocation(null); }}>{projects.map(project => <option key={project.id} value={project.id}>{project.name || project.id}</option>)}</select></label>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => void run()} disabled={!canRun}><Play className="h-4 w-4" />Run</Button>
+              <Button onClick={() => void run()} disabled={!canRun}><Play className="h-4 w-4" />{t('automation.run')}</Button>
               <Button variant="outline" onClick={() => void resumeLatest()} disabled={!resumePointer || busy}><Undo2 className="h-4 w-4" />{t('automation.resumeLatest')}</Button>
               {invocation?.retryAvailable && <Button variant="outline" onClick={() => void retry()} disabled={busy}><RotateCcw className="h-4 w-4" />{t('automation.retry')}</Button>}
               {invocation && !isTerminal && <Button variant="outline" onClick={() => void cancel()} disabled={busy}><Square className="h-4 w-4" />{t('common.cancel')}</Button>}

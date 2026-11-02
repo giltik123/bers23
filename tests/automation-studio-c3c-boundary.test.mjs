@@ -47,14 +47,14 @@ test('Automation Studio is canonical and does not revive legacy browser executio
 test('Canonical Automation Studio uses RU/EN copy without moving execution or Accept authority', async () => {
   const studio = await readFile(STUDIO, 'utf8');
   assert.match(studio, /useTranslation/);
-  assert.match(studio, /t\\('automation\\.acceptResult'\\)/);
-  assert.match(studio, /coreClient\\.projects\\.acceptFinal/);
+  assert.match(studio, /t\('automation\.acceptResult'\)/);
+  assert.match(studio, /coreClient\.projects\.acceptFinal/);
   const keys = ['canonicalSubtitle', 'definitions', 'boundedPlan', 'manualRun', 'manualRunHint', 'project', 'resumeLatest', 'acceptResult', 'definitionState', 'stateWaiting', 'modeRotate90', 'invalidDimensions'];
   for (const key of keys) {
     assert.equal(typeof english.automation[key], 'string', 'Missing English Automation label: ' + key);
     assert.equal(typeof russian.automation[key], 'string', 'Missing Russian Automation label: ' + key);
   }
-  assert.match(studio, /t\\('automation\\.canonicalSubtitle'\\)/);
-  assert.match(studio, /translated\\(MODE_LABELS/);
-  assert.doesNotMatch(studio, /automationRunner\\.run|coreClient\\.entities|providerSelector|creditsWallet/);
+  assert.match(studio, /t\('automation\.canonicalSubtitle'\)/);
+  assert.match(studio, /translated\(MODE_LABELS/);
+  assert.doesNotMatch(studio, /automationRunner\.run|coreClient\.entities|providerSelector|creditsWallet/);
 });
