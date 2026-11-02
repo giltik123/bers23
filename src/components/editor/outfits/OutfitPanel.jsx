@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, ArrowDown, ArrowUp, Heart, Layers, Loader2, Plus, RefreshCw, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +39,9 @@ export default function OutfitPanel({ onCanonicalChange }) {
   const [addRole, setAddRole] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  // Keep the last snapshot visible for inspection, but never mutate from it after a failed read.
+  const [catalogFresh, setCatalogFresh] = useState(false);
+  const loadRequestRef = useRef(0);
 
   const applySnapshot = useCallback((snapshot) => {
     setOutfits(snapshot.outfits);
@@ -54,27 +57,43 @@ export default function OutfitPanel({ onCanonicalChange }) {
   }, []);
 
   const reload = useCallback(async ({ announce = true } = {}) => {
+    const request = ++loadRequestRef.current;
+    setCatalogFresh(false);
     setBusy('load');
     setError('');
     try {
-      applySnapshot(await model.load());
+      const snapshot = await model.load();
+      if (request !== loadRequestRef.current) return;
+      applySnapshot(snapshot);
+      setCatalogFresh(true);
       if (announce) onCanonicalChange?.();
     } catch (cause) {
-      setError(cause?.message || 'Outfits could not be loaded.');
+      if (request === loadRequestRef.current) {
+        setError(cause?.message || 'Outfits could not be loaded.');
+      }
     } finally {
-      setBusy('');
+      if (request === loadRequestRef.current) setBusy('');
     }
   }, [applySnapshot, model, onCanonicalChange]);
 
   const reconcileQuietly = useCallback(async () => {
+    const request = ++loadRequestRef.current;
+    setCatalogFresh(false);
     try {
-      applySnapshot(await model.load());
+      const snapshot = await model.load();
+      if (request !== loadRequestRef.current) return;
+      applySnapshot(snapshot);
+      setCatalogFresh(true);
       onCanonicalChange?.();
-    } catch { /* keep the originating mutation error */ }
+    } catch { /* Keep the originating mutation error; the stale catalog remains read-only. */ }
   }, [applySnapshot, model, onCanonicalChange]);
 
-  useEffect(() => { void reload({ announce: false }); }, [reload]);
+  useEffect(() => {
+    void reload({ announce: false });
+    return () => { loadRequestRef.current += 1; };
+  }, [reload]);
 
+  const mutationLocked = Boolean(busy) || !catalogFresh;
   const selected = outfits.find((item) => item.id === selectedId) || null;
   const garmentById = useMemo(() => new Map(garments.map((item) => [item.garmentId, item])), [garments]);
   const selectedGarmentIds = useMemo(() => new Set(selected?.entries.map((entry) => entry.garmentId) ?? []), [selected]);
@@ -110,7 +129,8 @@ export default function OutfitPanel({ onCanonicalChange }) {
 
   const create = async (event) => {
     event.preventDefault();
-    if (!newName.trim() || busy) return;
+    if (!newName.trim() || mutationLocked) return;
+    loadRequestRef.current += 1;
     setBusy('create');
     setError('');
     try {
@@ -121,14 +141,15 @@ export default function OutfitPanel({ onCanonicalChange }) {
       onCanonicalChange?.();
     } catch (cause) {
       await reconcileQuietly();
-      setError(`Creation result was not confirmed. Canonical state was refreshed; check the list before retrying. ${cause?.message || ''}`.trim());
+      setError(`Creation result was not confirmed. Check the canonical list before retrying; if refresh failed, editing stays paused until Reload succeeds. ${cause?.message || ''}`.trim());
     } finally {
       setBusy('');
     }
   };
 
   const mutateSelected = async (key, action) => {
-    if (!selected || busy) return false;
+    if (!selected || mutationLocked) return false;
+    loadRequestRef.current += 1;
     setBusy(key);
     setError('');
     try {
@@ -138,7 +159,7 @@ export default function OutfitPanel({ onCanonicalChange }) {
       return true;
     } catch (cause) {
       await reconcileQuietly();
-      setError(`${cause?.message || 'Outfit mutation was not confirmed.'} Canonical state was refreshed; review it before retrying.`);
+      setError(`${cause?.message || 'Outfit mutation was not confirmed.'} Review the canonical list before retrying; if refresh failed, editing stays paused until Reload succeeds.`);
       return false;
     } finally {
       setBusy('');
@@ -174,14 +195,19 @@ export default function OutfitPanel({ onCanonicalChange }) {
           onChange={(event) => setNewName(event.target.value)}
           placeholder="New outfit"
           maxLength={200}
-          disabled={Boolean(busy)}
+          disabled={mutationLocked}
         />
-        <Button type="submit" size="sm" disabled={!newName.trim() || Boolean(busy)}>
+        <Button type="submit" size="sm" disabled={!newName.trim() || mutationLocked}>
           <Plus className="h-3.5 w-3.5 mr-1" /> Create
         </Button>
       </form>
 
       {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
+      {!catalogFresh && busy !== 'load' && (
+        <p className="text-xs text-amber-700 dark:text-amber-300" role="status">
+          Outfit catalog is not confirmed. Reload to restore editing; existing entries are read-only.
+        </p>
+      )}
       {wardrobeWarning && <p className="text-[11px] text-amber-700 dark:text-amber-300" role="status">{wardrobeWarning}</p>}
 
       {busy === 'load' && outfits.length === 0 ? (
@@ -220,17 +246,17 @@ export default function OutfitPanel({ onCanonicalChange }) {
                     aria-label={selected.favorite ? `Remove ${selected.name} from favorites` : `Add ${selected.name} to favorites`}
                     aria-pressed={selected.favorite}
                     className="rounded-md p-1 hover:bg-accent disabled:opacity-50"
-                    disabled={Boolean(busy) || selected.status !== 'ACTIVE'}
+                    disabled={mutationLocked || selected.status !== 'ACTIVE'}
                     onClick={() => mutateSelected('favorite', (outfit) => model.setFavorite(outfit, !outfit.favorite))}
                   >
                     <Heart className={`h-4 w-4 ${selected.favorite ? 'fill-current' : ''}`} />
                   </button>
                   {selected.status === 'ACTIVE' ? (
-                    <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={Boolean(busy)} onClick={() => mutateSelected('archive', (outfit) => model.archive(outfit))}>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={mutationLocked} onClick={() => mutateSelected('archive', (outfit) => model.archive(outfit))}>
                       <Archive className="h-3.5 w-3.5 mr-1" /> Archive
                     </Button>
                   ) : (
-                    <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={Boolean(busy)} onClick={() => mutateSelected('restore', (outfit) => model.restore(outfit))}>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={mutationLocked} onClick={() => mutateSelected('restore', (outfit) => model.restore(outfit))}>
                       <RotateCcw className="h-3.5 w-3.5 mr-1" /> Restore
                     </Button>
                   )}
@@ -238,19 +264,19 @@ export default function OutfitPanel({ onCanonicalChange }) {
               </div>
 
               <div className="grid grid-cols-2 gap-1.5">
-                <Input value={editName} onChange={(event) => setEditName(event.target.value)} maxLength={200} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} aria-label="Outfit name" />
-                <select value={editStyle} onChange={(event) => setEditStyle(event.target.value)} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit style">
+                <Input value={editName} onChange={(event) => setEditName(event.target.value)} maxLength={200} disabled={mutationLocked || selected.status !== 'ACTIVE'} aria-label="Outfit name" />
+                <select value={editStyle} onChange={(event) => setEditStyle(event.target.value)} disabled={mutationLocked || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit style">
                   {OUTFIT_STYLES.map((value) => <option key={value} value={value}>{label(value)}</option>)}
                 </select>
-                <select value={editSeason} onChange={(event) => setEditSeason(event.target.value)} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit season">
+                <select value={editSeason} onChange={(event) => setEditSeason(event.target.value)} disabled={mutationLocked || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit season">
                   {OUTFIT_SEASONS.map((value) => <option key={value} value={value}>{label(value)}</option>)}
                 </select>
-                <select value={editOccasion} onChange={(event) => setEditOccasion(event.target.value)} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit occasion">
+                <select value={editOccasion} onChange={(event) => setEditOccasion(event.target.value)} disabled={mutationLocked || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit occasion">
                   {OUTFIT_OCCASIONS.map((value) => <option key={value} value={value}>{label(value)}</option>)}
                 </select>
               </div>
               <div className="flex justify-end">
-                <Button size="sm" variant="secondary" className="h-8" disabled={!metadataDirty || Boolean(busy) || selected.status !== 'ACTIVE'} onClick={saveMetadata}>
+                <Button size="sm" variant="secondary" className="h-8" disabled={!metadataDirty || mutationLocked || selected.status !== 'ACTIVE'} onClick={saveMetadata}>
                   <Save className="h-3.5 w-3.5 mr-1" /> Save metadata
                 </Button>
               </div>
@@ -261,7 +287,7 @@ export default function OutfitPanel({ onCanonicalChange }) {
                     value={addGarmentId}
                     onChange={(event) => setAddGarmentId(event.target.value)}
                     className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-                    disabled={Boolean(busy) || availableGarments.length === 0}
+                    disabled={mutationLocked || availableGarments.length === 0}
                     aria-label="Garment to add"
                   >
                     <option value="">Add garment…</option>
@@ -275,7 +301,7 @@ export default function OutfitPanel({ onCanonicalChange }) {
                     value={addRole}
                     onChange={(event) => setAddRole(event.target.value)}
                     className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-                    disabled={Boolean(busy) || !addGarmentId || addAllowedRoles.length === 0}
+                    disabled={mutationLocked || !addGarmentId || addAllowedRoles.length === 0}
                     aria-label="Layer role for new garment"
                   >
                     <option value="">Auto role</option>
@@ -284,7 +310,7 @@ export default function OutfitPanel({ onCanonicalChange }) {
                   <Button
                     size="sm"
                     className="h-8"
-                    disabled={!addGarmentId || addAllowedRoles.length === 0 || Boolean(busy)}
+                    disabled={!addGarmentId || addAllowedRoles.length === 0 || mutationLocked}
                     onClick={() => mutateSelected(
                       `add:${addGarmentId}`,
                       (outfit) => model.addEntry(outfit, addGarmentId, addRole),
@@ -321,20 +347,20 @@ export default function OutfitPanel({ onCanonicalChange }) {
                             (outfit) => model.setEntryRole(outfit, entry.entryId, event.target.value),
                           )}
                           className="h-7 rounded-md border border-input bg-transparent px-1 text-[10px]"
-                          disabled={Boolean(busy) || selected.status !== 'ACTIVE' || allowedRoles.length === 0}
+                          disabled={mutationLocked || selected.status !== 'ACTIVE' || allowedRoles.length === 0}
                           aria-label={`Layer role for ${garment?.name || entry.garmentId}`}
                         >
                           {!currentRoleIsAllowed && <option value={entry.layerRole}>{label(entry.layerRole)} · review</option>}
                           {allowedRoles.map((role) => <option key={role} value={role}>{label(role)}</option>)}
                         </select>
                         <div className="flex items-center">
-                          <button type="button" aria-label={`Move ${garment?.name || entry.garmentId} up`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={Boolean(busy) || selected.status !== 'ACTIVE' || index === 0} onClick={() => mutateSelected(`up:${entry.entryId}`, (outfit) => model.moveEntry(outfit, entry.entryId, -1))}>
+                          <button type="button" aria-label={`Move ${garment?.name || entry.garmentId} up`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={mutationLocked || selected.status !== 'ACTIVE' || index === 0} onClick={() => mutateSelected(`up:${entry.entryId}`, (outfit) => model.moveEntry(outfit, entry.entryId, -1))}>
                             <ArrowUp className="h-3.5 w-3.5" />
                           </button>
-                          <button type="button" aria-label={`Move ${garment?.name || entry.garmentId} down`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={Boolean(busy) || selected.status !== 'ACTIVE' || index === selected.entries.length - 1} onClick={() => mutateSelected(`down:${entry.entryId}`, (outfit) => model.moveEntry(outfit, entry.entryId, 1))}>
+                          <button type="button" aria-label={`Move ${garment?.name || entry.garmentId} down`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={mutationLocked || selected.status !== 'ACTIVE' || index === selected.entries.length - 1} onClick={() => mutateSelected(`down:${entry.entryId}`, (outfit) => model.moveEntry(outfit, entry.entryId, 1))}>
                             <ArrowDown className="h-3.5 w-3.5" />
                           </button>
-                          <button type="button" aria-label={`Remove ${garment?.name || entry.garmentId} from ${selected.name}`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={Boolean(busy) || selected.status !== 'ACTIVE'} onClick={() => mutateSelected(`remove:${entry.entryId}`, (outfit) => model.removeEntry(outfit, entry.entryId))}>
+                          <button type="button" aria-label={`Remove ${garment?.name || entry.garmentId} from ${selected.name}`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={mutationLocked || selected.status !== 'ACTIVE'} onClick={() => mutateSelected(`remove:${entry.entryId}`, (outfit) => model.removeEntry(outfit, entry.entryId))}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
