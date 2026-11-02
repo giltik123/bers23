@@ -1,10 +1,14 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { Bell, CheckCheck } from 'lucide-react';
 import { notificationCenter } from '@/lib/notifications/notificationCenter';
+import { projectNavigationTargets, readProjectNavigationContext } from '@/lib/navigation/projectNavigation';
 
 export default function NotificationCenter() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [state, setState] = useState(notificationCenter.snapshot());
   const [open, setOpen] = useState(false);
   const panelId = useId();
@@ -26,6 +30,19 @@ export default function NotificationCenter() {
       document.removeEventListener('pointerdown', closeOnOutsideClick);
     };
   }, [open]);
+
+  function openNotification(item) {
+    // Session-local notification metadata is a navigation hint, not Project access.
+    void notificationCenter.markRead(item.id);
+    const target = projectNavigationTargets(item.project_id, '').workspace;
+    if (target) {
+      setOpen(false);
+      // Keep current selection/mask state when the notification already points here.
+      if (location.pathname !== '/editor' || readProjectNavigationContext(location.pathname, location.search) !== item.project_id) {
+        navigate(target); // Editor/Core still verifies the Project and session.
+      }
+    }
+  }
 
   return (
     <div className="relative" ref={host}>
@@ -65,7 +82,7 @@ export default function NotificationCenter() {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => notificationCenter.markRead(item.id)}
+                  onClick={() => openNotification(item)}
                   className={['w-full rounded-xl border border-border/50 p-3 text-left transition-colors hover:bg-accent', item.read ? 'opacity-60' : 'bg-primary/5'].join(' ')}
                 >
                   <span className="block text-sm font-medium">{item.title}</span>
