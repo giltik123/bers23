@@ -11,6 +11,7 @@ import { creativeAnalytics } from '@/lib/creative/CreativeAnalytics';
 import { sceneMemory } from '@/lib/scene/sceneMemory';
 import { workspaceManager } from '@/lib/workspace/workspaceManager';
 import { useTranslation } from '@/lib/i18n/TranslationProvider';
+import { useAuth } from '@/lib/AuthContext';
 import {
   savedCreativeStrategyForCurrent,
   scopeCreativeStrategyToProject,
@@ -22,6 +23,8 @@ const EMPTY_OUTFITS = Object.freeze([]);
 // authority for Outfit ownership, references, mutations and any Try-On run.
 export default function CreativeStudioPanel({ project, objects }) {
   const { t } = useTranslation();
+  const { user, isAuthenticated, isLoadingAuth } = useAuth();
+  const principalKey = user?.id && user?.tenant_id ? user.tenant_id + ':' + user.id : '';
   const [goalId, setGoalId] = useState('marketing');
   const [ideaId, setIdeaId] = useState(null);
   const [saved, setSaved] = useState(null);
@@ -29,6 +32,11 @@ export default function CreativeStudioPanel({ project, objects }) {
   const [outfits, setOutfits] = useState(EMPTY_OUTFITS);
   const [outfitsStatus, setOutfitsStatus] = useState('idle');
   const [outfitsRetry, setOutfitsRetry] = useState(0);
+
+  useEffect(() => {
+    setSaved(null);
+    setSavedStrategy(null);
+  }, [principalKey]);
 
   const analysis = useMemo(
     () => creativeStudio.analyze({
@@ -46,6 +54,16 @@ export default function CreativeStudioPanel({ project, objects }) {
     if (goalId !== 'fashion') {
       setOutfits(EMPTY_OUTFITS);
       setOutfitsStatus('idle');
+      return undefined;
+    }
+    if (isLoadingAuth) {
+      setOutfits(EMPTY_OUTFITS);
+      setOutfitsStatus('loading');
+      return undefined;
+    }
+    if (!isAuthenticated || !principalKey) {
+      setOutfits(EMPTY_OUTFITS);
+      setOutfitsStatus('error');
       return undefined;
     }
 
@@ -69,7 +87,7 @@ export default function CreativeStudioPanel({ project, objects }) {
 
     void load();
     return () => { active = false; };
-  }, [goalId, outfitsRetry]);
+  }, [goalId, outfitsRetry, isAuthenticated, isLoadingAuth, principalKey]);
 
   const strategyOutfits = goalId === 'fashion' && outfitsStatus === 'ready' ? outfits : EMPTY_OUTFITS;
   const strategy = useMemo(() => scopeCreativeStrategyToProject(
