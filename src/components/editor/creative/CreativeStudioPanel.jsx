@@ -99,6 +99,13 @@ export default function CreativeStudioPanel({ project, objects }) {
     }),
     project?.id,
   ), [idea, generated.goal, analysis, strategyOutfits, project?.id]);
+  const historyStrategy = useMemo(() => Object.freeze({
+    ...strategy,
+    recommendations: Object.freeze({
+      ...strategy.recommendations,
+      outfits: EMPTY_OUTFITS,
+    }),
+  }), [strategy]);
   const currentSaved = savedCreativeStrategyForCurrent(saved, savedStrategy, strategy);
 
   const selectGoal = (id) => {
@@ -111,13 +118,13 @@ export default function CreativeStudioPanel({ project, objects }) {
     creativeAnalytics.track('idea_selected', { goal: goalId, idea: item.title });
   };
   const save = () => {
-    const entry = creativeHistory.save(strategy);
+    const entry = creativeHistory.save(historyStrategy);
     setSaved(entry);
     setSavedStrategy(strategy);
     creativeAnalytics.track('strategy_saved', { goal: goalId });
   };
   const favorite = () => {
-    const entry = currentSaved || creativeHistory.save(strategy);
+    const entry = currentSaved || creativeHistory.save(historyStrategy);
     setSaved(creativeHistory.favorite(entry));
     setSavedStrategy(strategy);
     creativeAnalytics.track('style_favorited', { goal: goalId });
