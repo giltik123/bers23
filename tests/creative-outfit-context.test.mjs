@@ -162,6 +162,8 @@ test('Creative Studio goal, idea and mood-board copy has matching Russian and En
     orientations: ['landscape', 'portrait'],
     lighting: ['softBalancedLight', 'directionalContrast'],
     composition: ['layeredWide', 'centeredSubject'],
+    palette: ['neutral', 'warm_highlight', 'deep_shadow'],
+    workspaces: ['portrait', 'fashion', 'automotive', 'food', 'architecture', 'product', 'universal'],
   })) {
     for (const key of values) {
       assert.equal(typeof englishCreative[group]?.[key], 'string', 'English ' + group + '.' + key);
@@ -190,6 +192,7 @@ test('Creative Studio cards expose localized labels and accessible selected stat
   assert.match(ideaCard, /creative\.themes\./u);
   assert.match(moodBoardCard, /creative\.lighting\./u);
   assert.match(moodBoardCard, /creative\.composition\./u);
+  assert.match(moodBoardCard, /creative\.palette\./u);
   assert.match(generator, /goalId: goal\.id/u);
   assert.match(generator, /themeKey: creativeThemeKey\(theme\)/u);
   assert.match(generator, /orientation,/u);
@@ -197,4 +200,5 @@ test('Creative Studio cards expose localized labels and accessible selected stat
   assert.match(moodBoards, /compositionKey/u);
   assert.match(panel, /const localizedIdea = useMemo/u);
   assert.match(panel, /idea: localizedIdea/u);
+  assert.match(panel, /creative\.workspaces\./u);
 });
