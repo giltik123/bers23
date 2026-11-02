@@ -123,7 +123,7 @@ test('creative client uses explicit Core endpoint and preserves public error fie
   const client = await readFile('src/api/coreClient.js', 'utf8');
   assert.match(client, /creative:\s*{/);
   assert.match(client, /request\('\/creative\/execute'/);
-  for (const field of ['status', 'code', 'correlationId', 'retryable']) assert.match(client, new RegExp(`error\\.${field}`));
+  for (const field of ['status', 'code', 'correlationId', 'retryable']) assert.match(client, new RegExp(`error\.${field}`));
 });
 
 test('production CSP permits local WASM without arbitrary script execution and does not enforce incompatible Trusted Types', () => {
@@ -175,11 +175,11 @@ async function sourceFiles(root) {
 }
 
 async function registerOtpHandlersFromSource(overrides = {}) {
-  // Exercise the real React component's three async handlers without mounting
-  // the browser or calling Core. This extracts only the non-JSX handler block.
+  // Exercise the real React component's auth handlers without mounting the
+  // browser or calling Core. The hosted R3m gate covers the real browser path.
   const source = await readFile('src/pages/Register.jsx', 'utf8');
   const start = source.indexOf('  const handleSubmit = async (e) => {');
-  const end = source.indexOf('  const handleGoogle =');
+  const end = source.indexOf('\n  if (showOtp)', start);
   assert.ok(start >= 0 && end > start, 'registration handlers must be present');
   const context = {
     coreClient: { auth: {} },
@@ -199,7 +199,7 @@ async function registerOtpHandlersFromSource(overrides = {}) {
     ...overrides,
   };
   const handlers = runInNewContext(
-    source.slice(start, end) + '\n({ handleSubmit, handleVerify, handleResend })',
+    source.slice(start, end) + '\n({ handleSubmit, handleVerify, handleResend, handleGoogle })',
     context,
   );
   return { ...handlers, context, source };
@@ -241,7 +241,7 @@ test('malformed registration response never opens an unusable OTP screen', async
   assert.equal(context.requestInFlight.current, false);
 });
 
-test('OTP resend and verification share a lock, and resend failures permit retry', async () => {
+test('OTP resend and verification share a lock, and network failures permit safe retry', async () => {
   let rejectResend;
   const pending = new Promise((_, reject) => { rejectResend = reject; });
   let resendCalls = 0;
@@ -261,9 +261,9 @@ test('OTP resend and verification share a lock, and resend failures permit retry
   await handleVerify();
   assert.equal(resendCalls, 1);
   assert.equal(verifyCalls, 0);
-  rejectResend(new Error('offline'));
+  rejectResend(new TypeError('offline private network details'));
   await first;
-  assert.ok(errors.includes('offline'));
+  assert.deepEqual(errors.filter(Boolean), ['errors.network']);
   assert.equal(context.requestInFlight.current, false);
   await handleResend();
   await handleVerify();
@@ -273,4 +273,60 @@ test('OTP resend and verification share a lock, and resend failures permit retry
   assert.match(source, /disabled=\{loading \|\| !verificationHandle\}/);
   assert.match(source, /<InputOTP[^>]*disabled=\{loading\}/);
   assert.match(source, /role="alert"/);
+});
+
+test('Register and OTP expose only localized recovery for HTTP failures', async () => {
+  const sensitive = 'private Core response and verification details';
+  const errors = [];
+  const { handleSubmit, handleVerify, handleResend, source } = await registerOtpHandlersFromSource({
+    coreClient: { auth: {
+      register: async () => { throw Object.assign(new Error(sensitive), { status: 409 }); },
+      verifyOtp: async () => { throw Object.assign(new Error(sensitive), { status: 400 }); },
+      resendOtp: async () => { throw Object.assign(new Error(sensitive), { status: 429 }); },
+    } },
+    setError: value => errors.push(value),
+  });
+  await handleSubmit({ preventDefault() {} });
+  await handleVerify();
+  await handleResend();
+  assert.deepEqual(errors.filter(Boolean), [
+    'authUi.registrationFailed',
+    'authUi.invalidCode',
+    'authUi.resendFailed',
+  ]);
+  assert.equal(errors.join(' ').includes(sensitive), false);
+  assert.doesNotMatch(source, /setError\(err\.message/);
+});
+
+test('Register Google navigation shares the single-flight lock and recovers safely', async () => {
+  let providerCalls = 0;
+  let registerCalls = 0;
+  let failProvider = true;
+  const errors = [];
+  const { handleGoogle, handleSubmit, context, source } = await registerOtpHandlersFromSource({
+    coreClient: { auth: {
+      loginWithProvider: () => {
+        providerCalls += 1;
+        if (failProvider) throw new TypeError('private provider navigation details');
+      },
+      register: async () => { registerCalls += 1; },
+    } },
+    setError: value => errors.push(value),
+  });
+  handleGoogle();
+  assert.equal(providerCalls, 1);
+  assert.deepEqual(errors.filter(Boolean), ['errors.network']);
+  assert.equal(context.requestInFlight.current, false);
+  failProvider = false;
+  handleGoogle();
+  handleGoogle();
+  await handleSubmit({ preventDefault() {} });
+  assert.equal(providerCalls, 2);
+  assert.equal(registerCalls, 0);
+  assert.equal(context.requestInFlight.current, true);
+  assert.match(source, /onClick=\{handleGoogle\} disabled=\{loading\}/);
+  assert.match(source, /aria-busy=\{loading\}/);
+  for (const id of ['email', 'password', 'confirm']) {
+    assert.match(source, new RegExp(`<Input id="${id}"[^\\n]*disabled=\\{loading\\}`));
+  }
 });
