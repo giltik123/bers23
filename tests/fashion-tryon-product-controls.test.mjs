@@ -5,6 +5,14 @@ import { canonicalTryOnProductUiState } from '../src/application/fashion/canonic
 
 const ENTRY = 'entry-id';
 const GARMENT = 'garment-id';
+const TRY_ON_I18N_KEYS = [
+  'controlsLabel', 'deterministicTryOn', 'close', 'checkReadiness', 'run', 'resume', 'recover', 'abandon',
+  'readinessRunDisabled', 'tryOnUnchecked', 'tryOnUncertain', 'tryOnReady', 'tryOnSourceUnavailable',
+  'tryOnStaleSource', 'tryOnGarmentUnavailable', 'tryOnGarmentUnsupported', 'tryOnRepresentationRequired',
+  'tryOnRepresentationAmbiguous', 'tryOnBodyAnchorsRequired', 'tryOnBodyAnchorsAmbiguous',
+  'tryOnEvidenceInvalid', 'tryOnWarpPending', 'tryOnTextureNotExecuted', 'tryOnTextureNotPrepared',
+  'tryOnTexturePending', 'tryOnTextureFailed', 'tryOnTextureStale',
+];
 const host = (overrides = {}) => ({ active: true, busy: false, disposed: false, hasInFlight: false, phase: 'IDLE', ...overrides });
 const readiness = (status, categoryGroup) => ({
   status: 'READINESS',
@@ -151,14 +159,40 @@ test('React controls contain no auto-run, retry, Core/provider or execution iden
   const component = await readFile('src/components/editor/outfits/CanonicalTryOnProductControls.jsx', 'utf8');
   assert.doesNotMatch(component, /useEffect/);
   assert.doesNotMatch(component, /onRetry|\bRetry\b/);
-  assert.match(component, /Check readiness/);
-  assert.match(component, /> Run\s*</);
-  assert.match(component, /> Resume\s*</);
-  assert.match(component, /> Recover\s*</);
-  assert.match(component, /> Abandon\s*</);
+  assert.match(component, /t\('fashionUi\.checkReadiness'\)/);
+  assert.match(component, /t\('fashionUi\.run'\)/);
+  assert.match(component, /t\('fashionUi\.resume'\)/);
+  assert.match(component, /t\('fashionUi\.recover'\)/);
+  assert.match(component, /t\('fashionUi\.abandon'\)/);
   assert.match(component, /!ui\.canRun/);
   for (const forbidden of [
     'coreClient', 'fetch(', 'clientRequestId', 'ticketId', 'representationId', 'anchorSetId', 'storageId',
     'contentSha256', 'destinationMesh', 'FASHN', 'Billing', 'credits_used', 'outfitManager', 'tryonEngine',
   ]) assert.equal(component.includes(forbidden), false, forbidden);
+});
+
+test('canonical Try-On control copy is complete in both English and Russian without changing action policy', async () => {
+  const [englishSource, russianSource, component] = await Promise.all([
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+    readFile('src/components/editor/outfits/CanonicalTryOnProductControls.jsx', 'utf8'),
+  ]);
+  const extractFashionUi = (source) => {
+    const match = source.match(/fashionUi:\s*(\{[\s\S]*?\n\}),\n  assetUi:/);
+    assert.ok(match, 'fashionUi catalog exists');
+    return JSON.parse(match[1]);
+  };
+  const english = extractFashionUi(englishSource);
+  const russian = extractFashionUi(russianSource);
+  for (const key of TRY_ON_I18N_KEYS) {
+    assert.equal(typeof english[key], 'string', `English fashionUi.${key}`);
+    assert.equal(typeof russian[key], 'string', `Russian fashionUi.${key}`);
+    assert.ok(english[key].trim().length > 0, `English fashionUi.${key} is non-empty`);
+    assert.ok(russian[key].trim().length > 0, `Russian fashionUi.${key} is non-empty`);
+  }
+  for (const key of TRY_ON_I18N_KEYS) {
+    assert.ok(component.includes(`fashionUi.${key}`) || component.includes(`'${key}'`), `control maps or renders fashionUi.${key}`);
+  }
+  assert.match(component, /t\(tryOnMessageKey\(ui\)\)/);
+  assert.doesNotMatch(component, /Check readiness|Run remains disabled|> Run\s*</);
 });
