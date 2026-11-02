@@ -97,7 +97,7 @@ export default function VoiceInputPanel({
       setPhase('IDLE');setPartial('');
       setError(t('voiceUi.errorEditorBusy'));
     }
-  },[disabled]);
+  },[disabled,t]);
   const start=async()=>{
     if(disabled||phase==='RECORDING'||phase==='PREPARING')return;
     const generation=++generationRef.current;
@@ -214,7 +214,6 @@ export default function VoiceInputPanel({
             {draft.kind==='AMBIGUOUS'?' — '+t('voiceUi.ambiguousHint'):''}
             {draft.kind==='RESIZE'&&draft.params
               ?` — ${draft.params.width} × ${draft.params.height}`:''}
-            
             {draft.kind==='WARDROBE_QUERY'&&draft.params?.hints
               ?` — ${t('voiceUi.searchHint',{query:draft.params.query})}`:''}
           </p>}
