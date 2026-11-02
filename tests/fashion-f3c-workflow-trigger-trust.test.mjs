@@ -43,7 +43,7 @@ function readGitBlob(blobSha) {
   return result.stdout;
 }
 
-test('F3c pull-request trigger is exactly the accepted 12+19 authority manifest', async () => {
+test('F3c pull-request trigger is exactly the accepted 12+30 authority manifest', async () => {
   const workflow = await readFile(WORKFLOW_PATH, 'utf8');
   const manifest = JSON.parse(await readFile(MANIFEST_PATH, 'utf8'));
 
