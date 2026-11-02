@@ -15,6 +15,8 @@ test('Recipe browser localizes views, categories, search, chain status and empty
     readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
   ]);
   assert.match(panel, /useTranslation/);
+  assert.match(panel, /t\('recipes\.' \+ item\.id\)/);
+  assert.match(panel, /setView\(item\.id\)/);
   for (const key of ['chainsUnavailable', 'chainsUnavailableHint', 'searchPlaceholder', 'emptyFavorites', 'emptyRecent', 'emptySearch']) {
     assert.ok(panel.includes('recipes.' + key), 'RecipePanel uses recipes.' + key);
     assert.ok(english.includes(key + ': '), 'English recipes.' + key);
@@ -26,7 +28,7 @@ test('Recipe browser localizes views, categories, search, chain status and empty
     assert.ok(english.includes(id + ": '"), 'English recipe category ' + id);
     assert.ok(russian.includes(id + ": '"), 'Russian recipe category ' + id);
   }
-  assert.doesNotMatch(panel, /Recommended|Popular|Recent|Favorites|Search recipes|Recipe chains are not enabled|No favorites yet|No recipes used yet|No recipes found/);
+  assert.doesNotMatch(panel, /label: 'Recommended'|label: 'Popular'|label: 'Recent'|label: 'Favorites'|placeholder="Search recipes|Recipe chains are not enabled|No favorites yet|No recipes used yet|No recipes found/);
   assert.match(panel, /recipeSearch\.search/);
   assert.match(panel, /recipeManager\.recommendFor/);
 });
