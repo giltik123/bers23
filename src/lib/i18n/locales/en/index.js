@@ -291,7 +291,18 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
     "favorites": "Favorites",
     "loading": "Loading canonical assets…",
     "empty": "No canonical Project assets match these filters.",
-    "open": "Open project"
+    "open": "Open project",
+    "projectType": "Project",
+    "canonicalArtifactTag": "Canonical artifact",
+    "selectAsset": "Select an asset to view details.",
+    "tags": "Tags",
+    "related": "Related assets",
+    "addToCollection": "Add to active collection",
+    "usageHistory": "Usage history",
+    "usageCount": "{count} recent interactions",
+    "noUsage": "No recorded usage yet",
+    "addFavorite": "Add {name} to favorites",
+    "removeFavorite": "Remove {name} from favorites",
   },
 };
 export default modules;

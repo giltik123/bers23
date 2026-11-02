@@ -41,6 +41,9 @@ on:
       - 'src/application/selection/contracts.ts'
       - 'src/application/selection/SelectionApplicationService.ts'
       - 'src/pages/Projects.jsx'
+      - 'src/components/assets/AssetCard.jsx'
+      - 'src/components/assets/AssetDetails.jsx'
+      - 'tests/asset-library-ru-a11y.test.mjs'
       - 'src/components/AppLayout.jsx'
       - 'src/components/ThemeToggle.jsx'
       - 'src/components/NotificationCenter.jsx'
@@ -121,6 +124,8 @@ jobs:
             tests/agent-editor-task-handoff.test.mjs \
             tests/editor-orthogonal-transform-ui.test.mjs \
             tests/realesrgan-editor-boundary.test.mjs
+      - name: Asset Library RU/EN details and accessibility regression
+        run: node --test tests/asset-library-ru-a11y.test.mjs
       - name: Deterministic local photo and export authority regression
         run: node --test tests/local-compare.test.mjs tests/local-compare-editor-wiring.test.mjs tests/local-adjustments.test.mjs tests/local-history.test.mjs tests/local-history-editor-wiring.test.mjs tests/local-adjustments-editor-wiring.test.mjs
       - name: Real canonical alpha brush opacity regression

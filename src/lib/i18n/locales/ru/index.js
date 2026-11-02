@@ -288,7 +288,18 @@ export const modules = {
     "favorites": "Избранное",
     "loading": "Загружаем материалы…",
     "empty": "Материалы по заданным фильтрам не найдены.",
-    "open": "Открыть проект"
+    "open": "Открыть проект",
+    "projectType": "Проект",
+    "canonicalArtifactTag": "Канонический артефакт",
+    "selectAsset": "Выберите материал, чтобы увидеть подробности.",
+    "tags": "Теги",
+    "related": "Связанные материалы",
+    "addToCollection": "Добавить в активную коллекцию",
+    "usageHistory": "История использования",
+    "usageCount": "Недавних действий: {count}",
+    "noUsage": "История использования пока пуста",
+    "addFavorite": "Добавить {name} в избранное",
+    "removeFavorite": "Убрать {name} из избранного",
   },
 };
 export default modules;
