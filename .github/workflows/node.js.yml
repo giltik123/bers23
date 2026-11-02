@@ -39,6 +39,8 @@ jobs:
     - run: npm run build --if-present
     - run: npm run typecheck
     - run: npm run lint
+    - name: Prove UI component undefined identifiers fail lint
+      run: node --test tests/ui-component-no-undef.test.mjs
     - run: npm run verify:selection-model
     - run: npm run check:model-weight-tracking
     - run: npm run check:browser-bundle
