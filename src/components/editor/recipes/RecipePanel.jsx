@@ -10,7 +10,12 @@ import { recipeSearch } from '@/lib/recipes/recipeSearch';
 import { recipeFavorites } from '@/lib/recipes/recipeFavorites';
 import { recipeHistory } from '@/lib/recipes/recipeHistory';
 
-const VIEWS = ['recommended', 'popular', 'recent', 'favorites'];
+const VIEWS = [
+  { id: 'recommended' },
+  { id: 'popular' },
+  { id: 'recent' },
+  { id: 'favorites' },
+];
 
 export default function RecipePanel({ objects = [], selectedObjects = [], onUse, disabled }) {
   const { t } = useTranslation();
@@ -54,7 +59,7 @@ export default function RecipePanel({ objects = [], selectedObjects = [], onUse,
           {VIEWS.map((item) => (
             <button key={item.id} onClick={() => { setView(item.id); setCategory(null); }}
               className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${view === item.id && !category ? 'bg-primary text-primary-foreground' : 'bg-secondary hover:bg-accent'}`}>
-              {t('recipes.' + item)}
+              {t('recipes.' + item.id)}
             </button>
           ))}
         </div>
