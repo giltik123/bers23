@@ -23,8 +23,7 @@ claim. Browser support and resource limits still need device-specific testing.
 ## Fixed build baseline
 
 - JDK 17.
-- Gradle 8.13 (the CI workflow installs this version; no unreviewed major Gradle
-  migration is implied).
+- Gradle 8.13; no unreviewed major Gradle migration is implied.
 - Android Gradle Plugin 8.13.2.
 - Android SDK platform 36; `compileSdk 36` and `targetSdk 36`.
 - Minimum Android API 24.
@@ -74,7 +73,7 @@ identifiers, not passwords. Multiple fingerprints may be comma-separated, for
 example the Play app-signing certificate and an internal-testing certificate.
 
 `versionCode` must increase monotonically for every Play upload. `versionName`
-is the user-facing semantic version. The debug/CI defaults are intentionally
+is the user-facing semantic version. The debug defaults are intentionally
 non-release values (`app.bers.example`, `https://app.bers.example`, `0.0.0`).
 
 Run the non-secret preflight before producing a release:
@@ -124,7 +123,7 @@ Outputs:
 Deploy the complete `dist` tree, including the hidden `.well-known` directory,
 to `BERS_ANDROID_URL`. The file must be available without authentication at
 `/.well-known/assetlinks.json`, with a JSON content type and no redirect to a
- different origin. Rebuilding the web frontend after generating the file may
+different origin. Rebuilding the web frontend after generating the file may
 clean `dist`; generate it after the final web build and deploy both together.
 
 The AAB and web deployment form one release candidate. Record the exact Git SHA,
@@ -132,22 +131,27 @@ Android version code/name, application id, public origin, public certificate
 fingerprints and SHA-256 of the AAB in the release evidence. Do not record
 passwords or private key material.
 
-## Debug and CI evidence
+## Debug evidence and CI limitation
 
-The `Android TWA` workflow runs the Node release-contract tests, Android lint
-and `assembleDebug` on the exact candidate SHA. It uploads only a short-lived
-`bers-twa-debug-apk` artifact. That artifact is for build/CI inspection, is not a
-Play release, and does not prove Digital Asset Links, Auth, UI journeys or
-physical-device behavior.
-
-For a local debug build with the checked-in placeholder configuration:
+Run the bounded debug check from the repository root:
 
 ```sh
-gradle -p android --no-daemon lintDebug assembleDebug
+sh scripts/build-android-debug.sh
 ```
 
+It runs the Node release-contract tests, Android lint and `assembleDebug` using
+the deliberately non-release placeholder configuration. The resulting
+`app-debug.apk` is for local build inspection, is not a Play release, and does
+not prove Digital Asset Links, Auth, UI journeys or physical-device behavior.
 A placeholder build normally opens a Custom Tab rather than a verified TWA.
-Use a real test origin and a matching fingerprint for functional testing.
+
+This branch cannot add `.github/workflows/android-twa.yml` with the currently
+available GitHub OAuth grant: workflow writes require the `workflow` scope.
+Consequently the script is **not yet hosted Android CI evidence**. Before
+release, add an exact-head workflow that checks out the candidate SHA, runs this
+script with JDK 17/Gradle 8.13/SDK 36, and uploads only a short-lived debug APK.
+Do not bypass the missing permission or describe local/virtual evidence as
+hosted or physical acceptance.
 
 ## Required candidate verification
 
@@ -155,7 +159,7 @@ Hosted green CI is necessary but not sufficient. Before submission:
 
 1. Verify the exact candidate SHA has passed `BERS Required Acceptance`, Auth
    Lifecycle Browser E2E, Node builds, real PostgreSQL suites, production image,
-   production dependency audit and Android TWA checks.
+   production dependency audit and the Android debug contract/build.
 2. Fetch the deployed asset-links URL and validate its JSON, package name and
    fingerprints. Confirm no redirect or accidental HTML response.
 3. Install the signed candidate through the intended Play internal-test track.

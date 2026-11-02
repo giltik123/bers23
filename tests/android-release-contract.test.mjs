@@ -68,15 +68,15 @@ test('Android shell is a minimal SDK 36 TWA without dangerous permissions or a s
   assert.doesNotMatch(`${gradle}\n${manifest}`, /WebView|Capacitor|localStorage|sessionStorage|SameSite=None/i);
 });
 
-test('web manifest is installable and CI produces only a clearly bounded debug artifact', () => {
+test('web manifest is installable and debug evidence cannot be mistaken for signed release evidence', () => {
   const manifest = JSON.parse(readFileSync('public/manifest.json', 'utf8'));
   assert.equal(manifest.start_url, '/');
   assert.equal(manifest.scope, '/');
   assert.equal(manifest.display, 'standalone');
   assert.ok(manifest.icons.length > 0);
-  const workflow = readFileSync('.github/workflows/android-twa.yml', 'utf8');
-  assert.match(workflow, /lintDebug assembleDebug/);
-  assert.doesNotMatch(workflow, /bundleRelease|assembleRelease|KEYSTORE_PASSWORD/);
+  const debugScript = readFileSync('scripts/build-android-debug.sh', 'utf8');
+  assert.match(debugScript, /lintDebug assembleDebug/);
+  assert.doesNotMatch(debugScript, /bundleRelease|assembleRelease|KEYSTORE_PASSWORD/);
   const gitignore = readFileSync('.gitignore', 'utf8');
   assert.match(gitignore, /\*.jks/);
   assert.match(gitignore, /android\/local\.properties/);
