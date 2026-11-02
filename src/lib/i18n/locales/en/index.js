@@ -293,5 +293,12 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
     "empty": "No canonical Project assets match these filters.",
     "open": "Open project"
   },
+  notFoundUi: {
+    title: 'Page not found',
+    description: 'The page "{page}" could not be found in this application.',
+    adminTitle: 'Admin note',
+    adminMessage: "This could mean that the AI hasn't implemented this page yet. Ask it to implement it in the chat.",
+    goHome: 'Go home',
+  },
 };
 export default modules;

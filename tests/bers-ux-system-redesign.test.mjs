@@ -141,3 +141,23 @@ test('Free generation uses explicit consent, server-owned account setup and no b
   assert.ok(studio.includes('бесплатно в пределах серверного лимита'));
   assert.ok(editor.includes('onPrepareFreeAccount={() => creativeEditApplicationService.prepareAccount()}'));
 });
+
+
+test('unknown-route recovery is localized in Russian and English', async () => {
+  const [page, english, russian] = await Promise.all([
+    read('src/lib/PageNotFound.jsx'),
+    read('src/lib/i18n/locales/en/index.js'),
+    read('src/lib/i18n/locales/ru/index.js'),
+  ]);
+
+  const englishNotFound = english.slice(english.lastIndexOf('notFoundUi:'));
+  const russianNotFound = russian.slice(russian.lastIndexOf('notFoundUi:'));
+  for (const key of ['title', 'description', 'adminTitle', 'adminMessage', 'goHome']) {
+    assert.ok(page.includes('notFoundUi.' + key), 'PageNotFound key missing: ' + key);
+    assert.ok(englishNotFound.includes(key + ':'), 'English notFoundUi key missing: ' + key);
+    assert.ok(russianNotFound.includes(key + ':'), 'Russian notFoundUi key missing: ' + key);
+  }
+  assert.match(page, /useTranslation/);
+  assert.match(page, /coreClient\.auth\.me\(\)/);
+  assert.doesNotMatch(page, /coreClient\.(entities|functions)\b/);
+});
