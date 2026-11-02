@@ -23,6 +23,7 @@ on:
       - 'src/platform/creative/local-ai/models/lama-inpainting.manifest.json'
       - 'package.json'
       - 'package-lock.json'
+      - '.npmrc'
       - '**/*.ckpt'
       - '**/*.pth'
       - '**/*.pt'
