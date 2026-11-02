@@ -4,6 +4,7 @@ import test from 'node:test';
 import englishCreative from '../src/lib/i18n/locales/en/creative.js';
 import russian from '../src/lib/i18n/locales/ru/index.js';
 import { projectReadyCreativeOutfits } from '../src/application/creative/creativeOutfitContext.js';
+import { creativeThemeKey } from '../src/lib/creative/CreativeThemes.js';
 
 const OUTFIT_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
@@ -117,10 +118,12 @@ test('Creative Studio reads Outfit data only through the canonical read port and
   assert.ok(workflow.includes("coreClient\\.fashion\\.outfits\\.(get|create"));
 });
 
-test('Creative Studio Outfit status and summary strings have Russian and English translations', () => {
+test('Creative Studio goal, idea and mood-board copy has matching Russian and English translations', () => {
+  const goalIds = ['social', 'marketing', 'advertising', 'ecommerce', 'portrait', 'real_estate', 'automotive', 'food', 'architecture', 'fashion', 'creative_art'];
+  const themeKeys = ['magazine_cover', 'golden_hour', 'travel_postcard', 'luxury_product_photo', 'minimal_style', 'studio_lighting', 'cinematic', 'cyberpunk', 'professional_portrait', 'wedding_photography', 'real_estate_enhancement', 'fashion_campaign', 'vintage', 'food_photography'];
   const keys = [
     'description',
-    'outfitContextHint',
+    'suggestedWorkspace',
     'strategyPreview',
     'strategyDescription',
     'estimatedCredits',
@@ -129,15 +132,69 @@ test('Creative Studio Outfit status and summary strings have Russian and English
     'saveStrategy',
     'favoriteStrategy',
     'availableOutfits',
+    'outfitContextHint',
     'loadingOutfits',
     'outfitsLoadFailed',
     'noReadyOutfits',
     'outfitItemCount',
+    'selectIdea',
+    'ideaDescription',
   ];
+
   for (const key of keys) {
     assert.equal(typeof englishCreative[key], 'string', 'English creative.' + key);
     assert.equal(typeof russian.creative?.[key], 'string', 'Russian creative.' + key);
     assert.ok(englishCreative[key].trim());
     assert.ok(russian.creative[key].trim());
   }
+  for (const id of goalIds) {
+    assert.equal(typeof englishCreative.goals?.[id], 'string', 'English goal ' + id);
+    assert.equal(typeof russian.creative.goals?.[id], 'string', 'Russian goal ' + id);
+    assert.equal(typeof englishCreative.goalDescriptions?.[id], 'string', 'English goal description ' + id);
+    assert.equal(typeof russian.creative.goalDescriptions?.[id], 'string', 'Russian goal description ' + id);
+  }
+  for (const key of themeKeys) {
+    assert.equal(typeof englishCreative.themes?.[key], 'string', 'English theme ' + key);
+    assert.equal(typeof russian.creative.themes?.[key], 'string', 'Russian theme ' + key);
+  }
+  for (const [group, values] of Object.entries({
+    emphasis: ['recommended', 'alternative'],
+    orientations: ['landscape', 'portrait'],
+    lighting: ['softBalancedLight', 'directionalContrast'],
+    composition: ['layeredWide', 'centeredSubject'],
+  })) {
+    for (const key of values) {
+      assert.equal(typeof englishCreative[group]?.[key], 'string', 'English ' + group + '.' + key);
+      assert.equal(typeof russian.creative[group]?.[key], 'string', 'Russian ' + group + '.' + key);
+    }
+  }
+});
+
+test('Creative Studio cards expose localized labels and accessible selected state', async () => {
+  const [goalPicker, ideaCard, moodBoardCard, generator, moodBoards, panel] = await Promise.all([
+    readFile('src/components/editor/creative/CreativeGoalPicker.jsx', 'utf8'),
+    readFile('src/components/editor/creative/CreativeIdeaCard.jsx', 'utf8'),
+    readFile('src/components/editor/creative/CreativeMoodBoardCard.jsx', 'utf8'),
+    readFile('src/lib/creative/CreativeIdeaGenerator.js', 'utf8'),
+    readFile('src/lib/creative/CreativeMoodBoards.js', 'utf8'),
+    readFile('src/components/editor/creative/CreativeStudioPanel.jsx', 'utf8'),
+  ]);
+
+  assert.equal(creativeThemeKey('Luxury product photo'), 'luxury_product_photo');
+  assert.equal(creativeThemeKey('Golden hour'), 'golden_hour');
+  assert.match(goalPicker, /useTranslation/u);
+  assert.match(goalPicker, /aria-pressed/u);
+  assert.match(goalPicker, /creative\.goals\./u);
+  assert.match(ideaCard, /useTranslation/u);
+  assert.match(ideaCard, /aria-pressed/u);
+  assert.match(ideaCard, /creative\.themes\./u);
+  assert.match(moodBoardCard, /creative\.lighting\./u);
+  assert.match(moodBoardCard, /creative\.composition\./u);
+  assert.match(generator, /goalId: goal\.id/u);
+  assert.match(generator, /themeKey: creativeThemeKey\(theme\)/u);
+  assert.match(generator, /orientation,/u);
+  assert.match(moodBoards, /lightingKey/u);
+  assert.match(moodBoards, /compositionKey/u);
+  assert.match(panel, /const localizedIdea = useMemo/u);
+  assert.match(panel, /idea: localizedIdea/u);
 });
