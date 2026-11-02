@@ -282,6 +282,17 @@ try {
   diagnostics.deterministicEdit.acceptedImage = acceptedImage;
   assertSignedCoreImage(acceptedImage, [8, 12], 'accepted orthogonal-transform Project image');
   assertArtifactResponse(acceptedImage.src, 'accepted orthogonal-transform Project image');
+  // The explicit Project Accept also feeds the existing session-local Notification Center.
+  // Verify that its user-facing copy follows the shared locale catalog rather than hard-coded English.
+  const notificationButton = page.getByRole('button', { name: /^Notifications/ });
+  await notificationButton.click();
+  await page.getByText('Edit saved', { exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.getByText('Your accepted result has been added to project history.', { exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
+  diagnostics.deterministicEdit.acceptedNotification = {
+    title: 'Edit saved',
+    message: 'Your accepted result has been added to project history.',
+  };
+  await notificationButton.click();
 
   const acceptedState = await readProjectState(projectId);
   diagnostics.deterministicEdit.acceptedState = acceptedState;
@@ -492,6 +503,7 @@ try {
       coreResult: diagnostics.deterministicEdit.coreResult,
       previewImage,
       acceptedImage,
+      acceptedNotification: diagnostics.deterministicEdit.acceptedNotification,
       undoImage,
       redoImage,
       initial: summarizeState(initialState),
