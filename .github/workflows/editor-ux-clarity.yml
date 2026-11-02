@@ -57,6 +57,12 @@ on:
       - 'src/components/adaptive/AdaptiveNavigation.jsx'
       - 'src/index.css'
       - 'src/components/editor/SelectionToolbar.jsx'
+      - 'src/components/editor/GenerationProgress.jsx'
+      - 'src/components/editor/PipelineFlow.jsx'
+      - 'src/components/editor/SegmentationProgress.jsx'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/editor-progress-localization.test.mjs'
       - 'src/components/editor/ObjectPanel.jsx'
       - 'src/components/editor/ImageCanvas.jsx'
       - 'scripts/test-release-r3b-browser-e2e.mjs'
@@ -121,6 +127,7 @@ jobs:
             tests/agent-editor-task-handoff.test.mjs \
             tests/editor-orthogonal-transform-ui.test.mjs \
             tests/realesrgan-editor-boundary.test.mjs
+            tests/editor-progress-localization.test.mjs
       - name: Deterministic local photo and export authority regression
         run: node --test tests/local-compare.test.mjs tests/local-compare-editor-wiring.test.mjs tests/local-adjustments.test.mjs tests/local-history.test.mjs tests/local-history-editor-wiring.test.mjs tests/local-adjustments-editor-wiring.test.mjs
       - name: Real canonical alpha brush opacity regression
