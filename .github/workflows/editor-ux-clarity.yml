@@ -126,7 +126,7 @@ jobs:
             tests/editor-zero-object-navigation.test.mjs \
             tests/agent-editor-task-handoff.test.mjs \
             tests/editor-orthogonal-transform-ui.test.mjs \
-            tests/realesrgan-editor-boundary.test.mjs
+            tests/realesrgan-editor-boundary.test.mjs \
             tests/editor-progress-localization.test.mjs
       - name: Deterministic local photo and export authority regression
         run: node --test tests/local-compare.test.mjs tests/local-compare-editor-wiring.test.mjs tests/local-adjustments.test.mjs tests/local-history.test.mjs tests/local-history-editor-wiring.test.mjs tests/local-adjustments-editor-wiring.test.mjs
