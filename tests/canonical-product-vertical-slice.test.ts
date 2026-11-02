@@ -77,6 +77,7 @@ test('billing bridge delegates balance mutation to server transactions', async (
 
 
 
+
 test('Billing and Subscription pages are localized without activating payment authority', async () => {
   const [billingPage, subscriptionPage, english, russian] = await Promise.all([
     readFile('src/pages/Billing.jsx', 'utf8'),
@@ -85,7 +86,7 @@ test('Billing and Subscription pages are localized without activating payment au
     readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
   ]);
   const billingStart = russian.indexOf('billing: {');
-  const settingsStart = russian.indexOf('\\n  settings:', billingStart);
+  const settingsStart = russian.indexOf('  settings:', billingStart);
   assert.ok(billingStart >= 0 && settingsStart > billingStart, 'Russian billing namespace must exist');
   const russianBilling = russian.slice(billingStart, settingsStart);
   const requiredKeys = [
@@ -94,18 +95,21 @@ test('Billing and Subscription pages are localized without activating payment au
     'verifiedPaymentsNotice', 'viewBillingStatus',
   ];
   for (const key of requiredKeys) {
-    const keyPattern = new RegExp('\\\\b' + key + '\\\\s*:');
-    assert.match(english, keyPattern, 'English billing.' + key);
-    assert.match(russianBilling, keyPattern, 'Russian billing.' + key);
+    assert.ok(english.includes(key + ':'), 'English billing.' + key);
+    assert.ok(russianBilling.includes(key + ':'), 'Russian billing.' + key);
   }
-  for (const [name, source] of [['Billing', billingPage], ['Subscription', subscriptionPage]]) {
-    assert.match(source, /useTranslation/, name + ' must use the shared locale provider');
-    assert.match(source, /t\\('billing\\./, name + ' must render billing locale keys');
-    assert.doesNotMatch(source, /\\b(?:coreClient|checkoutClient|paymentProvider|billingAuthority)\\b/,
+  for (const [name, page] of [['Billing', billingPage], ['Subscription', subscriptionPage]]) {
+    assert.ok(page.includes('useTranslation'), name + ' must use the shared locale provider');
+    assert.ok(page.includes("t('billing."), name + ' must render billing locale keys');
+    assert.equal(/coreClient|checkoutClient|paymentProvider|billingAuthority/.test(page), false,
       name + ' must not introduce payment or billing authority');
   }
-  assert.match(subscriptionPage, /to="\\/billing"/, 'Subscription must retain its informational Billing link');
-  assert.doesNotMatch(billingPage + subscriptionPage,
-    /Billing & Credits|Payments coming soon|Server-owned billing is not connected yet|View billing status/,
-    'visible page copy must come from the locale catalog');
+  assert.ok(subscriptionPage.includes('to="/billing"'), 'Subscription must retain its informational Billing link');
+  for (const hardcoded of [
+    'Billing & Credits', 'Payments coming soon',
+    'Server-owned billing is not connected yet', 'View billing status',
+  ]) {
+    assert.equal((billingPage + subscriptionPage).includes(hardcoded), false,
+      'visible page copy must come from the locale catalog: ' + hardcoded);
+  }
 });
