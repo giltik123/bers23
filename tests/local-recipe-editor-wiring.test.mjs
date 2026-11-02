@@ -11,16 +11,16 @@ const [editor, controls, recipe, releaseE2e, workflow] = await Promise.all([
 ]);
 
 test('save/restore buttons are labeled, keyboard-accessible, and refuse a missing original photo', () => {
-  assert.match(controls, /aria-label="Save and restore local editing session"/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.recipeSection'\)\}/);
   assert.match(controls, /onClick=\{onSave\}/);
-  assert.match(controls, /'Save edit recipe'/);
+  assert.match(controls, /t\('localEditorUi\.saveRecipe'\)/);
   assert.match(controls, /fileInputRef\.current\?\.click\(\)/);
-  assert.match(controls, /'Restore edit recipe'/);
+  assert.match(controls, /t\('localEditorUi\.restoreRecipe'\)/);
   assert.match(controls, /ref=\{fileInputRef\} onChange=\{onChooseFile\}/);
-  assert.match(controls, /aria-label="Choose BERS local recipe JSON"/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.chooseRecipe'\)\}/);
   assert.match(controls, /accept="\.json,application\/json"/);
   assert.match(editor, /if \(!source \|\| loading \|\| exporting \|\| savingRecipe \|\| restoringRecipe\)/);
-  assert.match(controls, /exact original photo/);
+  assert.match(controls, /t\('localEditorUi\.exactOriginalInstruction'\)/);
 });
 
 test('portable recipe is bound to immutable full-resolution original pixels, not preview or project URL', () => {

@@ -16,11 +16,11 @@ test('solid cover is discoverable with a plain-language warning and no deceptive
   assert.match(controls, /redact: ShieldAlert/);
   assert.match(controls, /mode === 'redact'/);
   assert.match(controls, /role="note"/);
-  assert.match(controls, /Solid black covers replace the covered pixels in the exported PNG/);
-  assert.match(controls, /Color and opacity are locked at black and 100%/);
+  assert.match(controls, /t\('localEditorUi\.redactNotice'\)/);
+  assert.match(controls, /t\('localEditorUi\.redactNotice'\)/);
   assert.match(controls, /mode !== 'off' && mode !== 'redact'/);
   assert.match(controls, /selected\.type === 'redact'/);
-  assert.match(controls, /Solid black styling cannot be made transparent/);
+  assert.match(controls, /t\('localEditorUi\.lockedCoverHint'\)/);
 });
 
 test('user can draw and move a cover, but cannot spoof its opacity or black RGBA', () => {

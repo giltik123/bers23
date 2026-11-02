@@ -10,14 +10,14 @@ const [parent, controls, geometry, releaseE2e] = await Promise.all([
 ]);
 
 test('text, arrows, rectangles and ellipses expose descriptive, actionable controls', () => {
-  assert.match(controls, /aria-label="Local photo annotations"/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.annotationSection'\)\}/);
   assert.match(controls, /LOCAL_ANNOTATION_TOOLS\.map/);
   assert.match(controls, /onClick=\{\(\) => onMode\(tool\.id\)\}/);
   assert.match(controls, /aria-pressed=\{mode === tool\.id\}/);
-  assert.match(controls, /aria-label="Annotation color"/);
-  assert.match(controls, /aria-label="Annotation thickness"/);
-  assert.match(controls, /aria-label="Annotation opacity"/);
-  assert.match(controls, /aria-label="Annotation font size"/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.annotationColorInput'\)\}/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.annotationThicknessInput'\)\}/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.annotationOpacityInput'\)\}/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.annotationFontSizeInput'\)\}/);
   assert.match(controls, /maxLength=\{MAX_LOCAL_ANNOTATION_TEXT\}/);
   assert.match(controls, /onClick=\{onAddCentered\}/);
   assert.match(controls, /onClick=\{\(\) => onDelete\(index\)\}/);
@@ -87,7 +87,7 @@ test('individual delete and clear actions are Core-independent, and the PNG is e
   assert.match(parent, /updateAnnotations\(annotations\.filter\(\(_, i\) => i !== index\)\)/);
   assert.match(parent, /onClear=\{\(\) => \{ updateAnnotations\(\[\]\); setSelectedAnnotationIndex\(null\); \}\}/);
   assert.match(parent, /Local edits do not mutate the BERS project or its Core history/);
-  assert.match(controls, /flattened/);
+  assert.match(controls, /t\('localEditorUi\.annotationExportNote'\)/);
   assert.match(parent, /anchor\.download = safeFilename/);
   assert.doesNotMatch(parent, /coreClient\.projects\.acceptFinal|pushEdit\(|\/providers\/|FAL_KEY|new WebSocket/);
 });
