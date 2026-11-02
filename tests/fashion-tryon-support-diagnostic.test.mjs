@@ -101,7 +101,7 @@ test('private hook decorates async Core failures without reading error.data', as
 test('wrapped contour reload status uses the safe manual diagnostic projection', async () => {
   const component = await readFile('src/components/editor/outfits/CanonicalTryOnContourEditor.jsx', 'utf8');
   const sentinel = component.indexOf("cause?.code === 'TRYON_MANUAL_CONTOUR_SAVED_RELOAD_PENDING'");
-  const projected = component.indexOf('setStatus(manualAcquisitionErrorMessage(cause))', sentinel);
+  const projected = component.indexOf('setStatus(manualAcquisitionErrorMessage(cause, t))', sentinel);
   assert.ok(sentinel >= 0 && projected > sentinel);
 });
 
