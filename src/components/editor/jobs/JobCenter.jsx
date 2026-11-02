@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { ListOrdered, RefreshCw } from 'lucide-react';
 import { coreClient } from '@/api/coreClient';
 import { jobManager } from '@/lib/jobs/jobManager';
@@ -10,6 +11,7 @@ import JobRow from '@/components/editor/jobs/JobRow';
 import CanonicalExecutionRunRow from '@/components/editor/jobs/CanonicalExecutionRunRow';
 
 export default function JobCenter({ projectId = null }) {
+  const { t } = useTranslation();
   const canonicalProjection = useMemo(() => createExecutionRunProjection(), []);
   const creativeControl = useMemo(() => new CreativeExecutionControlPolicy(coreClient.creative), []);
   const workflowRetryControl = useMemo(() => new WorkflowExecutionRetryPolicy(coreClient.agent), []);
@@ -102,9 +104,9 @@ export default function JobCenter({ projectId = null }) {
 
   if (!jobs.length && !canonicalVisible) return null;
 
-  return <section className="border border-border/60 rounded-2xl p-3 space-y-3">
+  return <section className="border border-border/60 rounded-2xl p-3 space-y-3" role="region" aria-label={t('editorUi.jobCenter')}>
     <div className="flex items-center justify-between">
-      <p className="text-[11px] text-muted-foreground flex items-center gap-1.5"><ListOrdered className="w-3.5 h-3.5" />Job Center</p>
+      <p className="text-[11px] text-muted-foreground flex items-center gap-1.5"><ListOrdered className="w-3.5 h-3.5" />{t('editorUi.jobCenter')}</p>
     </div>
 
     {canonicalVisible && <div className="space-y-2" data-job-center-canonical-executions>
@@ -120,10 +122,10 @@ export default function JobCenter({ projectId = null }) {
           className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50 flex items-center gap-1"
         ><RefreshCw className={`w-3 h-3 ${canonical.refreshing ? 'animate-spin' : ''}`} />Refresh</button>
       </div>
-      {canonical.loading && <p className="text-[11px] text-muted-foreground">Loading canonical execution state…</p>}
-      {canonical.error && !canonical.stale && <p className="text-[11px] text-destructive">Server execution recovery is unavailable.</p>}
-      {canonical.error && canonical.stale && <p className="text-[11px] text-amber-600">Server refresh failed. Showing the last confirmed state.</p>}
-      {!canonical.loading && canonical.authoritative && canonicalRuns.length === 0 && <p className="text-[11px] text-muted-foreground">No canonical server executions for this project.</p>}
+      {canonical.loading && <p className="text-[11px] text-muted-foreground" role="status" aria-live="polite">Loading canonical execution state…</p>}
+      {canonical.error && !canonical.stale && <p className="text-[11px] text-destructive" role="alert">Server execution recovery is unavailable.</p>}
+      {canonical.error && canonical.stale && <p className="text-[11px] text-amber-600" role="status" aria-live="polite">Server refresh failed. Showing the last confirmed state.</p>}
+      {!canonical.loading && canonical.authoritative && canonicalRuns.length === 0 && <p className="text-[11px] text-muted-foreground" role="status">No canonical server executions for this project.</p>}
       {canonicalRuns.map((run) => <CanonicalExecutionRunRow key={run.runId} run={run} control={canonicalControls[run.runId]} retryControl={workflowRetryControls[run.runId]} onCancel={cancelCanonicalRun} onRetry={retryCanonicalWorkflow} />)}
     </div>}
 
@@ -133,9 +135,9 @@ export default function JobCenter({ projectId = null }) {
           <p className="text-[11px] font-medium">This session</p>
           <p className="text-[10px] text-muted-foreground">Ephemeral browser-only tasks · reload interrupts them · Run again starts a new operation</p>
         </div>
-        <button onClick={() => state.paused ? jobManager.resume() : jobManager.pause()} className="text-[11px] text-muted-foreground hover:text-foreground">{state.paused ? 'Resume queue' : 'Pause queue'}</button>
+        <button type="button" onClick={() => state.paused ? jobManager.resume() : jobManager.pause()} className="text-[11px] text-muted-foreground hover:text-foreground">{state.paused ? 'Resume queue' : 'Pause queue'}</button>
       </div>
-      {unsupportedSessionJobs > 0 && <p className="text-[11px] text-destructive">Unsupported session task classification. Controls are withheld.</p>}
+      {unsupportedSessionJobs > 0 && <p className="text-[11px] text-destructive" role="alert">Unsupported session task classification. Controls are withheld.</p>}
       {ephemeralJobs.map((job) => <JobRow key={job.id} job={job} onCancel={(id) => jobManager.cancel(id)} onRunAgain={(id) => jobManager.runAgain(id)} onDuplicate={(id) => jobManager.duplicate(id)} onMoveUp={(id) => jobManager.reorder(id, Math.max(0, state.queued.findIndex((item) => item.id === id) - 1))} />)}
     </div>}
   </section>;
