@@ -13,7 +13,7 @@ export default function Billing() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <CreditCard className="w-4 h-4" /> Payments coming soon
+            <CreditCard className="w-4 h-4" /> {t('billing.paymentsComingSoon')}
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
