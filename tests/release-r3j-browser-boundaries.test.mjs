@@ -6,6 +6,8 @@ const read = (path) => readFile(path, 'utf8');
 
 test('R3j browser journey uses real production composition and post-response ambiguity injection only', async () => {
   const harness = await read('scripts/test-release-r3j-browser-e2e.mjs');
+  assert.equal(harness.includes('garmentSelect.selectOption({ value: garment.id })'), true, 'R3j must select the canonical garment by stable ID');
+  assert.equal(harness.includes('garmentSelect.selectOption({ label:'), false, 'R3j must not depend on localized category display labels');
 
   for (const required of [
     "NODE_ENV: 'production'",
