@@ -293,7 +293,6 @@ try {
   await pool.end();
 }
 
-
 async function collectBrowserRouteTiming(page, startedAt, journey) {
   const timing = await page.evaluate(({ startedAt, journey }) => {
     const scripts = performance.getEntriesByType('resource')
@@ -321,6 +320,7 @@ async function collectBrowserRouteTiming(page, startedAt, journey) {
   assert.ok(timing.scriptTransferBytes > 0, `${journey} must measure transferred JavaScript bytes with the browser cache disabled`);
   return timing;
 }
+
 function safeUrl(value) {
   try { return new URL(value); }
   catch { return undefined; }
