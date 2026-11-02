@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import english from '../src/lib/i18n/locales/en/index.js';
+import russian from '../src/lib/i18n/locales/ru/index.js';
 
 const [panel, controls, storage, recipe, chromeE2e, workflow] = await Promise.all([
   readFile('src/components/editor/local/LocalAdjustmentsPanel.jsx', 'utf8'),
@@ -13,16 +15,16 @@ const [panel, controls, storage, recipe, chromeE2e, workflow] = await Promise.al
 
 test('on-device persistence is hidden in a disclosure until the user requests it', () => {
   assert.match(controls, /<details className=/);
-  assert.match(controls, /Save on this device/);
+  assert.match(controls, /t\('localEditorUi\.saveOnDevice'\)/);
   assert.match(controls, /onClick=\{onSaveDevice\}/);
   assert.match(controls, /onClick=\{onRestoreDevice\}/);
   assert.match(controls, /onClick=\{onClearDevice\}/);
   assert.match(controls, /t\('localEditorUi\.saveBrowserDraft'\)/);
   assert.match(controls, /t\('localEditorUi\.restoreBrowserDraft'\)/);
   assert.match(controls, /t\('localEditorUi\.deleteBrowserDraft'\)/);
-  assert.match(controls, /unenc rypted|unencrypted/);
-  assert.match(controls, /edits are NOT automatically saved/);
-  assert.match(controls, /saving replaces any previously saved browser draft/i);
+  assert.match(controls, /t\('localEditorUi\.devicePrivacy'\)/);
+  assert.match(controls, /t\('localEditorUi\.devicePrivacy'\)/);
+  assert.match(controls, /t\('localEditorUi\.devicePrivacy'\)/);
 });
 
 test('browser storage is opt-in, never triggered by slider or history effects', () => {
@@ -82,4 +84,13 @@ test('exact-head CI includes both pure storage and UI wiring tests', () => {
   assert.match(workflow, /tests\/local-device-draft\.test\.mjs/);
   assert.match(workflow, /tests\/local-device-draft-editor-wiring\.test\.mjs/);
   assert.match(workflow, /Verify exact candidate SHA/);
+});
+
+
+test('browser-draft privacy copy is explicit in both supported locales', () => {
+  assert.match(english.localEditorUi.devicePrivacy, /unencrypted/);
+  assert.match(english.localEditorUi.devicePrivacy, /NOT automatically saved/);
+  assert.match(english.localEditorUi.devicePrivacy, /previously saved browser draft/);
+  assert.match(russian.localEditorUi.devicePrivacy, /без шифрования/);
+  assert.match(russian.localEditorUi.devicePrivacy, /НЕ сохраняются автоматически/);
 });
