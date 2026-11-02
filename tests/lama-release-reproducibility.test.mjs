@@ -72,3 +72,55 @@ test('C8 cross-process mismatch fails closed and never grants release/production
   assert.equal(manifest.productionApprovalEvidence, null);
   assert.equal(manifest.runtimeFeasibility.realDeviceWebGpu, 'UNPROVEN');
 });
+
+const EXPECTED_C8_PULL_REQUEST_PATHS = Object.freeze([
+  '.github/workflows/sprint-6.42c8-lama-release-reproducibility.yml',
+  '.github/workflows/sprint-6.42c7-lama-dynamo-onnx.yml',
+  'scripts/bridge-lama-generator-safetensors.py',
+  'scripts/probe-lama-dynamo-onnx.py',
+  'scripts/probe-lama-dynamo-multishape.py',
+  'scripts/probe-lama-cross-process-reproducibility.py',
+  'scripts/inspect-lama-checkpoint.py',
+  'scripts/test-lama-browser-wasm-acceptance.mjs',
+  'scripts/test-lama-browser-webgpu-feasibility.mjs',
+  'scripts/check-model-weight-tracking.mjs',
+  'tests/lama-release-reproducibility.test.mjs',
+  'tests/lama-dynamo-onnx-security.test.mjs',
+  'tests/lama-webgpu-feasibility.test.mjs',
+  'tests/lama-browser-wasm-acceptance.html',
+  'tests/lama-browser-webgpu-feasibility.html',
+  'src/platform/creative/local-ai/browser/BrowserOnnxSessionFactory.ts',
+  'src/platform/creative/local-ai/models/lama-inpainting.manifest.json',
+  'package.json',
+  '**/*.ckpt',
+  '**/*.pth',
+  '**/*.pt',
+  '**/*.safetensors',
+  '**/*.onnx',
+  '**/*.ort',
+  '**/*.bin',
+  '**/.local-models/**',
+  '**/models/releases/**',
+  '**/models/cache/**',
+  '**/models/downloads/**',
+]);
+
+function c8PullRequestPaths(source) {
+  const start = source.indexOf('  pull_request:\\n    branches: [ "main" ]\\n    paths:\\n');
+  const end = source.indexOf('  workflow_dispatch:', start);
+  assert.notEqual(start, -1, 'C8 workflow must retain pull_request.paths');
+  assert.notEqual(end, -1, 'C8 workflow must retain workflow_dispatch after pull_request.paths');
+  const block = source.slice(start, end);
+  return [...block.matchAll(/^\\s{6}- '([^']+)'$/gm)].map(match => match[1]);
+}
+
+test('C8 heavyweight reproducibility workflow is scoped to its audited dependency surface and cancels stale PR heads', () => {
+  const actual = c8PullRequestPaths(workflow);
+  assert.deepEqual(actual, EXPECTED_C8_PULL_REQUEST_PATHS);
+  assert.equal(new Set(actual).size, actual.length, 'C8 pull_request.paths must not contain duplicates');
+  assert.match(
+    workflow,
+    /concurrency:\\s*\\n\\s*group: lama-c8-\\$\\{\\{ github\\.workflow \\}\\}-\\$\\{\\{ github\\.event\\.pull_request\\.number \\|\\| github\\.run_id \\}\\}\\s*\\n\\s*cancel-in-progress: \\$\\{\\{ github\\.event_name == 'pull_request' \\}\\}/,
+  );
+  assert.doesNotMatch(workflow, /on:\\s*\\n\\s*pull_request:\\s*\\n\\s*workflow_dispatch:/);
+});
