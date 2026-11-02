@@ -37,9 +37,13 @@ test('live Editor progress components use shared translations and retain existin
   for (const [name, source] of [['generation', generation], ['flow', flow], ['segmentation', segmentation]]) {
     assert.match(source, /useTranslation/, name + ' must use the shared locale context');
     assert.match(source, /editorProgress\./, name + ' must use the shared progress namespace');
-    assert.match(source, /role="region" aria-label=/, name + ' must expose a named progress region');
     assert.doesNotMatch(source, /coreClient|projectService|financialAuthority/, name + ' must not gain a new authority');
   }
+  assert.match(generation, /role="region" aria-label=/);
+  assert.match(generation, /aria-live="polite" aria-atomic="true"/);
+  assert.match(flow, /role="group" aria-label=/);
+  assert.match(segmentation, /role="region" aria-label=/);
+  assert.match(segmentation, /aria-live="polite" aria-atomic="true"/);
   assert.match(generation, /t\('common\.cancel'\)/);
   assert.match(generation, /editingEngine\.cancel\(\)/);
   assert.match(generation, /t\('editorProgress\.estimatedSeconds'/);
