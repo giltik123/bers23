@@ -13,7 +13,6 @@
     "src/components/ui/button.jsx",
     "src/components/ui/input.jsx",
     "src/lib/app-params.js",
-    "src/lib/utils.js",
     "src/lib/i18n/FormattingService.js",
     "src/lib/i18n/LanguageDetector.js",
     "src/lib/i18n/languages.js",
@@ -22,7 +21,8 @@
     "src/lib/i18n/LocalizationManager.js",
     "src/lib/i18n/RTLManager.js",
     "src/lib/i18n/TranslationLoader.js",
-    "src/lib/i18n/TranslationProvider.jsx"
+    "src/lib/i18n/TranslationProvider.jsx",
+    "src/lib/utils.js"
   ],
   "supportPaths": [
     ".github/workflows/fashion-canonical-outfit-ui-f3c.yml",
