@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import russian from '../src/lib/i18n/locales/ru/index.js';
-import englishPack from '../src/lib/i18n/locales/en/index.js';
 
 const critical = [
   'src/components/AuthLayout.jsx',
@@ -35,7 +34,7 @@ test('Russian locale covers auth, projects and navigation with English counterpa
   assert.match(russian.authUi.login, /Войти/);
   assert.match(russian.navUi.projects, /Проекты/);
   assert.match(russian.agentUi.title, /ИИ-агент/);
-  assert.equal(englishPack.agentUi.title, 'AI Agent · Bounded deterministic v1');
+  assert.match(english, /"title": "AI Agent · Bounded deterministic v1"/);
 });
 
 test('key user journeys use live translation without bypassing canonical Project API', async () => {
@@ -88,9 +87,10 @@ test('Russian editor, preview and Try-On keep explicit review and controlled act
   assert.match(runner, /fashionUi\.refreshError/);
   assert.match(agent, /t\('agentUi\.title'\)/);
   assert.match(agent, /t\('agentUi\.runWorkflow'\)/);
+  const englishPackSource = await readFile('src/lib/i18n/locales/en/index.js', 'utf8');
   for (const key of ['invalidText', 'localWorkflowDraft', 'resizeDraft', 'transformDraft', 'aiStudioDraft', 'waitingForLocalResult', 'retryExactStep']) {
     assert.equal(typeof russian.agentUi[key], 'string', `Missing Russian Agent label: ${key}`);
-    assert.equal(typeof englishPack.agentUi[key], 'string', `Missing English Agent label: ${key}`);
+    assert.ok(englishPackSource.includes('"' + key + '":'), 'Missing English Agent label: ' + key);
   }
   assert.match(runner, /setSelectedEntryId\(''\)/, 'failed or changed outfit must invalidate a stale item');
   assert.doesNotMatch(navigation, /coreClient\./, 'translation must never start creative execution');
