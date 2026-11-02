@@ -1,5 +1,9 @@
 import java.net.URI
 
+plugins {
+    id 'com.android.application'
+}
+
 def envOrProperty = { String name, String fallback ->
     def environmentValue = System.getenv(name)
     if (environmentValue) return environmentValue
@@ -57,10 +61,6 @@ if (releaseTaskRequested) {
 }
 
 def assetStatements = '[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"web","site":"' + launchOrigin + '"}}]'
-
-plugins {
-    id 'com.android.application'
-}
 
 android {
     namespace 'app.bers'
