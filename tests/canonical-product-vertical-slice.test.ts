@@ -76,6 +76,7 @@ test('public outcome never contains provider secrets', async () => { process.env
 test('billing bridge delegates balance mutation to server transactions', async () => { const store = new InMemoryTransactionStore(); store.setWallet(auth.userId, 10); const adapter = new TransactionBillingAuthorityAdapter(new TransactionService(store, { now: () => new Date('2026-01-01T00:00:00.000Z') }), store); const reservation = await adapter.reserve({ identity: { operationId: 'edit', operationVersion: '1', operationFamily: 'image', ...auth, projectId: command.projectId, requestId: 'request-1' }, authorizationId: 'authorization-1', amount: 2, idempotencyKey: 'billing-key' }); assert.deepEqual(store.getWallet(auth.userId), { balance: 10, reserved: 2, spent: 0 }); await adapter.commit(reservation.reservationId); assert.deepEqual(store.getWallet(auth.userId), { balance: 8, reserved: 0, spent: 2 }); });
 
 
+
 test('Billing and Subscription pages are localized without activating payment authority', async () => {
   const [billingPage, subscriptionPage, english, russian] = await Promise.all([
     readFile('src/pages/Billing.jsx', 'utf8'),
@@ -83,14 +84,19 @@ test('Billing and Subscription pages are localized without activating payment au
     readFile('src/lib/i18n/locales/en/billing.js', 'utf8'),
     readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
   ]);
+  const billingStart = russian.indexOf('billing: {');
+  const settingsStart = russian.indexOf('\\n  settings:', billingStart);
+  assert.ok(billingStart >= 0 && settingsStart > billingStart, 'Russian billing namespace must exist');
+  const russianBilling = russian.slice(billingStart, settingsStart);
   const requiredKeys = [
     'title', 'subscription', 'backToProjects', 'paymentsComingSoon',
     'comingSoonDescription', 'notConnectedTitle', 'notConnectedDescription',
     'verifiedPaymentsNotice', 'viewBillingStatus',
   ];
   for (const key of requiredKeys) {
-    assert.match(english, new RegExp('\\\\b' + key + '\\\\s*:'), 'English billing.' + key);
-    assert.match(russian, new RegExp('\\\\b' + key + '\\\\s*:'), 'Russian billing.' + key);
+    const keyPattern = new RegExp('\\\\b' + key + '\\\\s*:');
+    assert.match(english, keyPattern, 'English billing.' + key);
+    assert.match(russianBilling, keyPattern, 'Russian billing.' + key);
   }
   for (const [name, source] of [['Billing', billingPage], ['Subscription', subscriptionPage]]) {
     assert.match(source, /useTranslation/, name + ' must use the shared locale provider');
