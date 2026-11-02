@@ -123,7 +123,7 @@ test('creative client uses explicit Core endpoint and preserves public error fie
   const client = await readFile('src/api/coreClient.js', 'utf8');
   assert.match(client, /creative:\s*{/);
   assert.match(client, /request\('\/creative\/execute'/);
-  for (const field of ['status', 'code', 'correlationId', 'retryable']) assert.match(client, new RegExp(`error\.${field}`));
+  for (const field of ['status', 'code', 'correlationId', 'retryable']) assert.match(client, new RegExp(`error\\.${field}`));
 });
 
 test('production CSP permits local WASM without arbitrary script execution and does not enforce incompatible Trusted Types', () => {
