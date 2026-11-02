@@ -64,6 +64,12 @@ test('Creative Studio reads Outfit data only through the canonical read port and
   assert.match(panel, /outfits: strategyOutfits/u);
   assert.match(panel, /outfitsStatus/u);
   assert.match(panel, /setOutfitsRetry/u);
+  assert.match(panel, /useAuth\(\)/u);
+  assert.match(panel, /principalKey/u);
+  assert.match(panel, /isAuthenticated/u);
+  assert.match(panel, /isLoadingAuth/u);
+  assert.match(panel, /setSaved\(null\)/u);
+  assert.match(panel, /setSavedStrategy\(null\)/u);
   assert.match(panel, /if \(!active\) return/u);
   assert.match(summary, /strategy\.recommendations\?\.outfits/u);
   assert.match(summary, /outfitsStatus === 'error'/u);
