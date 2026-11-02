@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { coreClient } from '@/api/coreClient';
-import { projectReadyCreativeOutfits } from '@/application/creative/creativeOutfitContext';
+import { creativeOutfitsForPrincipal, projectReadyCreativeOutfits } from '@/application/creative/creativeOutfitContext';
 import CreativeGoalPicker from '@/components/editor/creative/CreativeGoalPicker';
 import CreativeIdeaCard from '@/components/editor/creative/CreativeIdeaCard';
 import CreativeMoodBoardCard from '@/components/editor/creative/CreativeMoodBoardCard';
@@ -30,6 +30,7 @@ export default function CreativeStudioPanel({ project, objects }) {
   const [saved, setSaved] = useState(null);
   const [savedStrategy, setSavedStrategy] = useState(null);
   const [outfits, setOutfits] = useState(EMPTY_OUTFITS);
+  const [outfitsPrincipalKey, setOutfitsPrincipalKey] = useState('');
   const [outfitsStatus, setOutfitsStatus] = useState('idle');
   const [outfitsRetry, setOutfitsRetry] = useState(0);
 
@@ -66,22 +67,26 @@ export default function CreativeStudioPanel({ project, objects }) {
   useEffect(() => {
     if (goalId !== 'fashion') {
       setOutfits(EMPTY_OUTFITS);
+      setOutfitsPrincipalKey('');
       setOutfitsStatus('idle');
       return undefined;
     }
     if (isLoadingAuth) {
       setOutfits(EMPTY_OUTFITS);
+      setOutfitsPrincipalKey('');
       setOutfitsStatus('loading');
       return undefined;
     }
     if (!isAuthenticated || !principalKey) {
       setOutfits(EMPTY_OUTFITS);
+      setOutfitsPrincipalKey('');
       setOutfitsStatus('error');
       return undefined;
     }
 
     let active = true;
     setOutfits(EMPTY_OUTFITS);
+    setOutfitsPrincipalKey('');
     setOutfitsStatus('loading');
 
     const load = async () => {
@@ -90,10 +95,12 @@ export default function CreativeStudioPanel({ project, objects }) {
         const next = projectReadyCreativeOutfits(canonicalOutfits);
         if (!active) return;
         setOutfits(next);
+        setOutfitsPrincipalKey(principalKey);
         setOutfitsStatus('ready');
       } catch {
         if (!active) return;
         setOutfits(EMPTY_OUTFITS);
+        setOutfitsPrincipalKey('');
         setOutfitsStatus('error');
       }
     };
@@ -102,7 +109,9 @@ export default function CreativeStudioPanel({ project, objects }) {
     return () => { active = false; };
   }, [goalId, outfitsRetry, isAuthenticated, isLoadingAuth, principalKey]);
 
-  const strategyOutfits = goalId === 'fashion' && outfitsStatus === 'ready' ? outfits : EMPTY_OUTFITS;
+  const strategyOutfits = goalId === 'fashion'
+    ? creativeOutfitsForPrincipal({ outfits, status: outfitsStatus, loadedPrincipalKey: outfitsPrincipalKey, principalKey })
+    : EMPTY_OUTFITS;
   const strategy = useMemo(() => scopeCreativeStrategyToProject(
     creativeStudio.strategy({
       idea: localizedIdea,
