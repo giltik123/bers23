@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import english from '../src/lib/i18n/locales/en/index.js';
+import russian from '../src/lib/i18n/locales/ru/index.js';
 import { readFile } from 'node:fs/promises';
 
 const PAGE = 'src/pages/AutomationStudio.jsx';
@@ -39,4 +41,20 @@ test('Automation Studio is canonical and does not revive legacy browser executio
   assert.match(runner, /Automation must not finalize through standalone Resize transport/);
   assert.equal(runner.includes('/agent/bounded-deterministic/'), false);
   assert.doesNotMatch(runner, /view\.executionId|executionId\s*:/, 'Automation browser runner must not consume or expose delegated Agent executionId');
+});
+
+
+test('Canonical Automation Studio uses RU/EN copy without moving execution or Accept authority', async () => {
+  const studio = await readFile(STUDIO, 'utf8');
+  assert.match(studio, /useTranslation/);
+  assert.match(studio, /t\\('automation\\.acceptResult'\\)/);
+  assert.match(studio, /coreClient\\.projects\\.acceptFinal/);
+  const keys = ['canonicalSubtitle', 'definitions', 'boundedPlan', 'manualRun', 'manualRunHint', 'project', 'resumeLatest', 'acceptResult', 'definitionState', 'stateWaiting', 'modeRotate90', 'invalidDimensions'];
+  for (const key of keys) {
+    assert.equal(typeof english.automation[key], 'string', 'Missing English Automation label: ' + key);
+    assert.equal(typeof russian.automation[key], 'string', 'Missing Russian Automation label: ' + key);
+  }
+  assert.match(studio, /t\\('automation\\.canonicalSubtitle'\\)/);
+  assert.match(studio, /translated\\(MODE_LABELS/);
+  assert.doesNotMatch(studio, /automationRunner\\.run|coreClient\\.entities|providerSelector|creditsWallet/);
 });
