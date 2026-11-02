@@ -106,12 +106,66 @@ test('Projects and login use the same design and do not hide key actions behind 
 });
 
 
+
+test('WorkspaceBar and saved-mask/object controls are localized in RU/EN without changing workspace or mask authority', async () => {
+  const [workspaceBar, objectPanel, profiles, enWorkspace, ruIndex, enIndex] = await Promise.all([
+    read('src/components/editor/workspace/WorkspaceBar.jsx'),
+    read('src/components/editor/ObjectPanel.jsx'),
+    read('src/lib/workspace/workspaceProfiles.js'),
+    read('src/lib/i18n/locales/en/workspace.js'),
+    read('src/lib/i18n/locales/ru/index.js'),
+    read('src/lib/i18n/locales/en/index.js'),
+  ]);
+
+  assert.match(workspaceBar, /useTranslation/);
+  assert.ok(workspaceBar.includes('workspace.profiles.'));
+  assert.match(workspaceBar, /workspaceManager\\.select\\(projectId, null\\)/);
+  assert.match(workspaceBar, /workspaceManager\\.select\\(projectId, w\\.id\\)/);
+  assert.doesNotMatch(workspaceBar, /Auto-detected|Most used:|Favorite:|Avg edit|>Manual</);
+
+  const profileIds = [...profiles.matchAll(/id: '([^']+)'/g)].map((match) => match[1]);
+  assert.equal(profileIds.length, 10, 'the existing adaptive workspace catalog remains the complete ten-profile set');
+  for (const id of profileIds) {
+    assert.ok(enWorkspace.includes(id + ": { name: '"), 'English workspace profile ' + id);
+    assert.ok(ruIndex.includes(id + ": { name: '"), 'Russian workspace profile ' + id);
+  }
+  for (const key of ['listTitle', 'autoDetect', 'mostUsedWorkspace', 'favoriteWorkspace', 'averageEdit']) {
+    assert.ok(enWorkspace.includes(key + ": '"), 'English workspace.' + key);
+    assert.ok(ruIndex.includes(key + ": '"), 'Russian workspace.' + key);
+  }
+
+  assert.match(objectPanel, /useTranslation/);
+  assert.match(objectPanel, /editorUi\\.objectPanel\\.sectionLabel/);
+  assert.match(objectPanel, /editorUi\\.objectPanel\\.adjustmentHelp/);
+  assert.match(objectPanel, /editorUi\\.objectPanel\\.guideHelp/);
+  assert.match(objectPanel, /onToggleHidden\\(obj\\.id\\)/);
+  assert.match(objectPanel, /onSelect\\(obj\\.selected \\? null : obj\\)/);
+  const enObjectPanel = enIndex.match(/"objectPanel":\\s*\\{([^}]+)\\}/)?.[1];
+  const ruObjectPanel = ruIndex.match(/"objectPanel":\\s*\\{([^}]+)\\}/)?.[1];
+  assert.ok(enObjectPanel, 'English ObjectPanel catalog exists');
+  assert.ok(ruObjectPanel, 'Russian ObjectPanel catalog exists');
+  const objectKeys = ['sectionLabel', 'heading', 'savedMaskCount', 'adjustmentHelp', 'guideHelp', 'objectGroup',
+    'collapseObject', 'expandObject', 'deselectObject', 'selectObject', 'mask', 'savedMaskTitle',
+    'showObjectOverlay', 'hideObjectOverlay', 'showSelectionFrame', 'hideSelectionFrame'];
+  for (const key of objectKeys) {
+    const valuePattern = new RegExp('"' + key + '"\\s*:\\s*"([^"]+)"');
+    const english = enObjectPanel.match(valuePattern)?.[1];
+    const russian = ruObjectPanel.match(valuePattern)?.[1];
+    assert.ok(english, 'English editorUi.objectPanel.' + key);
+    assert.ok(russian, 'Russian editorUi.objectPanel.' + key);
+    const placeholders = value => (value.match(/\\{[a-zA-Z0-9_]+\\}/g) ?? []).sort();
+    assert.deepEqual(placeholders(russian), placeholders(english), 'RU/EN placeholders for ' + key);
+  }
+});
+
+
 test('object list actions are independent keyboard-reachable buttons, not clickable nonsemantic rows', async () => {
   const panel = await read('src/components/editor/ObjectPanel.jsx');
   assert.match(panel, /role="group"/);
-  assert.match(panel, /aria-label=\{obj\.selected \? 'Deselect ' \+ obj\.label : 'Select ' \+ obj\.label\}/);
+  assert.match(panel, /aria-label=\{t\(obj\.selected \? 'editorUi\.objectPanel\.deselectObject' : 'editorUi\.objectPanel\.selectObject', \{ label: obj\.label \}\)\}/);
   assert.match(panel, /aria-pressed=\{Boolean\(obj\.selected\)\}/);
-  assert.match(panel, /aria-label=\{isHidden \? "Show object overlay" : "Hide object overlay"\}/);
+  assert.match(panel, /aria-label=\{t\(isHidden \? 'editorUi\.objectPanel\.showObjectOverlay' : 'editorUi\.objectPanel\.hideObjectOverlay'\)\}/);
+  assert.match(panel, /aria-label=\{t\('editorUi\.objectPanel\.sectionLabel'\)\}/);
   assert.match(panel, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onToggleHidden\(obj\.id\); \}\}/);
   assert.match(panel, /onClick=\{\(\) => onSelect\(obj\.selected \? null : obj\)\}/);
   assert.doesNotMatch(panel, /className=\{\x60flex items-center gap-2 px-2 py-1\.5 rounded-lg cursor-pointer/);
