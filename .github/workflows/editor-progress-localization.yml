@@ -1,0 +1,41 @@
+name: Editor progress localization RU/EN
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'src/components/editor/GenerationProgress.jsx'
+      - 'src/components/editor/PipelineFlow.jsx'
+      - 'src/components/editor/SegmentationProgress.jsx'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/editor-progress-localization.test.mjs'
+      - '.github/workflows/editor-progress-localization.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  editor-progress-localization:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Verify RU/EN progress, retry and cancellation UX
+        run: node --test tests/editor-progress-localization.test.mjs
+      - name: Typecheck and build the frontend
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Diff hygiene
+        run: git diff --check "${{ github.event.pull_request.base.sha }}"..HEAD
