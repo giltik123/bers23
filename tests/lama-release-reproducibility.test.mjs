@@ -106,12 +106,12 @@ const EXPECTED_C8_PULL_REQUEST_PATHS = Object.freeze([
 ]);
 
 function c8PullRequestPaths(source) {
-  const start = source.indexOf('  pull_request:\\n    branches: [ "main" ]\\n    paths:\\n');
+  const start = source.indexOf('  pull_request:\n    branches: [ "main" ]\n    paths:\n');
   const end = source.indexOf('  workflow_dispatch:', start);
   assert.notEqual(start, -1, 'C8 workflow must retain pull_request.paths');
   assert.notEqual(end, -1, 'C8 workflow must retain workflow_dispatch after pull_request.paths');
   const block = source.slice(start, end);
-  return [...block.matchAll(/^\\s{6}- '([^']+)'$/gm)].map(match => match[1]);
+  return [...block.matchAll(/^\s{6}- '([^']+)'$/gm)].map(match => match[1]);
 }
 
 test('C8 heavyweight reproducibility workflow is scoped to its audited dependency surface and cancels stale PR heads', () => {
@@ -120,7 +120,7 @@ test('C8 heavyweight reproducibility workflow is scoped to its audited dependenc
   assert.equal(new Set(actual).size, actual.length, 'C8 pull_request.paths must not contain duplicates');
   assert.match(
     workflow,
-    /concurrency:\\s*\\n\\s*group: lama-c8-\\$\\{\\{ github\\.workflow \\}\\}-\\$\\{\\{ github\\.event\\.pull_request\\.number \\|\\| github\\.run_id \\}\\}\\s*\\n\\s*cancel-in-progress: \\$\\{\\{ github\\.event_name == 'pull_request' \\}\\}/,
+    /concurrency:\s*\n\s*group: lama-c8-\$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.run_id \}\}\s*\n\s*cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/,
   );
-  assert.doesNotMatch(workflow, /on:\\s*\\n\\s*pull_request:\\s*\\n\\s*workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /on:\s*\n\s*pull_request:\s*\n\s*workflow_dispatch:/);
 });
