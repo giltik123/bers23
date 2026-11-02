@@ -1,0 +1,109 @@
+import java.net.URI
+
+def envOrProperty = { String name, String fallback ->
+    def environmentValue = System.getenv(name)
+    if (environmentValue) return environmentValue
+    if (project.hasProperty(name)) return project.property(name).toString()
+    return fallback
+}
+
+def configuredUrl = envOrProperty('BERS_ANDROID_URL', 'https://app.bers.example')
+def parsedUrl = new URI(configuredUrl)
+if (parsedUrl.scheme != 'https' || !parsedUrl.host || parsedUrl.userInfo != null ||
+        parsedUrl.query != null || parsedUrl.fragment != null ||
+        !['', '/'].contains(parsedUrl.path) || ![-1, 443].contains(parsedUrl.port)) {
+    throw new GradleException('BERS_ANDROID_URL must be an HTTPS origin without a path, credentials, query or fragment')
+}
+def launchOrigin = parsedUrl.scheme + '://' + parsedUrl.authority
+def launchUrl = launchOrigin + '/'
+
+def configuredApplicationId = envOrProperty('BERS_ANDROID_APPLICATION_ID', 'app.bers.example')
+if (!(configuredApplicationId ==~ /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/)) {
+    throw new GradleException('BERS_ANDROID_APPLICATION_ID must be a valid reverse-domain application id')
+}
+
+def configuredVersionCode = envOrProperty('BERS_ANDROID_VERSION_CODE', '1')
+if (!configuredVersionCode.isInteger()) {
+    throw new GradleException('BERS_ANDROID_VERSION_CODE must be an integer')
+}
+def androidVersionCode = configuredVersionCode.toInteger()
+if (androidVersionCode < 1 || androidVersionCode > 2100000000) {
+    throw new GradleException('BERS_ANDROID_VERSION_CODE is outside the Android-supported range')
+}
+def androidVersionName = envOrProperty('BERS_ANDROID_VERSION_NAME', '0.0.0')
+
+def placeholderConfiguration = parsedUrl.host.endsWith('.example') ||
+        parsedUrl.host.endsWith('.invalid') || parsedUrl.host.endsWith('.test') ||
+        configuredApplicationId.endsWith('.example')
+def releaseTaskRequested = gradle.startParameter.taskNames.any { taskName ->
+    def normalized = taskName.toLowerCase()
+    normalized.contains('release') && (normalized.contains('bundle') || normalized.contains('assemble'))
+}
+
+def keystorePath = System.getenv('BERS_ANDROID_KEYSTORE_PATH')
+def keystorePassword = System.getenv('BERS_ANDROID_KEYSTORE_PASSWORD')
+def keyAlias = System.getenv('BERS_ANDROID_KEY_ALIAS')
+def keyPassword = System.getenv('BERS_ANDROID_KEY_PASSWORD')
+if (releaseTaskRequested) {
+    if (placeholderConfiguration || androidVersionName == '0.0.0') {
+        throw new GradleException('Release builds require a real BERS_ANDROID_URL, application id and version name')
+    }
+    if (!keystorePath || !keystorePassword || !keyAlias || !keyPassword) {
+        throw new GradleException('Release builds require all four BERS Android signing environment variables')
+    }
+    if (!file(keystorePath).isFile()) {
+        throw new GradleException('BERS_ANDROID_KEYSTORE_PATH does not identify a readable upload keystore')
+    }
+}
+
+def assetStatements = '[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"web","site":"' + launchOrigin + '"}}]'
+
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'app.bers'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId configuredApplicationId
+        minSdk 24
+        targetSdk 36
+        versionCode androidVersionCode
+        versionName androidVersionName
+        manifestPlaceholders = [
+            bersAndroidUrl: launchUrl,
+            bersAndroidHost: parsedUrl.host
+        ]
+        resValue 'string', 'asset_statements', assetStatements
+    }
+
+    signingConfigs {
+        if (releaseTaskRequested) {
+            release {
+                storeFile file(keystorePath)
+                storePassword keystorePassword
+                keyAlias keyAlias
+                keyPassword keyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (releaseTaskRequested) signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.7.4'
+}
