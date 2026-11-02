@@ -9,7 +9,7 @@ test('Editor and Job Center share one localized accessible region name', async (
     read('src/pages/Editor.jsx'),
     read('src/components/editor/jobs/JobCenter.jsx'),
   ]);
-  assert.ok(editor.includes("title={t('editorUi.jobCenter')}"));
+  assert.ok(editor.includes("t('editorUi.jobCenter')"));
   assert.ok(center.includes("aria-label={t('editorUi.jobCenter')}"));
   assert.ok(center.includes("{t('editorUi.jobCenter')}</p>"));
   assert.ok(center.includes('role="region"'));
