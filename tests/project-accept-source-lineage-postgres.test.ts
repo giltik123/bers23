@@ -22,24 +22,53 @@ async function capture<T>(promise: Promise<T>): Promise<Captured<T>> {
   catch (error) { return Object.freeze({ ok: false, error }); }
 }
 
-class ProjectLockIssuanceBarrier {
-  private issued = 0;
+class ProjectLockWaitBarrier {
+  private readonly backendPids: number[] = [];
 
-  mark(query: unknown) {
-    if (typeof query === 'string' && query.includes('canonical_projects') && query.includes('FOR UPDATE')) this.issued += 1;
+  mark(query: unknown, backendPid: number) {
+    if (typeof query === 'string' && query.includes('canonical_projects') && query.includes('FOR UPDATE')) {
+      this.backendPids.push(backendPid);
+    }
   }
 
-  async waitFor(minimum: number): Promise<void> {
+  async waitForPid(minimum: number): Promise<number> {
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
-      if (this.issued >= minimum) return;
+      const backendPid = this.backendPids[minimum - 1];
+      if (backendPid !== undefined) {
+        if (!Number.isSafeInteger(backendPid) || backendPid <= 0) {
+          throw new Error(`Observed an invalid PostgreSQL backend PID for Project row-lock waiter ${minimum}`);
+        }
+        return backendPid;
+      }
       await new Promise(resolve => setTimeout(resolve, 10));
     }
-    throw new Error(`Timed out waiting for ${minimum} canonical Project row-lock query issuance(s); observed ${this.issued}`);
+    throw new Error(`Timed out waiting for canonical Project row-lock query ${minimum}; observed ${this.backendPids.length}`);
   }
 }
 
-function observeProjectRowLockIssuance(pool: Pool, barrier: ProjectLockIssuanceBarrier): Pool {
+async function waitForPostgresLockWait(pool: Pool, waitingPid: number, expectedBlockerPid: number): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  let lastBlockers: unknown = null;
+  while (Date.now() < deadline) {
+    const result = await pool.query(
+      'SELECT pg_blocking_pids($1) AS blocking_pids',
+      [waitingPid],
+    );
+    const rawBlockers = result.rows[0]?.blocking_pids;
+    const blockers = Array.isArray(rawBlockers)
+      ? rawBlockers.map((pid: unknown) => Number(pid))
+      : String(rawBlockers ?? '').replace(/[{}]/gu, '').split(',').filter(Boolean).map(Number);
+    lastBlockers = rawBlockers ?? null;
+    if (blockers.includes(expectedBlockerPid)) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw new Error(
+    `Timed out waiting for PostgreSQL backend ${waitingPid} to be blocked by ${expectedBlockerPid}; last pg_blocking_pids=${JSON.stringify(lastBlockers)}`,
+  );
+}
+
+function observeProjectRowLockRequests(pool: Pool, barrier: ProjectLockWaitBarrier): Pool {
   return {
     query: (...args: any[]) => (pool.query as any)(...args),
     connect: async () => {
@@ -47,7 +76,7 @@ function observeProjectRowLockIssuance(pool: Pool, barrier: ProjectLockIssuanceB
       return {
         query: (...args: any[]) => {
           const query = typeof args[0] === 'string' ? args[0] : args[0]?.text;
-          barrier.mark(query);
+          barrier.mark(query, Number((client as any).processID));
           return (client.query as any)(...args);
         },
         release: client.release.bind(client),
@@ -109,75 +138,84 @@ test('Project Accept serializes against cursor changes and rejects a FINAL produ
   await projects.acceptFinal(auth, projectId, staleCandidate.storageId, 'Accept after explicitly returning to its durable source');
   assert.equal((await projects.get(auth, projectId)).current_image_storage_id, staleCandidate.storageId, 'the same FINAL is valid again only when the canonical cursor exactly matches its durable source');
 
-  // Real PostgreSQL serialization proof. A test-only Pool wrapper observes the
-  // exact FOR UPDATE statements emitted by PostgresProjectStore; it does not
-  // emulate locking. One real transaction holds the Project row lock. We then
-  // issue navigation first and Accept second and wait until both service calls
-  // have actually emitted their row-lock SELECTs before releasing the blocker.
-  // The database still owns serialization and the outcome assertions below are
-  // authoritative: navigation must win and the now-stale Accept must fail closed.
+  // Prove waiter order at PostgreSQL, not at the JavaScript client-call boundary.
+  // A navigation backend must be visible as blocked by the held Project row lock
+  // before Accept is even issued. Then Accept must independently be visible as
+  // blocked by the same transaction. PostgreSQL owns the queue and serialization.
   const concurrentCreated = await projects.create(auth, 'Concurrent source-bound Project', await png(2, 1, sourcePixels), { maxDimension: 64, maxPixels: 4096 });
   const concurrentProjectId = String(concurrentCreated.project_id);
   const concurrentOriginalStorageId = String(concurrentCreated.original_image_storage_id);
   const concurrentScope = Object.freeze({ ...auth, projectId: concurrentProjectId });
-  const concurrentFirst = await images.persistFinal(
-    concurrentScope,
-    'project-source-concurrent-first-execution',
-    'project-source-concurrent-first-operation',
-    Object.freeze({ width: 2, height: 1, data: new Uint8ClampedArray([13, 14, 15, 255, 16, 17, 18, 255]) }),
-    Object.freeze({ sourceImageStorageId: concurrentOriginalStorageId, producerOperation: 'ORTHOGONAL_TRANSFORM' as const }),
-  );
-  await projects.acceptFinal(auth, concurrentProjectId, concurrentFirst.storageId, 'Establish concurrent source cursor');
-  assert.equal((await projects.get(auth, concurrentProjectId)).current_image_storage_id, concurrentFirst.storageId);
 
-  const queuedCandidate = await images.persistFinal(
-    concurrentScope,
-    'project-source-concurrent-candidate-execution',
-    'project-source-concurrent-candidate-operation',
-    Object.freeze({ width: 2, height: 1, data: new Uint8ClampedArray([19, 20, 21, 255, 22, 23, 24, 255]) }),
-    Object.freeze({ sourceImageStorageId: concurrentFirst.storageId, producerOperation: 'ORTHOGONAL_TRANSFORM' as const }),
-  );
+  // Repeat the database-observed ordering 20 times on the same durable Project.
+  // Each iteration starts from ORIGINAL, accepts a fresh source-bound FINAL,
+  // then races navigation-to-ORIGINAL against an Accept derived from that FINAL.
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const concurrentFirst = await images.persistFinal(
+      concurrentScope,
+      `project-source-concurrent-first-execution-${attempt}`,
+      `project-source-concurrent-first-operation-${attempt}`,
+      Object.freeze({ width: 2, height: 1, data: new Uint8ClampedArray([13 + attempt, 14, 15, 255, 16, 17, 18, 255]) }),
+      Object.freeze({ sourceImageStorageId: concurrentOriginalStorageId, producerOperation: 'ORTHOGONAL_TRANSFORM' as const }),
+    );
+    await projects.acceptFinal(auth, concurrentProjectId, concurrentFirst.storageId, `Establish concurrent source cursor ${attempt}`);
+    assert.equal((await projects.get(auth, concurrentProjectId)).current_image_storage_id, concurrentFirst.storageId);
 
-  const barrier = new ProjectLockIssuanceBarrier();
-  const concurrentProjects = new PostgresProjectStore(observeProjectRowLockIssuance(pool, barrier));
-  const blocker = await pool.connect();
-  let blockerReleased = false;
-  let navigateOutcomePromise: Promise<Captured<unknown>> | undefined;
-  let acceptOutcomePromise: Promise<Captured<unknown>> | undefined;
-  try {
-    await blocker.query('BEGIN');
-    await blocker.query(`SELECT project_id FROM canonical_projects WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 FOR UPDATE`, [concurrentProjectId, auth.tenantId, auth.userId]);
+    const queuedCandidate = await images.persistFinal(
+      concurrentScope,
+      `project-source-concurrent-candidate-execution-${attempt}`,
+      `project-source-concurrent-candidate-operation-${attempt}`,
+      Object.freeze({ width: 2, height: 1, data: new Uint8ClampedArray([19 + attempt, 20, 21, 255, 22, 23, 24, 255]) }),
+      Object.freeze({ sourceImageStorageId: concurrentFirst.storageId, producerOperation: 'ORTHOGONAL_TRANSFORM' as const }),
+    );
 
-    navigateOutcomePromise = capture(concurrentProjects.navigate(auth, concurrentProjectId, 'original'));
-    await barrier.waitFor(1);
+    const barrier = new ProjectLockWaitBarrier();
+    const concurrentProjects = new PostgresProjectStore(observeProjectRowLockRequests(pool, barrier));
+    const blocker = await pool.connect();
+    let blockerReleased = false;
+    let navigateOutcomePromise: Promise<Captured<unknown>> | undefined;
+    let acceptOutcomePromise: Promise<Captured<unknown>> | undefined;
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query(`SELECT project_id FROM canonical_projects WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 FOR UPDATE`, [concurrentProjectId, auth.tenantId, auth.userId]);
+      const blockerPid = Number((blocker as any).processID);
+      assert.ok(Number.isSafeInteger(blockerPid) && blockerPid > 0, 'the blocking transaction must expose its PostgreSQL backend PID');
 
-    acceptOutcomePromise = capture(concurrentProjects.acceptFinal(auth, concurrentProjectId, queuedCandidate.storageId, 'Queued stale Accept'));
-    await barrier.waitFor(2);
+      navigateOutcomePromise = capture(concurrentProjects.navigate(auth, concurrentProjectId, 'original'));
+      const navigationPid = await barrier.waitForPid(1);
+      await waitForPostgresLockWait(pool, navigationPid, blockerPid);
 
-    await blocker.query('COMMIT');
-    blocker.release();
-    blockerReleased = true;
+      // This call is deliberately not issued until PostgreSQL confirms that the
+      // navigation SELECT FOR UPDATE is already waiting behind the blocker.
+      acceptOutcomePromise = capture(concurrentProjects.acceptFinal(auth, concurrentProjectId, queuedCandidate.storageId, `Queued stale Accept ${attempt}`));
+      const acceptPid = await barrier.waitForPid(2);
+      await waitForPostgresLockWait(pool, acceptPid, navigationPid);
 
-    const navigateOutcome = await navigateOutcomePromise;
-    assert.equal(navigateOutcome.ok, true, 'navigation queued first must complete successfully');
-    assert.equal((await projects.get(auth, concurrentProjectId)).current_image_storage_id, concurrentOriginalStorageId, 'queued navigation must win the row-lock order established before Accept');
-
-    const acceptOutcome = await acceptOutcomePromise;
-    assert.equal(acceptOutcome.ok, false, 'queued stale Accept must be rejected');
-    if (acceptOutcome.ok) throw new Error('Queued stale Accept unexpectedly succeeded');
-    const acceptError = acceptOutcome.error as { status?: number; code?: string };
-    assert.equal(acceptError?.status, 409);
-    assert.equal(acceptError?.code, 'final_source_conflict');
-    assert.equal((await projects.get(auth, concurrentProjectId)).current_image_storage_id, concurrentOriginalStorageId, 'rejected concurrent Accept must not overwrite the navigation result');
-    assert.equal(Number((await pool.query("SELECT count(*)::int AS count FROM canonical_project_history WHERE project_id=$1 AND image_storage_id=$2 AND kind='ACCEPTED_FINAL'", [concurrentProjectId, queuedCandidate.storageId])).rows[0].count), 0, 'rejected concurrent Accept must not create history');
-  } finally {
-    if (!blockerReleased) {
-      await blocker.query('ROLLBACK').catch(() => undefined);
+      await blocker.query('COMMIT');
       blocker.release();
+      blockerReleased = true;
+
+      const navigateOutcome = await navigateOutcomePromise;
+      assert.equal(navigateOutcome.ok, true, `navigation attempt ${attempt + 1} must complete successfully`);
+      assert.equal((await projects.get(auth, concurrentProjectId)).current_image_storage_id, concurrentOriginalStorageId, 'queued navigation must win the row-lock order established at PostgreSQL');
+
+      const acceptOutcome = await acceptOutcomePromise;
+      assert.equal(acceptOutcome.ok, false, `queued stale Accept attempt ${attempt + 1} must be rejected`);
+      if (acceptOutcome.ok) throw new Error('Queued stale Accept unexpectedly succeeded');
+      const acceptError = acceptOutcome.error as { status?: number; code?: string };
+      assert.equal(acceptError?.status, 409);
+      assert.equal(acceptError?.code, 'final_source_conflict');
+      assert.equal((await projects.get(auth, concurrentProjectId)).current_image_storage_id, concurrentOriginalStorageId, 'rejected concurrent Accept must not overwrite the navigation result');
+      assert.equal(Number((await pool.query("SELECT count(*)::int AS count FROM canonical_project_history WHERE project_id=$1 AND image_storage_id=$2 AND kind='ACCEPTED_FINAL'", [concurrentProjectId, queuedCandidate.storageId])).rows[0].count), 0, 'rejected concurrent Accept must not create history');
+    } finally {
+      if (!blockerReleased) {
+        await blocker.query('ROLLBACK').catch(() => undefined);
+        blocker.release();
+      }
+      await Promise.all([
+        navigateOutcomePromise ?? Promise.resolve(Object.freeze({ ok: true, value: undefined })),
+        acceptOutcomePromise ?? Promise.resolve(Object.freeze({ ok: true, value: undefined })),
+      ]);
     }
-    await Promise.all([
-      navigateOutcomePromise ?? Promise.resolve(Object.freeze({ ok: true, value: undefined })),
-      acceptOutcomePromise ?? Promise.resolve(Object.freeze({ ok: true, value: undefined })),
-    ]);
   }
 });
