@@ -505,6 +505,8 @@ test('recipe templates remain canonical Prompt inputs while multi-step execution
   const detail = await readFile('src/components/editor/recipes/RecipeDetail.jsx', 'utf8');
   const studio = await readFile('src/components/editor/creative/CreativeStudioPanel.jsx', 'utf8');
   const summary = await readFile('src/components/editor/creative/CreativeStrategySummary.jsx', 'utf8');
+  const englishCreative = await readFile('src/lib/i18n/locales/en/creative.js', 'utf8');
+  const russianCreative = await readFile('src/lib/i18n/locales/ru/index.js', 'utf8');
   const adapter = await readFile('src/application/creative/LegacyRecipeExecutionAdapter.js', 'utf8');
 
   assert.match(panel, /Individual recipes remain available as prompt templates/);
@@ -513,7 +515,9 @@ test('recipe templates remain canonical Prompt inputs while multi-step execution
   assert.match(detail, /recipeEngine\.compile/);
   assert.doesNotMatch(studio, /onApply|strategy_applied/);
   assert.doesNotMatch(summary, /Apply strategy|onApply/);
-  assert.match(summary, /Preview only/);
+  assert.match(summary, /t\('creative\.previewOnly'\)/);
+  assert.match(englishCreative, /previewOnly:\s*'Preview only\./);
+  assert.match(russianCreative, /previewOnly:\s*'Только предпросмотр\./);
   assert.match(adapter, /RECIPE_CHAIN_EXECUTION_NOT_WIRED/);
   assert.match(adapter, /retryable = false/);
   for (const forbidden of ['chainRunner', 'creditsEngine', 'editingEngine']) assert.equal(adapter.includes(forbidden), false, forbidden);
