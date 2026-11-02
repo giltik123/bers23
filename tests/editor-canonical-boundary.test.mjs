@@ -17,6 +17,11 @@ test('Recipe browser localizes views, categories, search, chain status and empty
   assert.match(panel, /useTranslation/);
   assert.match(panel, /t\('recipes\.' \+ item\.id\)/);
   assert.match(panel, /setView\(item\.id\)/);
+  for (const key of ['recommended', 'popular', 'recent', 'favorites']) {
+    assert.ok(panel.includes("id: '" + key + "'"), 'RecipePanel view ' + key);
+    assert.ok(english.includes(key + ": '"), 'English recipe view ' + key);
+    assert.ok(russian.includes(key + ": '"), 'Russian recipe view ' + key);
+  }
   for (const key of ['chainsUnavailable', 'chainsUnavailableHint', 'searchPlaceholder', 'emptyFavorites', 'emptyRecent', 'emptySearch']) {
     assert.ok(panel.includes('recipes.' + key), 'RecipePanel uses recipes.' + key);
     assert.ok(english.includes(key + ': '), 'English recipes.' + key);
