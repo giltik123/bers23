@@ -100,7 +100,13 @@ test('Billing and Subscription pages are localized without activating payment au
   }
   for (const [name, page] of [['Billing', billingPage], ['Subscription', subscriptionPage]]) {
     assert.ok(page.includes('useTranslation'), name + ' must use the shared locale provider');
-    assert.ok(page.includes("t('billing."), name + ' must render billing locale keys');
+    const references = page.split("t('billing.").slice(1).map(value => value.split("')", 1)[0]);
+    assert.ok(references.length > 0, name + ' must render billing locale keys');
+    for (const key of references) {
+      assert.ok(requiredKeys.includes(key), name + ' references an unreviewed billing key: ' + key);
+      assert.ok(english.includes(key + ':'), name + ' has no English billing.' + key);
+      assert.ok(russianBilling.includes(key + ':'), name + ' has no Russian billing.' + key);
+    }
     assert.equal(/coreClient|checkoutClient|paymentProvider|billingAuthority/.test(page), false,
       name + ' must not introduce payment or billing authority');
   }
