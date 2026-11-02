@@ -19,11 +19,11 @@ test('saved vector annotations can be selected individually and retain visible s
 });
 
 test('selected text, color and opacity actually change normalized annotations, not drawing defaults', () => {
-  assert.match(controls, /aria-label="Selected annotation text"/);
-  assert.match(controls, /aria-label="Selected annotation color"/);
-  assert.match(controls, /aria-label="Selected annotation opacity"/);
-  assert.match(controls, /aria-label="Selected annotation thickness"/);
-  assert.match(controls, /aria-label="Selected annotation font size"/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.annotationTextInput'\)\}/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.selectedColor'\)\}/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.selectedOpacity', \{ opacity: Math\.round\(selected\.opacity \* 100\) \}\)\}/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.selectedThickness', \{ thickness: selected\.thickness \}\)\}/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.labelSize', \{ size: selected\.fontSize \}\)\}/);
   assert.match(controls, /onEdit\(\{ text: event\.target\.value \}\)/);
   assert.match(controls, /onEdit\(\{ color: event\.target\.value \}\)/);
   assert.match(controls, /onEdit\(\{ opacity: Number\(event\.target\.value\) \/ 100 \}\)/);
@@ -33,7 +33,7 @@ test('selected text, color and opacity actually change normalized annotations, n
 });
 
 test('directional 1%-step buttons translate complete vector bounds via one undoable action', () => {
-  for (const word of ['left', 'right', 'up', 'down']) assert.match(controls, new RegExp('aria-label="Move annotation ' + word + '"'));
+  for (const key of ['moveLeft', 'moveRight', 'moveUp', 'moveDown']) assert.match(controls, new RegExp("aria-label=\\{t\\('localEditorUi\\." + key + "'\\)\\}"));
   assert.match(controls, /onMove\(-\.01, 0\)/);
   assert.match(controls, /onMove\(0, -\.01\)/);
   assert.match(controls, /onMove\(0, \.01\)/);
