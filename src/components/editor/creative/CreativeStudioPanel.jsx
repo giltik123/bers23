@@ -119,6 +119,9 @@ export default function CreativeStudioPanel({ project, objects }) {
       outfits: EMPTY_OUTFITS,
     }),
   }), [strategy]);
+  const workspaceKey = 'creative.workspaces.' + strategy.recommendations.workspace;
+  const translatedWorkspace = t(workspaceKey);
+  const workspaceLabel = translatedWorkspace === workspaceKey ? strategy.recommendations.workspace : translatedWorkspace;
   const currentSaved = savedCreativeStrategyForCurrent(saved, savedStrategy, strategy);
 
   const selectGoal = (id) => {
@@ -169,7 +172,7 @@ export default function CreativeStudioPanel({ project, objects }) {
         </div>
       </div>
       <div className="rounded-xl bg-secondary/50 p-3 text-xs text-muted-foreground">
-        {t('creative.suggestedWorkspace')}: <span className="font-medium text-foreground">{t('creative.workspaces.' + strategy.recommendations.workspace)}</span>
+        {t('creative.suggestedWorkspace')}: <span className="font-medium text-foreground">{workspaceLabel}</span>
       </div>
       <CreativeStrategySummary
         strategy={strategy}
