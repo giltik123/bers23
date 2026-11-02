@@ -38,3 +38,14 @@ test('startup localization diagnostics do not emit to an unowned remote observab
   assert.doesNotMatch(localization, /coreClient\.analytics|observability\/events/);
   assert.match(localization, /_reportedMissing/);
 });
+test('R3a measures protected Projects -> Editor -> Recipes readiness and cold route-chunk transfer', async () => {
+  const script = await readFile('scripts/test-release-r3a-browser-e2e.mjs', 'utf8');
+  assert.match(script, /Network\.setCacheDisabled', \{ cacheDisabled: true \}/);
+  assert.match(script, /performance\.clearResourceTimings\(\)/);
+  assert.match(script, /performance\.getEntriesByType\('resource'\)/);
+  assert.match(script, /projects-to-editor/);
+  assert.match(script, /editor-to-recipes-first-open/);
+  assert.match(script, /scriptTransferBytes/);
+  assert.match(script, /R3A_BROWSER_ROUTE_PERFORMANCE/);
+  assert.doesNotMatch(script, /page\.route\(|browserContext\.route\(|context\.route\(/);
+});
