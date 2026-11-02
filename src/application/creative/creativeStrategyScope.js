@@ -10,11 +10,11 @@ export function scopeCreativeStrategyToProject(strategy, projectId) {
   }
 
   const normalizedProjectId = projectId.normalize('NFKC').trim();
-  if (
-    !normalizedProjectId
-    || normalizedProjectId.length > 256
-    || /[\\u0000-\\u001f\\u007f]/u.test(normalizedProjectId)
-  ) {
+  const hasControlCharacter = Array.from(normalizedProjectId).some((character) => {
+    const codePoint = character.codePointAt(0);
+    return codePoint <= 0x1f || codePoint === 0x7f;
+  });
+  if (!normalizedProjectId || normalizedProjectId.length > 256 || hasControlCharacter) {
     throw new TypeError('Canonical Project ID must be a bounded printable identifier');
   }
 
