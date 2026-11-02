@@ -91,7 +91,7 @@ test('Creative Studio reads Outfit data only through the canonical read port and
     assert.equal(panel.includes(forbidden), false, 'Creative Studio must not use ' + forbidden);
   }
   assert.match(workflow, /coreClient\.fashion\.outfits\.list/u);
-  assert.match(workflow, /coreClient\\\.fashion\\\.outfits\\\.\(create/u);
+  assert.ok(workflow.includes("coreClient\\.fashion\\.outfits\\.(create"));
 });
 
 test('Creative Studio Outfit status and summary strings have Russian and English translations', () => {
