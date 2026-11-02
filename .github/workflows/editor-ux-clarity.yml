@@ -64,6 +64,7 @@ on:
       - 'scripts/test-release-r3e-browser-e2e.mjs'
       - 'tests/editor-ux-progressive-disclosure.test.mjs'
       - 'tests/bers-ux-system-redesign.test.mjs'
+      - 'tests/editor-result-compare-localization.test.mjs'
       - 'tests/mask-photoshop-controls.test.mjs'
       - 'tests/local-adjustments-editor-wiring.test.mjs'
       - 'tests/selection-brush-opacity.test.ts'
@@ -95,6 +96,7 @@ jobs:
           node --test \
             tests/editor-ux-progressive-disclosure.test.mjs \
             tests/bers-ux-system-redesign.test.mjs \
+            tests/editor-result-compare-localization.test.mjs \
             tests/mask-photoshop-controls.test.mjs \
             tests/local-adjustments.test.mjs \
             tests/local-compare.test.mjs \

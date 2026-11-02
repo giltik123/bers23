@@ -7,10 +7,10 @@ import { canCompareOperationAligned, canComparePixelsAligned, nativeInspectionCa
 import { reviewCandidateIdentity, canAcceptReviewedCandidate } from '@/application/editor/ai-first/resultReviewGate';
 
 const FASHION_REVIEW = Object.freeze([
-  ['fit', 'Одежда сидит по телу, плечам и талии естественно'],
-  ['occlusion', 'Руки, волосы и контуры тела правильно перекрывают ткань'],
-  ['texture', 'Ткань, принт, швы и логотипы без заметных искажений'],
-  ['identity', 'Лицо, освещение и фон остались естественными'],
+  ['fit', 'editControls.fashionReviewFit'],
+  ['occlusion', 'editControls.fashionReviewOcclusion'],
+  ['texture', 'editControls.fashionReviewTexture'],
+  ['identity', 'editControls.fashionReviewIdentity'],
 ]);
 const EMPTY_REVIEW = Object.freeze({ fit: false, occlusion: false, texture: false, identity: false });
 
@@ -19,7 +19,7 @@ const EMPTY_REVIEW = Object.freeze({ fit: false, occlusion: false, texture: fals
 // Split view is admitted only after both images have identical real geometry;
 // cropping/rotation/failed image delivery must never masquerade as aligned pixels.
 export default function ResultCompare({ beforeUrl, result, candidateOperation, kind = null, editScope = null, onAccept, onDiscard, onRetry, busy }) {
-  const { t, language } = useTranslation();
+  const { t } = useTranslation();
   const [view, setView] = useState('after');
   const [splitPosition, setSplitPosition] = useState(50);
   const [zoom, setZoom] = useState(1);
@@ -124,25 +124,25 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
   const naturalSize = mode === 'before' ? naturalSizes.before : naturalSizes.after;
   const inspectedCanvas = nativeInspectionCanvasSize(naturalSize, zoom)
     || { width: '100%', height: 340 };
-  const executionLabel = result?.provider || 'Local / Core preview';
+  const executionLabel = result?.provider || t('editControls.localCorePreview');
   const durationLabel = Number.isFinite(result?.generation_time_ms) && result.generation_time_ms > 0
     ? ` · ${(result.generation_time_ms / 1000).toFixed(1)}s` : '';
 
   return (
-    <section className="border border-border/60 rounded-2xl p-3 space-y-3" aria-label={language === 'ru' ? t('editControls.review') : 'Review pending image before accepting'}>
+    <section className="border border-border/60 rounded-2xl p-3 space-y-3" aria-label={t('editControls.reviewPendingAria')}>
       <header className="mb-3">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">{language === 'ru' ? t('editControls.almost') : 'Almost there'}</p>
-        <h2 className="mt-1 text-xl font-semibold">{language === 'ru' ? t('editControls.review') : 'Review your edit'}</h2>
-        <p role="status" className="text-sm text-muted-foreground">{language === 'ru' ? t('editControls.reviewHint') : 'Preview ready — not saved yet. Compare both images, then choose Accept to keep the change or Discard to leave your original untouched.'}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">{t('editControls.almost')}</p>
+        <h2 className="mt-1 text-xl font-semibold">{t('editControls.review')}</h2>
+        <p role="status" className="text-sm text-muted-foreground">{t('editControls.reviewHint')}</p>
       </header>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex rounded-lg border border-border overflow-hidden text-xs" role="group" aria-label={language === 'ru' ? t('editControls.compareMode') : 'Image comparison mode'}>
+        <div className="flex rounded-lg border border-border overflow-hidden text-xs" role="group" aria-label={t('editControls.compareMode')}>
           <button type="button" aria-pressed={mode === 'before'} onClick={() => setView('before')}
-            className={`px-3 py-1.5 ${mode === 'before' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>{language === 'ru' ? t('editControls.before') : 'Before'}</button>
+            className={`px-3 py-1.5 ${mode === 'before' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>{t('editControls.before')}</button>
           <button type="button" aria-pressed={mode === 'after'} onClick={() => setView('after')}
-            className={`px-3 py-1.5 ${mode === 'after' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>{language === 'ru' ? t('editControls.after') : 'After'}</button>
+            className={`px-3 py-1.5 ${mode === 'after' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>{t('editControls.after')}</button>
           <button type="button" aria-pressed={mode === 'split'} disabled={!splitAllowed} onClick={() => setView('split')}
-            className={`px-3 py-1.5 disabled:opacity-40 ${mode === 'split' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>{language === 'ru' ? t('editControls.split') : 'Split'}</button>
+            className={`px-3 py-1.5 disabled:opacity-40 ${mode === 'split' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>{t('editControls.split')}</button>
         </div>
         <span className="text-[11px] text-muted-foreground">
           {executionLabel}{durationLabel}
@@ -151,15 +151,15 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
 
       {(naturalSizes.before || naturalSizes.after) && (
         <p className="text-xs text-muted-foreground" role="status">
-          {language === 'ru' ? t('editControls.source') : 'Source'}: {naturalSizes.before ? `${naturalSizes.before.width}×${naturalSizes.before.height}` : (language === 'ru' ? t('editControls.unavailable') : 'unavailable')}
+          {t('editControls.source')}: {naturalSizes.before ? `${naturalSizes.before.width}×${naturalSizes.before.height}` : t('editControls.unavailable')}
           {' → '}
-          {language === 'ru' ? t('editControls.candidate') : 'Candidate'}: {naturalSizes.after ? `${naturalSizes.after.width}×${naturalSizes.after.height}` : 'unavailable'} {language === 'ru' ? t('editControls.pixels') : 'pixels'}
+          {t('editControls.candidate')}: {naturalSizes.after ? `${naturalSizes.after.width}×${naturalSizes.after.height}` : 'unavailable'} {t('editControls.pixels')}
         </p>
       )}
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2">
-          <label htmlFor="editor-preview-zoom">{language === 'ru' ? t('editControls.zoom') : 'Inspection zoom'}</label>
-          <select id="editor-preview-zoom" aria-label={language === 'ru' ? t('editControls.zoom') : 'Inspection zoom'} value={zoom} disabled={!naturalSize}
+          <label htmlFor="editor-preview-zoom">{t('editControls.zoom')}</label>
+          <select id="editor-preview-zoom" aria-label={t('editControls.zoom')} value={zoom} disabled={!naturalSize}
             onChange={(event) => setZoom(Number(event.target.value))}
             className="rounded-md border border-border bg-background px-2 py-1">
             <option value={1}>100%</option>
@@ -168,8 +168,8 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
         </div>
         {mode === 'split' && (
           <label className="flex flex-1 items-center gap-2 min-w-[160px] max-w-xs">
-            {language === 'ru' ? t('editControls.boundary') : 'Split boundary'}
-            <input aria-label={language === 'ru' ? t('editControls.boundary') : 'Split boundary'} type="range" min="0" max="100" step="1"
+            {t('editControls.boundary')}
+            <input aria-label={t('editControls.boundary')} type="range" min="0" max="100" step="1"
               value={splitPosition} onChange={(event) => setSplitPosition(Number(event.target.value))}
               className="flex-1 accent-primary" />
             <span className="tabular-nums">{splitPosition}%</span>
@@ -179,17 +179,17 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
 
       {geometry === 'aligned' && !canCompareOperationAligned(candidateOperation) && (
         <p role="status" className="text-xs text-muted-foreground">
-          {language === 'ru' ? t('editControls.noSplit') : 'This operation may change image registration. Split inspection is disabled; review Before and After separately.'}
+          {t('editControls.noSplit')}
         </p>
       )}
       {geometry === 'different' && (
         <p role="status" className="text-xs text-muted-foreground">
-          {language === 'ru' ? t('editControls.different') : 'Images have different pixel dimensions. Split comparison is disabled to avoid false alignment.'}
+          {t('editControls.different')}
         </p>
       )}
       {geometry === 'unavailable' && (
         <p role="status" className="text-xs text-muted-foreground">
-          {language === 'ru' ? t('editControls.sizeUnknown') : 'One image cannot be measured. Before and After remain available when its preview loads.'}
+          {t('editControls.sizeUnknown')}
         </p>
       )}
 
@@ -197,10 +197,10 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
         <div className="relative" style={inspectedCanvas}>
           {mode === 'split' ? (
             <>
-              <img src={afterUrl} alt={language === 'ru' ? t('editControls.rightSplit') : 'Edited image, right side of split'} draggable={false}
+              <img src={afterUrl} alt={t('editControls.rightSplit')} draggable={false}
                 onLoad={()=>markLoaded('after')} onError={()=>markFailed('after')}
                 className="absolute inset-0 h-full w-full object-fill" />
-              <img src={beforeUrl} alt={language === 'ru' ? t('editControls.leftSplit') : 'Original image, left side of split'} draggable={false}
+              <img src={beforeUrl} alt={t('editControls.leftSplit')} draggable={false}
                 onLoad={()=>markLoaded('before')} onError={()=>markFailed('before')}
                 className="absolute inset-0 h-full w-full object-fill"
                 style={{ clipPath: `inset(0 ${100 - splitPosition}% 0 0)` }} />
@@ -218,43 +218,43 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
       </div>
 
       <p className="text-[11px] text-muted-foreground">
-        {language === 'ru' ? t('editControls.qualityHint') : 'Zoom uses actual decoded image dimensions (one CSS pixel per source pixel at 100%). This remains a visual preview, not a pixel-level quality certificate. Accept alone commits to Project history.'}
+        {t('editControls.qualityHint')}
       </p>
       {(failed.before === identity || failed.after === identity) && needsHumanReview && (
-        <p role="alert" className="text-sm text-destructive">Не удалось загрузить изображение для проверки. Принятие заблокировано.</p>
+        <p role="alert" className="text-sm text-destructive">{t('editControls.reviewImageLoadFailed')}</p>
       )}
       {needsHumanReview && !reviewImagesReady && (
-        <p role="status" className="text-xs text-muted-foreground">Перед принятием просмотрите «Before» и «After»; необходимо загрузить обе версии текущего результата.</p>
+        <p role="status" className="text-xs text-muted-foreground">{t('editControls.reviewBothImagesBeforeAccept')}</p>
       )}
       {scopedGeneration && (
-        <label className="flex gap-2 text-sm rounded-xl border p-3" aria-label="Ручная проверка ИИ">
+        <label className="flex gap-2 text-sm rounded-xl border p-3" aria-label={t('editControls.scopedReviewLabel')}>
           <input type="checkbox" disabled={busy || !reviewImagesReady}
             checked={scopedReview} onChange={event=>setScopedReview(event.target.checked)}/>
-          <span>{editScope==='MASKED' ? 'Я сравнил изображение и проверил, что вне выбранной Core-маски ничего не изменилось.' : 'Я просмотрел изображение и проверил лицо, руки, объекты, текст и свет.'} Это ручная оценка, не сертификат качества.</span>
+          <span>{t(editScope === 'MASKED' ? 'editControls.scopedMaskedReview' : 'editControls.scopedWholeImageReview')} {t('editControls.manualReviewDisclaimer')}</span>
         </label>
       )}
       {fashion && (
-        <section className="rounded-xl border p-3 space-y-2" aria-label="Ручная оценка реализма Fashion">
-          <p className="font-medium text-sm">Принятие примерки требует вашей проверки посадки и перекрытий.</p>
-          {FASHION_REVIEW.map(([key,label])=>(
+        <section className="rounded-xl border p-3 space-y-2" aria-label={t('editControls.fashionReviewAria')}>
+          <p className="font-medium text-sm">{t('editControls.fashionReviewRequired')}</p>
+          {FASHION_REVIEW.map(([key,labelKey])=>(
             <label key={key} className="flex gap-2 items-start text-sm">
               <input type="checkbox" disabled={busy || !reviewImagesReady}
                 checked={fashionReview[key]}
                 onChange={event=>setFashionReview(previous=>({...previous,[key]:event.target.checked}))}/>
-              <span>{label}</span>
+              <span>{t(labelKey)}</span>
             </label>
           ))}
         </section>
       )}
       <div className="flex flex-wrap gap-2">
         <Button onClick={onAccept} disabled={busy || reviewBlocked} className="flex-1 min-w-[100px]">
-          {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />} {language === "ru" ? t("editControls.accept") : "Accept"}
+          {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />} {t('editControls.accept')}
         </Button>
         {onRetry && kind !== 'VIRTUAL_TRY_ON' && <Button variant="outline" onClick={onRetry} disabled={busy} className="rounded-xl">
-          <RotateCcw className="w-4 h-4 mr-2" /> {language === "ru" ? t("editControls.retry") : "Retry"}
+          <RotateCcw className="w-4 h-4 mr-2" /> {t('editControls.retry')}
         </Button>}
         <Button variant="outline" onClick={onDiscard} disabled={busy} className="rounded-xl text-destructive hover:text-destructive">
-          <Trash2 className="w-4 h-4 mr-2" /> {language === "ru" ? t("editControls.discard") : "Discard"}
+          <Trash2 className="w-4 h-4 mr-2" /> {t('editControls.discard')}
         </Button>
       </div>
     </section>
