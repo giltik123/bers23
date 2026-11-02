@@ -50,6 +50,19 @@ export default function CreativeStudioPanel({ project, objects }) {
   const generated = useMemo(() => creativeStudio.generate({ goalId, analysis }), [goalId, analysis]);
   const idea = generated.ideas.find((item) => item.id === ideaId) || generated.ideas[0];
 
+  const localizedIdea = useMemo(() => {
+    const theme = t('creative.themes.' + idea.themeKey);
+    return {
+      ...idea,
+      title: theme,
+      description: t('creative.ideaDescription', {
+        goal: t('creative.goalDescriptions.' + idea.goalId),
+        theme,
+        orientation: t('creative.orientations.' + idea.orientation),
+      }),
+    };
+  }, [idea, t]);
+
   useEffect(() => {
     if (goalId !== 'fashion') {
       setOutfits(EMPTY_OUTFITS);
@@ -92,13 +105,13 @@ export default function CreativeStudioPanel({ project, objects }) {
   const strategyOutfits = goalId === 'fashion' && outfitsStatus === 'ready' ? outfits : EMPTY_OUTFITS;
   const strategy = useMemo(() => scopeCreativeStrategyToProject(
     creativeStudio.strategy({
-      idea,
+      idea: localizedIdea,
       goal: generated.goal,
       analysis,
       outfits: strategyOutfits,
     }),
     project?.id,
-  ), [idea, generated.goal, analysis, strategyOutfits, project?.id]);
+  ), [localizedIdea, generated.goal, analysis, strategyOutfits, project?.id]);
   const historyStrategy = useMemo(() => Object.freeze({
     ...strategy,
     recommendations: Object.freeze({
