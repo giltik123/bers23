@@ -280,12 +280,19 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     event.target.value = '';
     if (!file) return;
     abortRef.current?.abort();
+    // The file load now owns the loading state; an aborted Core fetch must not
+    // clear it from its finally block.
+    abortRef.current = null;
     const generation = ++loadGeneration.current;
     setLoading(true);
     setError('');
     try { await activateLocalImage(file, file.name, generation); }
-    catch (cause) { setError(cause?.message || 'Local photo could not be decoded.'); }
-    finally { setLoading(false); }
+    catch (cause) {
+      if (generation === loadGeneration.current) setError(cause?.message || 'Local photo could not be decoded.');
+    } finally {
+      // A superseded decode must not hide a newer load's progress or error.
+      if (generation === loadGeneration.current) setLoading(false);
+    }
   };
 
   useEffect(() => {
