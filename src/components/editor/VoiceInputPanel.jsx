@@ -95,9 +95,9 @@ export default function VoiceInputPanel({
       generationRef.current++;
       sessionRef.current.abort();sessionRef.current=null;
       setPhase('IDLE');setPartial('');
-      setError(t('voiceUi.errorEditorBusy'));
+      setError('voiceUi.errorEditorBusy');
     }
-  },[disabled,t]);
+  },[disabled]);
   const start=async()=>{
     if(disabled||phase==='RECORDING'||phase==='PREPARING')return;
     const generation=++generationRef.current;
@@ -118,7 +118,7 @@ export default function VoiceInputPanel({
         onError:reason=>{
           if(generation!==generationRef.current)return;
           sessionRef.current=null;
-          setPhase('ERROR');setError(t(voiceErrorKey(reason)));
+          setPhase('ERROR');setError(voiceErrorKey(reason));
         },
       });
       if(generation!==generationRef.current){
@@ -139,7 +139,7 @@ export default function VoiceInputPanel({
     try{
       await installLocalRussianVoicePack();
       setMissingPack(false);setPhase('IDLE');
-      setNotice(t('voiceUi.packInstalled'));
+      setNotice('voiceUi.packInstalled');
     }catch(reason){setError(t(voiceErrorKey(reason)));}
     finally{setInstalling(false);}
   };
@@ -168,7 +168,7 @@ export default function VoiceInputPanel({
       }
       setError('');setPhase('IDLE');setTranscript('');setPartial('');
       setOpen(false);
-    }catch{setError(t('voiceUi.errorConfirm'));}
+    }catch{setError('voiceUi.errorConfirm');}
     finally{submittingRef.current=false;setSubmitting(false);}
   };
   return (
@@ -217,8 +217,8 @@ export default function VoiceInputPanel({
             {draft.kind==='WARDROBE_QUERY'&&draft.params?.hints
               ?` — ${t('voiceUi.searchHint',{query:draft.params.query})}`:''}
           </p>}
-          {notice&&<p role="status" className="text-xs text-muted-foreground">{notice}</p>}
-          {error&&<p role="alert" className="text-xs text-destructive">{error}</p>}
+          {notice&&<p role="status" className="text-xs text-muted-foreground">{t(notice)}</p>}
+          {error&&<p role="alert" className="text-xs text-destructive">{t(error)}</p>}
           {missingPack&&(
             <Button type="button" variant="outline" size="sm"
               disabled={disabled||installing} onClick={installPack}>
