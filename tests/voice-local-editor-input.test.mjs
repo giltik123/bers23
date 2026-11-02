@@ -323,6 +323,11 @@ test('Voice panel has complete RU/EN copy while preserving Russian LOCAL_ONLY re
     assert.ok(russian.voiceUi[key], 'Russian voiceUi.' + key + ' must exist');
     assert.match(englishBlock, new RegExp('"' + key + '"\\s*:'));
   }
+  assert.match(ui, /setError\\(voiceErrorKey\\(reason\\)\\)/);
+  assert.match(ui, /setNotice\\('voiceUi\\.packInstalled'\\)/);
+  assert.match(ui, /\\{notice&&<p[^>]*>\\{t\\(notice\\)\\}<\\/p>\\}/);
+  assert.match(ui, /\\{error&&<p[^>]*>\\{t\\(error\\)\\}<\\/p>\\}/);
+  assert.doesNotMatch(ui, /setError\\(t\\(|setNotice\\(t\\(/);
   assert.doesNotMatch(ui, /Голос · локально|Записать|Остановить|Распознанная фраза|Распознанный текст появится|reason\?\.message|String\(reason\)/u);
   assert.match(voicePort, /processLocally:true/);
   assert.match(voicePort, /privacy:'LOCAL_ONLY'/);
