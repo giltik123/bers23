@@ -50,7 +50,7 @@ test('manual prerequisite flow cannot infer evidence or promote Save directly to
   assert.match(policy, /BODY_ANCHORS_REQUIRED/);
   assert.match(policy, /mode: 'RECHECK_REQUIRED'/);
   assert.match(policy, /readiness: null/);
-  assert.match(panel, /Check readiness again/);
+  assert.match(panel, /fashion\.manualTryOn\.checkReadinessAgain/);
   assert.doesNotMatch(panel, /onRun|onResume|onRecover|onRetry/);
 });
 

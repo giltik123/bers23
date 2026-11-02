@@ -83,3 +83,19 @@ test('known Core acquisition errors map to actionable copy and unknown errors re
   assert.equal(manualAcquisitionErrorMessage({ code: 'future_core_code', message: 'Exact Core explanation' }), 'Exact Core explanation');
   assert.equal(manualAcquisitionErrorMessage({ code: 'future_core_code' }), 'Try-On acquisition failed (future_core_code).');
 });
+
+
+test('known Core acquisition errors can be localized without changing the default fallback', () => {
+  assert.equal(
+    manualAcquisitionErrorMessage({ code: 'manual_parametric_self_intersection' }, (key) => 'localized:' + key),
+    'localized:fashion.manualTryOn.errors.manual_parametric_self_intersection',
+  );
+  assert.equal(
+    manualAcquisitionErrorMessage({ code: 'future_core_code' }, (key, values) => key + ':' + values.code),
+    'fashion.manualTryOn.errors.failedWithCode:future_core_code',
+  );
+  assert.match(
+    manualAcquisitionErrorMessage({ code: 'TRYON_MANUAL_CONTOUR_SAVED_RELOAD_PENDING' }),
+    /Contour save was accepted/,
+  );
+});
