@@ -113,7 +113,7 @@ jobs:
           grep -q 'creativeHistory.save(historyStrategy)' "$FILE"
           grep -q 'outfits: EMPTY_OUTFITS' "$FILE"
           ! grep -q 'creativeHistory.save(strategy)' "$FILE"
-          ! grep -E -q 'outfitManager|coreClient\.entities|coreClient\.fashion\.wardrobe|coreClient\.fashion\.outfits\.(create|updateMetadata|duplicate|archive|restore|remove|addEntry|replaceEntry|removeEntry|setEntryRole|reorderEntries)|FASHN|billing|credits|onCommit|onRollback|fetch\(' "$FILE"
+          ! grep -E -q 'outfitManager|coreClient\.entities|coreClient\.fashion\.(garments|collections|wardrobe|checkTryOnReadiness|admitManualParametricRepresentation)|coreClient\.fashion\.outfits\.(get|create|updateMetadata|duplicate|archive|restore|remove|addEntry|replaceEntry|removeEntry|setEntryRole|reorderEntries)|coreClient\.creative\.execute|Core\.UploadFile|integrations\.Core|compositeContinuations|functions\.invoke|FASHN|billing|credits|provider|onCommit|onRollback|fetch\(' "$FILE"
           ! grep -q 'outfits: \[\]' "$FILE"
       - name: Check committed diff whitespace
         run: git diff --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
