@@ -92,6 +92,7 @@ const EXPECTED_C8_PULL_REQUEST_PATHS = Object.freeze([
   'src/platform/creative/local-ai/browser/BrowserOnnxSessionFactory.ts',
   'src/platform/creative/local-ai/models/lama-inpainting.manifest.json',
   'package.json',
+  'package-lock.json',
   '**/*.ckpt',
   '**/*.pth',
   '**/*.pt',
