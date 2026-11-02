@@ -575,7 +575,9 @@ test('canonical Scene Mask Editor integrates with accessible UX and Core-owned r
   assert.match(canvas,/<CanonicalMaskPreview[\s\S]*?projectId=\{projectId\} sourceArtifactId=\{sourceArtifactId\}/);
   assert.match(canvas,/maskArtifactId=\{selectedMaskId\}/);
   assert.match(canvas,/maskOverlayVisible && selectedMaskId/);
-  assert.match(objects,/aria-label=\{obj\.selected \? 'Deselect '/);
+  assert.ok(objects.includes("t(obj.selected ? 'editorUi.objectPanel.deselectObject' : 'editorUi.objectPanel.selectObject'"));
+  assert.ok(objects.includes("t(isHidden ? 'editorUi.objectPanel.showObjectOverlay' : 'editorUi.objectPanel.hideObjectOverlay')"));
+  assert.ok(objects.includes("t('editorUi.objectPanel.sectionLabel')"));
   assert.ok(panel.includes('coreClient.scene.capability()'));
   assert.ok(panel.includes('currentRequest===0 || requested.sourceKey!==sourceKey'));
   assert.ok(panel.includes('window.confirm('));
