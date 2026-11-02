@@ -77,21 +77,21 @@ test('live Editor progress components use shared translations and retain existin
     readFile('src/components/editor/SegmentationProgress.jsx', 'utf8'),
   ]);
   for (const [name, source] of [['generation', generation], ['flow', flow], ['segmentation', segmentation]]) {
-    assert.match(source, /useTranslation/, name + ' must use the shared locale context');
-    assert.match(source, /editorProgress\\./, name + ' must use the shared progress namespace');
-    assert.doesNotMatch(source, /coreClient|projectService|financialAuthority/, name + ' must not gain a new authority');
+    assert.ok(source.includes('useTranslation'), name + ' must use the shared locale context');
+    assert.ok(source.includes('editorProgress.'), name + ' must use the shared progress namespace');
+    assert.equal(/coreClient|projectService|financialAuthority/.test(source), false, name + ' must not gain a new authority');
   }
-  assert.match(generation, /role="region" aria-label=/);
-  assert.match(generation, /aria-live="polite" aria-atomic="true"/);
-  assert.match(flow, /role="group" aria-label=/);
-  assert.match(segmentation, /role="region" aria-label=/);
-  assert.match(segmentation, /aria-live="polite" aria-atomic="true"/);
-  assert.match(generation, /t\\('common\\.cancel'\\)/);
-  assert.match(generation, /editingEngine\\.cancel\\(\\)/);
-  assert.match(generation, /t\\('editorProgress\\.estimatedSeconds'/);
-  assert.match(flow, /t\\(step\\.labelKey\\)/);
-  assert.match(flow, /aria-current=\\{active \\? 'step' : undefined\\}/);
-  assert.match(segmentation, /t\\('editorProgress\\.cancelSegmentation'\\)/);
-  assert.match(segmentation, /cancelActiveSegmentation/);
-  assert.doesNotMatch(segmentation, /event\\.message/, 'raw provider progress text must not bypass the locale');
+  assert.ok(generation.includes('role="region" aria-label='));
+  assert.ok(generation.includes('aria-live="polite" aria-atomic="true"'));
+  assert.ok(flow.includes('role="group" aria-label='));
+  assert.ok(segmentation.includes('role="region" aria-label='));
+  assert.ok(segmentation.includes('aria-live="polite" aria-atomic="true"'));
+  assert.ok(generation.includes("t('common.cancel')"));
+  assert.ok(generation.includes('editingEngine.cancel()'));
+  assert.ok(generation.includes("t('editorProgress.estimatedSeconds'"));
+  assert.ok(flow.includes('t(step.labelKey)'));
+  assert.ok(flow.includes("aria-current={active ? 'step' : undefined}"));
+  assert.ok(segmentation.includes("t('editorProgress.cancelSegmentation')"));
+  assert.ok(segmentation.includes('cancelActiveSegmentation'));
+  assert.equal(segmentation.includes('event.message'), false, 'raw provider progress text must not bypass the locale');
 });
