@@ -82,3 +82,14 @@ test('real Chrome/Postgres E2E proves file input, real pixels, PNG output and un
   assert.match(e2e, /local image editing must never call AI providers/);
   assert.match(e2e, /local PNG editing must not manufacture Core execution tickets/);
 });
+
+test('superseded local file loads cannot clear newer progress or publish stale errors', () => {
+  const start = local.indexOf('const loadFromFile = async');
+  const end = local.indexOf('\n  useEffect(() => {\n    if (!details', start);
+  assert(start >= 0 && end > start);
+  const handler = local.slice(start, end);
+  assert.match(handler, /abortRef\.current\?\.abort\(\);\s*\/\/ The file load now owns the loading state[\s\S]*?abortRef\.current = null;/);
+  assert.match(handler, /catch \(cause\) \{\s*if \(generation === loadGeneration\.current\) setError/);
+  assert.match(handler, /finally \{[\s\S]*?if \(generation === loadGeneration\.current\) setLoading\(false\);/);
+  assert.match(local, /if \(generation !== loadGeneration\.current\) return;/);
+});
