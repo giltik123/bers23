@@ -56,6 +56,7 @@ test('release preflight rejects placeholder identity, invalid versions and malfo
 test('Android shell is a minimal SDK 36 TWA without dangerous permissions or a second Auth channel', () => {
   const gradle = readFileSync('android/app/build.gradle', 'utf8');
   const manifest = readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
+  assert.match(gradle, /^import java\.net\.URI\n\nplugins \{\n    id 'com\.android\.application'\n\}\n/);
   assert.match(gradle, /compileSdk 36/);
   assert.match(gradle, /targetSdk 36/);
   assert.match(gradle, /minSdk 24/);
