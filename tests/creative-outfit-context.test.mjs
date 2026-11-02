@@ -66,6 +66,9 @@ test('Creative Studio reads Outfit data only through the canonical read port and
   assert.match(panel, /setOutfitsRetry/u);
   assert.match(panel, /useAuth\(\)/u);
   assert.match(panel, /principalKey/u);
+  assert.match(panel, /user\?\.id && user\?\.tenant_id/u);
+  assert.match(panel, /\[goalId, outfitsRetry, isAuthenticated, isLoadingAuth, principalKey\]/u);
+  assert.match(panel, /\}, \[principalKey\]\)/u);
   assert.match(panel, /isAuthenticated/u);
   assert.match(panel, /isLoadingAuth/u);
   assert.match(panel, /setSaved\(null\)/u);
@@ -111,7 +114,7 @@ test('Creative Studio reads Outfit data only through the canonical read port and
     assert.equal(panel.includes(forbidden), false, 'Creative Studio must not use ' + forbidden);
   }
   assert.match(workflow, /coreClient\.fashion\.outfits\.list/u);
-  assert.ok(workflow.includes("coreClient\\.fashion\\.outfits\\.(create"));
+  assert.ok(workflow.includes("coreClient\\.fashion\\.outfits\\.(get|create"));
 });
 
 test('Creative Studio Outfit status and summary strings have Russian and English translations', () => {
