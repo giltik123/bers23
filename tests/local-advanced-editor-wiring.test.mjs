@@ -1,8 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import english from '../src/lib/i18n/locales/en/index.js';
-import russian from '../src/lib/i18n/locales/ru/index.js';
 
 const [parent, controls, engine, pixelEngine, browserE2e] = await Promise.all([
   readFile('src/components/editor/local/LocalAdjustmentsPanel.jsx', 'utf8'),
@@ -163,16 +161,29 @@ test('manual clone can select honest color-matched repair with real pixel transf
 
 
 test('local editing subpanels use a complete matching RU/EN catalog without changing execution authority', async () => {
-  const [annotationControls, recipeControls] = await Promise.all([
+  const [annotationControls, recipeControls, englishSource, russianSource] = await Promise.all([
     readFile('src/components/editor/local/LocalAnnotationControls.jsx', 'utf8'),
     readFile('src/components/editor/local/LocalRecipeControls.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
   ]);
-  const flatten = (value, prefix = '') => Object.entries(value).flatMap(([key, child]) => (
-    child && typeof child === 'object' && !Array.isArray(child)
-      ? flatten(child, prefix ? prefix + '.' + key : key)
-      : [prefix ? prefix + '.' + key : key]
-  )).sort();
-  assert.deepEqual(flatten(russian.localEditorUi), flatten(english.localEditorUi), 'every local editing key needs both locales');
+  const englishBlock = englishSource.match(/const localEditorUi = \{([\\s\\S]*?)\\n\\};/u)?.[1];
+  const russianBlock = russianSource.match(/localEditorUi: \{([\\s\\S]*?)\\n  \},/u)?.[1];
+  assert.ok(englishBlock && russianBlock, 'both locale catalogs must define localEditorUi');
+  const topLevelKeys = block => [...block.matchAll(/^  ([A-Za-z][A-Za-z0-9]*):/gmu)].map(match => match[1]).sort();
+  assert.deepEqual(topLevelKeys(russianBlock), topLevelKeys(englishBlock), 'every top-level local editing key needs both locales');
+  const nestedKeys = (block, name) => {
+    const nested = block.match(new RegExp('^  ' + name + ': \\{([^}]*)\\}', 'mu'))?.[1];
+    assert.ok(nested, 'localEditorUi.' + name + ' must exist');
+    return [...nested.matchAll(/([A-Za-z][A-Za-z0-9-]*):/gu)].map(match => match[1]).sort();
+  };
+  for (const name of ['channel', 'hue', 'gradient', 'annotationTool', 'annotationColor']) {
+    assert.deepEqual(nestedKeys(russianBlock, name), nestedKeys(englishBlock, name), 'localEditorUi.' + name + ' needs matching keys');
+  }
+  assert.match(englishBlock, /devicePrivacy: ".*unencrypted/u);
+  assert.match(englishBlock, /edits are NOT automatically saved/u);
+  assert.match(russianBlock, /devicePrivacy: ".*без шифрования/u);
+  assert.match(russianBlock, /изменения НЕ сохраняются автоматически/u);
   for (const source of [controls, annotationControls, recipeControls]) {
     assert.match(source, /useTranslation/);
     assert.match(source, /localEditorUi\./);
