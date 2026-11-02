@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
+import {
+  savedCreativeStrategyForCurrent,
+  scopeCreativeStrategyToProject,
+} from '../src/application/creative/creativeStrategyScope.js';
 
 test('Editor single-edit path crosses only an application boundary', async () => { const source = await readFile('src/pages/Editor.jsx', 'utf8'); for (const forbidden of ['editingEngine', 'creditsEngine', 'reveProvider', 'providers/fal', 'provider-runtime', 'server/transactions']) assert.equal(source.includes(forbidden), false, forbidden); assert.match(source, /creativeEditApplicationService\.execute/); });
 test('application edit adapter sends no server-authoritative fields', async () => { const source = await readFile('src/application/creative/CreativeEditApplicationService.js', 'utf8'); assert.match(source, /coreClient\.creative\.execute/); for (const forbidden of ['walletBalance', 'reservationStatus', 'authorizationResult', 'retryCount', 'FAL_KEY', 'REVE_KEY']) assert.equal(source.includes(forbidden), false); });
@@ -599,4 +603,31 @@ test('production Editor does not expose mask controls or pass stale masks into w
   assert.ok(studio.includes("const wholeImageAdmitted = Boolean(plan.instruction) && plan.kind !== 'FASHION'"));
   assert.ok(studio.includes("await onPrepareFreeAccount?.()"));
   assert.ok(studio.includes("Понимаю, что может измениться весь кадр"));
+});
+
+test('Creative Studio saved strategy identity is Project-scoped and stale context is not reused', async () => {
+  const base = Object.freeze({ id: 'creative-fashion-0', goalId: 'fashion' });
+  const first = scopeCreativeStrategyToProject(base, 'project-a');
+  const second = scopeCreativeStrategyToProject(base, 'project-b');
+
+  assert.notEqual(first.id, second.id);
+  assert.equal(first.id, 'creative-fashion-0:project:project-a');
+  assert.equal(second.id, 'creative-fashion-0:project:project-b');
+  assert.equal(base.id, 'creative-fashion-0');
+  assert.equal(Object.isFrozen(first), true);
+  assert.throws(() => scopeCreativeStrategyToProject(base, ''), /Project ID/u);
+  assert.throws(() => scopeCreativeStrategyToProject(base, 'bad\\u0000id'), /printable/u);
+
+  const saved = Object.freeze({ id: first.id, favorite: true });
+  assert.equal(savedCreativeStrategyForCurrent(saved, first, first), saved);
+  assert.equal(savedCreativeStrategyForCurrent(saved, second, second), null);
+  assert.equal(savedCreativeStrategyForCurrent(saved, {}, first), null);
+  assert.equal(savedCreativeStrategyForCurrent({ id: second.id }, second, first), null);
+
+  const panel = await readFile('src/components/editor/creative/CreativeStudioPanel.jsx', 'utf8');
+  assert.match(panel, /scopeCreativeStrategyToProject\\(/u);
+  assert.match(panel, /savedCreativeStrategyForCurrent\\(saved, savedStrategy, strategy\\)/u);
+  assert.match(panel, /saved=\\{currentSaved\\}/u);
+  assert.match(panel, /setSavedStrategy\\(strategy\\)/u);
+  assert.doesNotMatch(panel, /const entry = saved \\|\\| creativeHistory\\.save\\(strategy\\)/u);
 });
