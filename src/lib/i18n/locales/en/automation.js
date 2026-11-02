@@ -43,7 +43,7 @@ export default {
   project: "Project",
   resumeLatest: "Resume latest",
   retry: "Retry",
-  invocation: "Invocation",
+  invocation: "Invocation {id}",
   definitionState: "Definition r{revision} · state {state}",
   attempt: "attempt {status}",
   coreNextAction: "Core next action: {operation}",

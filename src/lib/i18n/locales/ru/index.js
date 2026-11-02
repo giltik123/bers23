@@ -25,7 +25,7 @@ export const modules = {
     project: "Проект",
     resumeLatest: "Продолжить последний запуск",
     retry: "Повторить",
-    invocation: "Запуск",
+    invocation: "Запуск {id}",
     definitionState: "Ревизия r{revision} · состояние: {state}",
     attempt: "попытка: {status}",
     coreNextAction: "Следующее действие Core: {operation}",
