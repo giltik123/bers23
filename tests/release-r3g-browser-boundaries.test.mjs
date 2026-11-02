@@ -39,6 +39,17 @@ test('R3g drives visible zero-object navigation into canonical Fashion and Outfi
   assert.match(harness, /Fashion\/Wardrobe\/Outfits navigation must not mutate canonical Project state or objects/);
 });
 
+test('R3g attaches Core response waits to the triggering UI action immediately', async () => {
+  const harness = await readFile(HARNESS, 'utf8');
+
+  assert.match(harness, /async function waitForCoreResponses\(page, paths, action\)/);
+  assert.match(harness, /await Promise\.all\(\[action\(\), Promise\.all\(waits\)\]\)/);
+  assert.match(harness, /diagnostics\.fashionReads\.slice\(diagnosticsStart\)/);
+  assert.match(harness, /R3g Core read barrier failed; expected=/);
+  assert.equal((harness.match(/await waitForCoreResponses\(page,/g) || []).length, 4);
+  assert.doesNotMatch(harness, /const (?:fashionMode|wardrobe|returnMode|outfit)Load = waitForCoreResponses/);
+});
+
 test('R3g uses built SPA built production Core and PostgreSQL only as correctness oracle', async () => {
   const harness = await readFile(HARNESS, 'utf8');
 

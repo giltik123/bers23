@@ -152,44 +152,40 @@ try {
   const fashion = page.getByRole('button', { name: 'Fashion', exact: true });
   await fashion.waitFor({ state: 'visible', timeout: 10_000 });
 
-  const fashionModeLoad = waitForCoreResponses(page, [
+  await waitForCoreResponses(page, [
     '/api/core/wardrobe/outfits',
     '/api/core/wardrobe/garments',
-  ]);
-  await fashion.click();
-  await fashionModeLoad;
+  ], () => fashion.click());
   await page.getByRole('region', { name: 'Примерка одежды', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
   await assertActiveNavigation(fashion, 'Fashion');
 
-  const wardrobeLoad = waitForCoreResponses(page, [
+  await waitForCoreResponses(page, [
     '/api/core/garments',
     '/api/core/wardrobe/garments',
-  ]);
-  await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
-  await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
-  await wardrobeLoad;
+  ], async () => {
+    await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
+    await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
+  });
   await page.getByRole('region', { name: 'Canonical wardrobe and collections', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
   await page.getByText('No managed garments yet. Add a garment photo to create the first stable wardrobe item.', { exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
 
-  const returnModeLoad = waitForCoreResponses(page, [
+  await waitForCoreResponses(page, [
     '/api/core/wardrobe/outfits',
     '/api/core/wardrobe/garments',
-  ]);
-  await page.getByRole('link', { name: /Back to workspace|Назад к редактору/ }).click();
-  await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId && url.searchParams.get('mode') === 'fashion');
-  await returnModeLoad;
+  ], async () => {
+    await page.getByRole('link', { name: /Back to workspace|Назад к редактору/ }).click();
+    await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId && url.searchParams.get('mode') === 'fashion');
+  });
   await page.getByRole('region', { name: 'Примерка одежды', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
 
-  const outfitLoad = waitForCoreResponses(page, [
+  await waitForCoreResponses(page, [
     '/api/core/wardrobe/outfits',
     '/api/core/wardrobe/garments',
-  ]);
-  await page.getByText('Комплекты одежды · дополнительно', { exact: true }).click();
-  await outfitLoad;
+  ], () => page.getByText('Комплекты одежды · дополнительно', { exact: true }).click());
   await page.getByRole('region', { name: 'Canonical Outfit builder', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
   await page.getByText('No managed outfits yet. Create one to compose stable garment references.', { exact: true })
@@ -276,14 +272,28 @@ function countRequest(entry) {
   return diagnostics.fashionReads.filter(value => value === entry).length;
 }
 
-async function waitForCoreResponses(page, paths) {
+async function waitForCoreResponses(page, paths, action) {
+  assert.equal(typeof action, 'function', 'Core response barrier requires the user action that starts the reads');
+  const diagnosticsStart = diagnostics.fashionReads.length;
   const waits = paths.map(pathName => page.waitForResponse(response => {
     const url = new URL(response.url());
     return response.request().method() === 'GET' && url.origin === coreOrigin && url.pathname === pathName;
-  }, { timeout: 15_000 }));
-  const responses = await Promise.all(waits);
-  for (const response of responses) assert.equal(response.ok(), true, `${response.url()} must succeed through real Core`);
-  return responses;
+  }, { timeout: 20_000 }));
+
+  try {
+    // Attach rejection handlers to both the UI action and every response wait
+    // immediately. A slow navigation must not turn a timed-out read into an
+    // unhandled rejection before the barrier is awaited.
+    const [, responses] = await Promise.all([action(), Promise.all(waits)]);
+    for (const response of responses) assert.equal(response.ok(), true, response.url() + ' must succeed through real Core');
+    return responses;
+  } catch (cause) {
+    const observed = diagnostics.fashionReads.slice(diagnosticsStart);
+    throw new Error(
+      'R3g Core read barrier failed; expected=' + paths.join(', ') + '; observed=' + (observed.join(', ') || '(none)') + '; page=' + page.url(),
+      { cause },
+    );
+  }
 }
 
 async function assertActiveNavigation(locator, label) {
