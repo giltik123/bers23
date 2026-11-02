@@ -7,6 +7,9 @@ on:
       - 'src/App.jsx'
       - 'src/api/coreClient.js'
       - 'src/components/ProtectedRoute.jsx'
+      - 'src/components/UserNotRegisteredError.jsx'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
       - 'src/lib/AuthContext.jsx'
       - 'src/pages/Login.jsx'
       - 'src/pages/Register.jsx'
@@ -26,6 +29,7 @@ on:
       - 'scripts/test-release-r3m-auth-lifecycle-browser-e2e.mjs'
       - 'tests/auth-client-contract.test.mjs'
       - 'tests/auth-public-route-routing.test.mjs'
+      - 'tests/user-not-registered-localization.test.mjs'
       - '.github/workflows/release-r3m-auth-lifecycle-browser-e2e.yml'
   workflow_dispatch:
 
@@ -77,6 +81,7 @@ jobs:
           npm run server:typecheck
           node --test tests/auth-client-contract.test.mjs
           node --test tests/auth-public-route-routing.test.mjs
+          node --test tests/user-not-registered-localization.test.mjs
           node --check scripts/release-r3m-auth-email-capture-preload.mjs
       - name: Build immutable Core and apply packaged production migrations
         run: |
