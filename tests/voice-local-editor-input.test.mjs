@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getVoiceConfirmationLabel } from '../src/application/voice/voiceConfirmationLabel.js';
+import { getVoiceConfirmationKey } from '../src/application/voice/voiceConfirmationLabel.js';
+import russian from '../src/lib/i18n/locales/ru/index.js';
 import { readFile } from 'node:fs/promises';
 import {
   buildVoiceIntentDraft, applyConfirmedVoiceDraft,
@@ -276,23 +277,49 @@ test('voice integration preserves canonical Core download, Scene MASK and accept
   assert.doesNotMatch(voiceUi,/coreClient|applyEdit\(|pushEdit\(|runGenerative/);
 });
 
-test('voice confirmation copy names the reviewed action instead of always claiming text confirmation', async () => {
-  assert.equal(getVoiceConfirmationLabel('PROMPT_REPLACE'), 'Подтвердить текст');
-  assert.equal(getVoiceConfirmationLabel('PROMPT_APPEND'), 'Добавить текст в промпт');
-  assert.equal(getVoiceConfirmationLabel('PROMPT_CLEAR'), 'Очистить промпт');
-  assert.equal(getVoiceConfirmationLabel('NAVIGATE'), 'Перейти к разделу');
-  assert.equal(getVoiceConfirmationLabel('WARDROBE_QUERY'), 'Открыть поиск в гардеробе');
-  assert.equal(getVoiceConfirmationLabel('TRYON_SELECT_PROPOSAL'), 'Подготовить выбор вещи для примерки');
-  assert.equal(getVoiceConfirmationLabel('AGENT_PROPOSAL'), 'Подготовить задачу Agent');
-  assert.equal(getVoiceConfirmationLabel('HISTORY_UNDO'), 'Отменить последнее редактирование');
-  assert.equal(getVoiceConfirmationLabel('HISTORY_REDO'), 'Повторить редактирование');
-  assert.equal(getVoiceConfirmationLabel('HISTORY_RESTORE'), 'Вернуть оригинал');
-  assert.equal(getVoiceConfirmationLabel('TRANSFORM'), 'Создать предпросмотр поворота или отражения');
-  assert.equal(getVoiceConfirmationLabel('RESIZE'), 'Создать предпросмотр изменения размера');
-  assert.equal(getVoiceConfirmationLabel('UNKNOWN_KIND'), 'Подтвердить действие');
-
+test('voice confirmation maps each supported intent to its localized action key', async () => {
+  const expected = {
+    PROMPT_REPLACE: 'voiceUi.confirmPrompt', PROMPT_APPEND: 'voiceUi.confirmAppend',
+    PROMPT_CLEAR: 'voiceUi.confirmClear', NAVIGATE: 'voiceUi.confirmNavigate',
+    NAVIGATE_PROMPT: 'voiceUi.confirmPromptOpen', WARDROBE_QUERY: 'voiceUi.confirmWardrobe',
+    TRYON_SELECT_PROPOSAL: 'voiceUi.confirmTryOn', AGENT_PROPOSAL: 'voiceUi.confirmAgent',
+    HISTORY_UNDO: 'voiceUi.confirmUndo', HISTORY_REDO: 'voiceUi.confirmRedo',
+    HISTORY_RESTORE: 'voiceUi.confirmRestore', TRANSFORM: 'voiceUi.confirmTransform',
+    RESIZE: 'voiceUi.confirmResize',
+  };
+  for (const [kind, key] of Object.entries(expected)) {
+    assert.equal(getVoiceConfirmationKey(kind), key);
+    assert.ok(russian.voiceUi[key.slice('voiceUi.'.length)]);
+  }
+  assert.equal(getVoiceConfirmationKey('UNKNOWN_KIND'), 'voiceUi.confirmAction');
   const ui = await readFile('src/components/editor/VoiceInputPanel.jsx', 'utf8');
-  assert.ok(ui.includes('getVoiceConfirmationLabel(draft.kind)'));
-  assert.match(ui, /role="status" aria-live="polite" aria-atomic="true" aria-label="Промежуточная расшифровка"/);
-  assert.ok(!ui.includes('Подтвердить текст\n            </Button>'));
+  assert.ok(ui.includes('t(getVoiceConfirmationKey(draft.kind))'));
+  assert.match(ui, /role="status" aria-live="polite" aria-atomic="true" aria-label=\{t\('voiceUi\.partial'\)\}/);
+});
+
+test('Voice panel has complete RU/EN copy while preserving Russian LOCAL_ONLY recognition', async () => {
+  const [ui, english, voicePort] = await Promise.all([
+    readFile('src/components/editor/VoiceInputPanel.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('src/application/voice/createLocalVoiceSession.js', 'utf8'),
+  ]);
+  const englishBlock = english.match(/voiceUi: \{([\s\S]*?)\n  \},/u)?.[1];
+  assert.ok(englishBlock, 'English voiceUi catalog must exist');
+  assert.ok(russian.voiceUi && Object.keys(russian.voiceUi).length >= 50);
+  for (const [key, value] of Object.entries(russian.voiceUi)) {
+    assert.equal(typeof value, 'string', 'voiceUi.' + key + ' must be plain text');
+    assert.ok(value.trim(), 'voiceUi.' + key + ' must not be empty');
+    assert.match(englishBlock, new RegExp('"' + key + '"\\s*:'));
+    const placeholders = value.match(/\{[^}]+\}/g) || [];
+    const englishValue = englishBlock.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"'))?.[1] || '';
+    assert.deepEqual(placeholders, englishValue.match(/\{[^}]+\}/g) || [], 'placeholder parity for voiceUi.' + key);
+  }
+  assert.match(ui, /useTranslation/);
+  assert.match(ui, /t\('voiceUi\.privacy'\)/);
+  assert.match(ui, /t\('voiceUi\.noGeneration'\)/);
+  assert.match(ui, /t\(INTENT_LABEL_KEYS\[draft\.kind\] \|\| 'voiceUi\.intentConfirm'\)/);
+  assert.doesNotMatch(ui, /Голос · локально|Записать|Остановить|Распознанная фраза|Распознанный текст появится|reason\?\.message|String\(reason\)/u);
+  assert.match(voicePort, /processLocally:true/);
+  assert.match(voicePort, /privacy:'LOCAL_ONLY'/);
+  assert.match(voicePort, /locale='ru-RU'/);
 });
