@@ -32,7 +32,7 @@ function extractObject(source, property) {
 }
 
 function parseLocaleObject(source, property) {
-  const objectSource = extractObject(source, property).replace(/,\\s*([}\\]])/g, '$1');
+  const objectSource = extractObject(source, property).replace(/,\s*([}\]])/g, '$1');
   return JSON.parse(objectSource);
 }
 
