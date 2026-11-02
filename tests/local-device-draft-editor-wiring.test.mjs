@@ -17,9 +17,9 @@ test('on-device persistence is hidden in a disclosure until the user requests it
   assert.match(controls, /onClick=\{onSaveDevice\}/);
   assert.match(controls, /onClick=\{onRestoreDevice\}/);
   assert.match(controls, /onClick=\{onClearDevice\}/);
-  assert.match(controls, /Save browser draft/);
-  assert.match(controls, /Restore browser draft/);
-  assert.match(controls, /Delete browser draft/);
+  assert.match(controls, /t\('localEditorUi\.saveBrowserDraft'\)/);
+  assert.match(controls, /t\('localEditorUi\.restoreBrowserDraft'\)/);
+  assert.match(controls, /t\('localEditorUi\.deleteBrowserDraft'\)/);
   assert.match(controls, /unenc rypted|unencrypted/);
   assert.match(controls, /edits are NOT automatically saved/);
   assert.match(controls, /saving replaces any previously saved browser draft/i);
