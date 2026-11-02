@@ -1,8 +1,10 @@
+import { resolveCoreErrorPresentation } from '../lib/i18n/coreErrorMessage.js';
+
 const DEFAULT_API_ROOT = (import.meta.env ?? {}).VITE_CORE_API_URL || '/api/core';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_LIMIT = 100;
 
-export function createExecutionRunRecoveryClient({ fetcher = globalThis.fetch, apiRoot = DEFAULT_API_ROOT } = {}) {
+export function createExecutionRunRecoveryClient({ fetcher = globalThis.fetch, apiRoot = DEFAULT_API_ROOT, translate } = {}) {
   if (typeof fetcher !== 'function') throw new TypeError('ExecutionRun recovery fetcher is required');
   const root = canonicalApiRoot(apiRoot);
   const read = async (path) => {
@@ -12,7 +14,7 @@ export function createExecutionRunRecoveryClient({ fetcher = globalThis.fetch, a
       headers: { Accept: 'application/json' },
     });
     const data = response.status === 204 ? undefined : await response.json().catch(() => undefined);
-    if (!response.ok) throw recoveryError(response, data);
+    if (!response.ok) throw recoveryError(response, data, translate);
     return data;
   };
 
@@ -48,10 +50,13 @@ function canonicalLimit(value) {
   return value;
 }
 
-function recoveryError(response, data) {
-  const error = new Error(data?.message || `ExecutionRun recovery request failed (${response.status})`);
+function recoveryError(response, data, translate) {
+  const code = data?.code ?? data?.error ?? 'execution_run_recovery_error';
+  const presentation = resolveCoreErrorPresentation(response.status, code, translate);
+  const error = new Error(presentation.message);
   error.status = response.status;
-  error.code = data?.code ?? data?.error ?? 'execution_run_recovery_error';
+  error.code = code;
+  error.userMessageKey = presentation.key;
   error.correlationId = data?.correlationId;
   return error;
 }
