@@ -28,11 +28,11 @@ export default function GenerationProgress() {
     : t('editorProgress.working');
 
   return (
-    <div role="status" aria-live="polite" className="border border-border/60 rounded-2xl p-4 space-y-3">
+    <div role="region" aria-label={t('editorProgress.generationRegion')} className="border border-border/60 rounded-2xl p-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm">
           <Loader2 className="w-4 h-4 animate-spin text-primary" />
-          <span className="font-medium">{stageLabel}</span>
+          <span aria-live="polite" aria-atomic="true" className="font-medium">{stageLabel}</span>
         </div>
         <Button variant="ghost" size="sm" onClick={() => editingEngine.cancel()} className="text-muted-foreground">
           <XCircle className="w-4 h-4 mr-1" /> {t('common.cancel')}

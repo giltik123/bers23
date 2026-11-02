@@ -215,6 +215,8 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
     attempt: 'Attempt {count}',
     cancelSegmentation: 'Cancel segmentation',
     flowLabel: 'Processing steps',
+    generationRegion: 'Generation progress',
+    segmentationRegion: 'Segmentation progress',
     stages: {
       preparing: 'Preparing image',
       compiling: 'Compiling prompt',

@@ -20,7 +20,7 @@ export default function PipelineFlow({ stage }) {
   const currentIdx = activeIdx === -1 ? 1 : activeIdx; // before first engine stage, planner is done
 
   return (
-    <div aria-label={t('editorProgress.flowLabel')} className="flex items-center gap-1 overflow-x-auto py-1">
+    <div role="group" aria-label={t('editorProgress.flowLabel')} className="flex items-center gap-1 overflow-x-auto py-1">
       {FLOW.map((step, i) => {
         const done = i < currentIdx;
         const active = i === currentIdx;

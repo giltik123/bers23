@@ -6,7 +6,7 @@ import russian from '../src/lib/i18n/locales/ru/index.js';
 
 const required = [
   'working', 'provider', 'unknownProvider', 'estimatedSeconds', 'attempt',
-  'cancelSegmentation', 'flowLabel',
+  'cancelSegmentation', 'flowLabel', 'generationRegion', 'segmentationRegion',
   'stages.preparing', 'stages.compiling', 'stages.generating',
   'stages.validating', 'stages.composing', 'stages.finalizing',
   'flow.prompt', 'flow.planner', 'flow.pipeline', 'flow.adapter',
@@ -37,12 +37,13 @@ test('live Editor progress components use shared translations and retain existin
   for (const [name, source] of [['generation', generation], ['flow', flow], ['segmentation', segmentation]]) {
     assert.match(source, /useTranslation/, name + ' must use the shared locale context');
     assert.match(source, /editorProgress\./, name + ' must use the shared progress namespace');
-    assert.match(source, /role="status" aria-live="polite"/, name + ' must expose status updates accessibly');
+    assert.match(source, /role="region" aria-label=/, name + ' must expose a named progress region');
     assert.doesNotMatch(source, /coreClient|projectService|financialAuthority/, name + ' must not gain a new authority');
   }
   assert.match(generation, /t\('common\.cancel'\)/);
   assert.match(generation, /editingEngine\.cancel\(\)/);
   assert.match(generation, /t\('editorProgress\.estimatedSeconds'/);
+  assert.match(flow, /role="group" aria-label=/);
   assert.match(flow, /t\(step\.labelKey\)/);
   assert.match(flow, /aria-current=\{active \? 'step' : undefined\}/);
   assert.match(segmentation, /t\('editorProgress\.cancelSegmentation'\)/);

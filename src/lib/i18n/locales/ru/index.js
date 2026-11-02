@@ -212,6 +212,8 @@ export const modules = {
     attempt: 'Попытка №{count}',
     cancelSegmentation: 'Отменить поиск объектов',
     flowLabel: 'Этапы обработки',
+    generationRegion: 'Ход генерации',
+    segmentationRegion: 'Ход поиска объектов',
     stages: {
       preparing: 'Подготовка изображения',
       compiling: 'Подготовка запроса',
