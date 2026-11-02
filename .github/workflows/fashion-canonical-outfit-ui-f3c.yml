@@ -108,6 +108,11 @@ jobs:
           FILE=src/components/editor/creative/CreativeStudioPanel.jsx
           grep -q 'coreClient.fashion.outfits.list' "$FILE"
           grep -q 'projectReadyCreativeOutfits' "$FILE"
+          grep -q 'useAuth()' "$FILE"
+          grep -q 'principalKey' "$FILE"
+          grep -q 'creativeHistory.save(historyStrategy)' "$FILE"
+          grep -q 'outfits: EMPTY_OUTFITS' "$FILE"
+          ! grep -q 'creativeHistory.save(strategy)' "$FILE"
           ! grep -E -q 'outfitManager|coreClient\.entities|coreClient\.fashion\.wardrobe|coreClient\.fashion\.outfits\.(create|updateMetadata|duplicate|archive|restore|remove|addEntry|replaceEntry|removeEntry|setEntryRole|reorderEntries)|FASHN|billing|credits|onCommit|onRollback|fetch\(' "$FILE"
           ! grep -q 'outfits: \[\]' "$FILE"
       - name: Check committed diff whitespace
