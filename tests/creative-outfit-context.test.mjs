@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import englishCreative from '../src/lib/i18n/locales/en/creative.js';
 import russian from '../src/lib/i18n/locales/ru/index.js';
-import { projectReadyCreativeOutfits } from '../src/application/creative/creativeOutfitContext.js';
+import { creativeOutfitsForPrincipal, projectReadyCreativeOutfits } from '../src/application/creative/creativeOutfitContext.js';
 import { creativeThemeKey } from '../src/lib/creative/CreativeThemes.js';
 
 const OUTFIT_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -47,6 +47,36 @@ test('Creative Studio receives only active Outfit references that are ready for 
   assert.equal(result[0].garmentId, undefined);
 });
 
+test('Creative Studio never reuses cached Outfit context across authenticated principals', () => {
+  const previousPrincipalOutfits = projectReadyCreativeOutfits([outfit()]);
+  const current = creativeOutfitsForPrincipal({
+    outfits: previousPrincipalOutfits,
+    status: 'ready',
+    loadedPrincipalKey: 'tenant-a:user-a',
+    principalKey: 'tenant-a:user-a',
+  });
+  assert.equal(current, previousPrincipalOutfits);
+
+  assert.deepEqual(creativeOutfitsForPrincipal({
+    outfits: previousPrincipalOutfits,
+    status: 'ready',
+    loadedPrincipalKey: 'tenant-a:user-a',
+    principalKey: 'tenant-b:user-b',
+  }), []);
+  assert.deepEqual(creativeOutfitsForPrincipal({
+    outfits: previousPrincipalOutfits,
+    status: 'ready',
+    loadedPrincipalKey: 'tenant-a:user-a',
+    principalKey: '',
+  }), []);
+  assert.deepEqual(creativeOutfitsForPrincipal({
+    outfits: previousPrincipalOutfits,
+    status: 'loading',
+    loadedPrincipalKey: 'tenant-a:user-a',
+    principalKey: 'tenant-a:user-a',
+  }), []);
+});
+
 test('Creative Studio Outfit projection rejects malformed canonical ready references', () => {
   assert.throws(() => projectReadyCreativeOutfits(null), /must be an array/u);
   assert.throws(() => projectReadyCreativeOutfits([null]), /must be an object/u);
@@ -62,6 +92,9 @@ test('Creative Studio reads Outfit data only through the canonical read port and
 
   assert.match(panel, /coreClient\.fashion\.outfits\.list\(\)/u);
   assert.match(panel, /projectReadyCreativeOutfits/u);
+  assert.match(panel, /outfitsPrincipalKey/u);
+  assert.match(panel, /setOutfitsPrincipalKey\(principalKey\)/u);
+  assert.match(panel, /creativeOutfitsForPrincipal\(/u);
   assert.match(panel, /outfits: strategyOutfits/u);
   assert.match(panel, /outfitsStatus/u);
   assert.match(panel, /setOutfitsRetry/u);
