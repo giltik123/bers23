@@ -210,7 +210,9 @@ test('Core browser client uses localized allowlisted error presentation instead 
     readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
   ]);
   assert.match(client, /resolveCoreErrorPresentation/);
-  assert.match(client, /localizationManager\.t\(key\)/);
+  assert.doesNotMatch(client, /LocalizationManager/);
+  assert.match(provider, /setCoreErrorTranslator\(\(key\) => localizationManager\.t\(key\)\)/);
+  assert.match(helper, /export function setCoreErrorTranslator/);
   assert.match(client, /error\.userMessageKey = presentation\.key/);
   assert.doesNotMatch(client, /new Error\(data\?\.message/);
   assert.match(helper, /const CODE_KEYS = Object\.freeze\(\{/);
@@ -220,7 +222,6 @@ test('Core browser client uses localized allowlisted error presentation instead 
     assert.match(russian, new RegExp('\\b' + key + ':'));
   }
 });
-
 
 test('Core error presentation uses the translator registered by the existing app localization provider', () => {
   setCoreErrorTranslator(key => `ru:${key}`);
