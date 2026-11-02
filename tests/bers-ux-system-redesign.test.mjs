@@ -119,8 +119,8 @@ test('WorkspaceBar and saved-mask/object controls are localized in RU/EN without
 
   assert.match(workspaceBar, /useTranslation/);
   assert.ok(workspaceBar.includes('workspace.profiles.'));
-  assert.match(workspaceBar, /workspaceManager\\.select\\(projectId, null\\)/);
-  assert.match(workspaceBar, /workspaceManager\\.select\\(projectId, w\\.id\\)/);
+  assert.ok(workspaceBar.includes('workspaceManager.select(projectId, null)'));
+  assert.ok(workspaceBar.includes('workspaceManager.select(projectId, w.id)'));
   assert.doesNotMatch(workspaceBar, /Auto-detected|Most used:|Favorite:|Avg edit|>Manual</);
 
   const profileIds = [...profiles.matchAll(/id: '([^']+)'/g)].map((match) => match[1]);
@@ -135,29 +135,38 @@ test('WorkspaceBar and saved-mask/object controls are localized in RU/EN without
   }
 
   assert.match(objectPanel, /useTranslation/);
-  assert.match(objectPanel, /editorUi\\.objectPanel\\.sectionLabel/);
-  assert.match(objectPanel, /editorUi\\.objectPanel\\.adjustmentHelp/);
-  assert.match(objectPanel, /editorUi\\.objectPanel\\.guideHelp/);
-  assert.match(objectPanel, /onToggleHidden\\(obj\\.id\\)/);
-  assert.match(objectPanel, /onSelect\\(obj\\.selected \\? null : obj\\)/);
-  const enObjectPanel = enIndex.match(/"objectPanel":\\s*\\{([^}]+)\\}/)?.[1];
-  const ruObjectPanel = ruIndex.match(/"objectPanel":\\s*\\{([^}]+)\\}/)?.[1];
-  assert.ok(enObjectPanel, 'English ObjectPanel catalog exists');
-  assert.ok(ruObjectPanel, 'Russian ObjectPanel catalog exists');
+  for (const key of ['sectionLabel', 'adjustmentHelp', 'guideHelp', 'showObjectOverlay', 'hideObjectOverlay']) {
+    assert.ok(objectPanel.includes('editorUi.objectPanel.' + key), 'ObjectPanel uses ' + key);
+  }
+  assert.ok(objectPanel.includes('onToggleHidden(obj.id)'));
+  assert.ok(objectPanel.includes('onSelect(obj.selected ? null : obj)'));
+  const extractObjectPanel = (source) => {
+    const start = source.indexOf('"objectPanel": {');
+    const end = source.indexOf('\n  }\n},', start);
+    assert.ok(start >= 0 && end > start, 'ObjectPanel locale block exists');
+    return source.slice(start, end + 4);
+  };
+  const enObjectPanel = extractObjectPanel(enIndex);
+  const ruObjectPanel = extractObjectPanel(ruIndex);
   const objectKeys = ['sectionLabel', 'heading', 'savedMaskCount', 'adjustmentHelp', 'guideHelp', 'objectGroup',
     'collapseObject', 'expandObject', 'deselectObject', 'selectObject', 'mask', 'savedMaskTitle',
     'showObjectOverlay', 'hideObjectOverlay', 'showSelectionFrame', 'hideSelectionFrame'];
   for (const key of objectKeys) {
-    const valuePattern = new RegExp('"' + key + '"\\s*:\\s*"([^"]+)"');
-    const english = enObjectPanel.match(valuePattern)?.[1];
-    const russian = ruObjectPanel.match(valuePattern)?.[1];
-    assert.ok(english, 'English editorUi.objectPanel.' + key);
-    assert.ok(russian, 'Russian editorUi.objectPanel.' + key);
-    const placeholders = value => (value.match(/\\{[a-zA-Z0-9_]+\\}/g) ?? []).sort();
-    assert.deepEqual(placeholders(russian), placeholders(english), 'RU/EN placeholders for ' + key);
+    assert.ok(enObjectPanel.includes('"' + key + '": "'), 'English editorUi.objectPanel.' + key);
+    assert.ok(ruObjectPanel.includes('"' + key + '": "'), 'Russian editorUi.objectPanel.' + key);
+  }
+  const placeholders = {
+    heading: '{count}', savedMaskCount: '{count}', objectGroup: '{label}', collapseObject: '{label}',
+    expandObject: '{label}', deselectObject: '{label}', selectObject: '{label}',
+  };
+  for (const [key, placeholder] of Object.entries(placeholders)) {
+    const entry = '"' + key + '": "';
+    const enValue = enObjectPanel.slice(enObjectPanel.indexOf(entry) + entry.length).split('"')[0];
+    const ruValue = ruObjectPanel.slice(ruObjectPanel.indexOf(entry) + entry.length).split('"')[0];
+    assert.ok(enValue.includes(placeholder), 'English placeholder for ' + key);
+    assert.ok(ruValue.includes(placeholder), 'Russian placeholder for ' + key);
   }
 });
-
 
 test('object list actions are independent keyboard-reachable buttons, not clickable nonsemantic rows', async () => {
   const panel = await read('src/components/editor/ObjectPanel.jsx');
