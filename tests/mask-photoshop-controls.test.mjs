@@ -103,8 +103,9 @@ test('saved mask entries live alongside adjustment controls and have honest visi
   const objectPanel = await readFile('src/components/editor/ObjectPanel.jsx', 'utf8');
   assert.match(objectPanel, /const isMask = Boolean\(obj\.mask_artifact_id\)/);
   assert.match(objectPanel, /isMask && <span className=/);
-  assert.match(objectPanel, /Saved masks and objects/);
-  assert.match(objectPanel, /Select one to adjust exposure, white balance or levels/);
+  assert.match(objectPanel, /editorUi\.objectPanel\.sectionLabel/);
+  assert.match(objectPanel, /editorUi\.objectPanel\.adjustmentHelp/);
+  assert.match(objectPanel, /editorUi\.objectPanel\.guideHelp/);
   const list = editor.indexOf('<ObjectPanel objects={objects}');
   const sidebar = editor.indexOf('aria-label="Editing controls"');
   const sidebarClose = editor.indexOf('</aside>', sidebar);
