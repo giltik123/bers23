@@ -12,12 +12,12 @@ test('R3i product UI binds Outfit create add and visible reorder to revisioned M
     readFile('src/api/managedOutfitClient.js', 'utf8'),
   ]);
 
-  assert.match(panel, /aria-label="Canonical Outfit builder"/);
-  assert.match(panel, /placeholder="New outfit"/);
+  assert.ok(panel.includes("aria-label={t('fashionUi.outfitPanelLabel')}"));
+  assert.ok(panel.includes("placeholder={t('fashionUi.newOutfit')}"));
   assert.match(panel, /model\.create\(\{ name: newName \}\)/);
-  assert.match(panel, /aria-label="Garment to add"/);
+  assert.ok(panel.includes("aria-label={t('fashionUi.garmentToAdd')}"));
   assert.match(panel, /model\.addEntry\(outfit, addGarmentId, addRole\)/);
-  assert.match(panel, /aria-label=\{`Move \$\{garment\?\.name \|\| entry\.garmentId\} up`\}/);
+  assert.ok(panel.includes("aria-label={t('fashionUi.moveGarmentUp', { name: garment?.name || entry.garmentId })}"));
   assert.match(panel, /model\.moveEntry\(outfit, entry\.entryId, -1\)/);
   assert.match(panel, /model\.moveEntry\(outfit, entry\.entryId, 1\)/);
   assert.match(panel, /reconcileQuietly/);
@@ -40,6 +40,7 @@ test('R3i product UI binds Outfit create add and visible reorder to revisioned M
 test('R3i browser uses built SPA/Core, system Chrome and visible Fashion/Outfit mutation controls while PostgreSQL stays SELECT-only', async () => {
   const harness = await readFile(HARNESS, 'utf8');
 
+  assert.match(harness, /browser\.newContext\(\{ locale: 'en-US' \}\)/);
   assert.match(harness, /path\.resolve\('dist'\)/);
   assert.match(harness, /path\.resolve\('dist-server\/server\.mjs'\)/);
   assert.match(harness, /NODE_ENV: 'production'/);
@@ -58,6 +59,8 @@ test('R3i browser uses built SPA/Core, system Chrome and visible Fashion/Outfit 
   assert.match(harness, /getByRole\('region', \{ name: 'Canonical Outfit builder', exact: true \}\)/);
   assert.match(harness, /getByPlaceholder\('New outfit'\)/);
   assert.match(harness, /getByLabel\('Garment to add'\)/);
+  assert.match(harness, /selectOption\(\{ value: jacket\.id \}\)/, 'R3i garment selection must use stable canonical IDs, not localized display labels');
+  assert.match(harness, /selectOption\(\{ value: pants\.id \}\)/, 'R3i garment selection must remain locale-independent after switching garments');
   assert.match(harness, /Move \$\{pantsName\} up/);
 
   const sqlOperations = [...harness.matchAll(/pool\.query\(\s*`([^`]+)`/g)]

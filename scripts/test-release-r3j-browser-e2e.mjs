@@ -234,7 +234,7 @@ try {
   assert.equal(createdOutfit.revision, 1);
 
   const garmentSelect = outfitRegion.getByLabel('Garment to add');
-  await garmentSelect.selectOption({ label: `${garmentName} · jackets` });
+  await garmentSelect.selectOption({ value: garment.id });
   const addEntryWait = waitForCoreResponse(page, 'POST', pathname => pathname === `/api/core/wardrobe/outfits/${outfitId}/entries`);
   await outfitRegion.getByRole('button', { name: 'Add', exact: true }).click();
   const addEntryResponse = await addEntryWait;

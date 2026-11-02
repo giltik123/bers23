@@ -12,6 +12,15 @@ const REQUIRED_INPUTS = Object.freeze([
   'src/api/coreClient.js',
   'src/api/managedOutfitClient.js',
   'src/api/managedWardrobeClient.js',
+  'src/lib/i18n/FormattingService.js',
+  'src/lib/i18n/LanguageDetector.js',
+  'src/lib/i18n/languages.js',
+  'src/lib/i18n/LanguageStorage.js',
+  'src/lib/i18n/LocalizationAnalytics.js',
+  'src/lib/i18n/LocalizationManager.js',
+  'src/lib/i18n/RTLManager.js',
+  'src/lib/i18n/TranslationLoader.js',
+  'src/lib/i18n/TranslationProvider.jsx',
 ]);
 
 const FORBIDDEN_EXACT_INPUTS = Object.freeze([

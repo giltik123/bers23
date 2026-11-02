@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { ArrowRight, FolderPlus, Loader2, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +14,7 @@ function replaceCollection(current, next) {
 }
 
 export default function CanonicalCollectionsView({ garments }) {
+  const { t } = useTranslation();
   const model = useMemo(
     () => createCanonicalCollectionViewModel({ collections: coreClient.fashion.collections }),
     [],
@@ -22,7 +24,7 @@ export default function CanonicalCollectionsView({ garments }) {
   const [newName, setNewName] = useState('');
   const [addGarmentId, setAddGarmentId] = useState('');
   const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
+  const [errorKey, setErrorKey] = useState('');
   const [confirmRemoveId, setConfirmRemoveId] = useState('');
 
   const applySnapshot = useCallback((next) => {
@@ -32,18 +34,23 @@ export default function CanonicalCollectionsView({ garments }) {
 
   const reload = useCallback(async () => {
     setBusy('load');
-    setError('');
+    setErrorKey('');
     try {
       applySnapshot(await model.load());
-    } catch (cause) {
-      setError(cause?.message || 'Collections could not be loaded.');
+    } catch {
+      setErrorKey('collectionLoadFailed');
     } finally {
       setBusy('');
     }
   }, [applySnapshot, model]);
 
   const reconcileQuietly = useCallback(async () => {
-    try { applySnapshot(await model.load()); } catch { /* preserve the originating action error */ }
+    try {
+      applySnapshot(await model.load());
+      return true;
+    } catch {
+      return false;
+    }
   }, [applySnapshot, model]);
 
   useEffect(() => { reload(); }, [reload]);
@@ -62,16 +69,15 @@ export default function CanonicalCollectionsView({ garments }) {
     event.preventDefault();
     if (!newName.trim() || busy) return;
     setBusy('create');
-    setError('');
+    setErrorKey('');
     try {
       const created = await model.create({ name: newName, description: '' });
       setCollections((current) => replaceCollection(current, created));
       setSelectedId(created.id);
       setNewName('');
-    } catch (cause) {
-      const message = `${cause?.message || 'Collection creation was not confirmed.'} Collections were refreshed when possible; check the list before retrying.`;
-      await reconcileQuietly();
-      setError(message);
+    } catch {
+      const reconciled = await reconcileQuietly();
+      setErrorKey(reconciled ? 'collectionCreateUnconfirmed' : 'collectionCreateUnconfirmedNoRefresh');
     } finally {
       setBusy('');
     }
@@ -80,15 +86,14 @@ export default function CanonicalCollectionsView({ garments }) {
   const mutateSelected = async (key, action) => {
     if (!selected || busy) return false;
     setBusy(key);
-    setError('');
+    setErrorKey('');
     try {
       const next = await action(selected);
       setCollections((current) => replaceCollection(current, next));
       return true;
-    } catch (cause) {
-      const message = cause?.message || 'Collection changed elsewhere. Reload and try again.';
-      await reconcileQuietly();
-      setError(message);
+    } catch {
+      const reconciled = await reconcileQuietly();
+      setErrorKey(reconciled ? 'collectionMutationUnconfirmed' : 'collectionMutationUnconfirmedNoRefresh');
       return false;
     } finally {
       setBusy('');
@@ -101,17 +106,16 @@ export default function CanonicalCollectionsView({ garments }) {
       return;
     }
     setBusy('remove-collection');
-    setError('');
+    setErrorKey('');
     try {
       const removedId = await model.remove(selected);
       const next = collections.filter((item) => item.id !== removedId);
       setCollections(next);
       setSelectedId(next[0]?.id || '');
       setConfirmRemoveId('');
-    } catch (cause) {
-      const message = cause?.message || 'Collection could not be removed.';
-      await reconcileQuietly();
-      setError(message);
+    } catch {
+      const reconciled = await reconcileQuietly();
+      setErrorKey(reconciled ? 'collectionMutationUnconfirmed' : 'collectionMutationUnconfirmedNoRefresh');
     } finally {
       setBusy('');
     }
@@ -122,7 +126,7 @@ export default function CanonicalCollectionsView({ garments }) {
     const target = collections.find((item) => item.id === targetId);
     if (!target) return;
     setBusy(`move:${garmentId}`);
-    setError('');
+    setErrorKey('');
     try {
       const moved = await model.moveGarment(selected, target, garmentId);
       setCollections((current) => {
@@ -130,22 +134,21 @@ export default function CanonicalCollectionsView({ garments }) {
         next = replaceCollection(next, moved.target);
         return next;
       });
-    } catch (cause) {
-      const message = cause?.message || 'Garment move conflicted with a newer collection revision.';
-      await reconcileQuietly();
-      setError(message);
+    } catch {
+      const reconciled = await reconcileQuietly();
+      setErrorKey(reconciled ? 'collectionMutationUnconfirmed' : 'collectionMutationUnconfirmedNoRefresh');
     } finally {
       setBusy('');
     }
   };
 
   return (
-    <div className="rounded-xl border border-border/70 bg-secondary/20 p-2.5 space-y-2" aria-label="Canonical garment collections">
+    <div className="rounded-xl border border-border/70 bg-secondary/20 p-2.5 space-y-2" aria-label={t('fashionUi.collectionsPanelLabel')}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium">Collections</p>
+        <p className="text-xs font-medium">{t('fashionUi.collections')}</p>
         <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={reload} disabled={Boolean(busy)}>
           {busy === 'load' ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : null}
-          Reload
+          {t('fashionUi.reloadCollections')}
         </Button>
       </div>
 
@@ -153,19 +156,19 @@ export default function CanonicalCollectionsView({ garments }) {
         <Input
           value={newName}
           onChange={(event) => setNewName(event.target.value)}
-          placeholder="New collection"
+          placeholder={t('fashionUi.newCollection')}
           maxLength={100}
           disabled={Boolean(busy)}
         />
         <Button type="submit" size="sm" disabled={!newName.trim() || Boolean(busy)}>
-          <FolderPlus className="h-3.5 w-3.5 mr-1" /> Create
+          <FolderPlus className="h-3.5 w-3.5 mr-1" /> {t('common.create')}
         </Button>
       </form>
 
-      {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
+      {errorKey && <p className="text-xs text-destructive" role="alert">{t(`fashionUi.${errorKey}`)}</p>}
 
       {collections.length === 0 ? (
-        <p className="text-[11px] text-muted-foreground">No collections yet.</p>
+        <p className="text-[11px] text-muted-foreground">{t('fashionUi.noCollections')}</p>
       ) : (
         <div className="flex flex-wrap gap-1">
           {collections.map((collection) => (
@@ -196,7 +199,7 @@ export default function CanonicalCollectionsView({ garments }) {
               disabled={Boolean(busy)}
             >
               <Trash2 className="h-3.5 w-3.5 mr-1" />
-              {confirmRemoveId === selected.id ? 'Confirm delete' : 'Delete'}
+              {confirmRemoveId === selected.id ? t('fashionUi.confirmDeleteCollection') : t('fashionUi.deleteCollection')}
             </Button>
           </div>
 
@@ -206,8 +209,9 @@ export default function CanonicalCollectionsView({ garments }) {
               value={addGarmentId}
               onChange={(event) => setAddGarmentId(event.target.value)}
               disabled={Boolean(busy) || availableToAdd.length === 0}
+              aria-label={t('fashionUi.garmentToAddToCollection')}
             >
-              <option value="">Add garment…</option>
+              <option value="">{t('fashionUi.addGarment')}</option>
               {availableToAdd.map((garment) => <option key={garment.id} value={garment.id}>{garment.name}</option>)}
             </select>
             <Button
@@ -219,12 +223,12 @@ export default function CanonicalCollectionsView({ garments }) {
                 (collection) => model.addGarment(collection, addGarmentId),
               ).then((ok) => { if (ok) setAddGarmentId(''); })}
             >
-              Add
+              {t('common.add')}
             </Button>
           </div>
 
           {selected.garmentIds.length === 0 ? (
-            <p className="text-[11px] text-muted-foreground">This collection is empty.</p>
+            <p className="text-[11px] text-muted-foreground">{t('fashionUi.collectionEmpty')}</p>
           ) : (
             <div className="space-y-1">
               {selected.garmentIds.map((garmentId) => {
@@ -233,12 +237,12 @@ export default function CanonicalCollectionsView({ garments }) {
                 return (
                   <div key={garmentId} className="flex items-center gap-1.5 rounded-lg bg-background/70 px-2 py-1.5">
                     <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-medium truncate">{garment?.name || 'Unavailable garment reference'}</p>
+                      <p className="text-[11px] font-medium truncate">{garment?.name || t('fashionUi.unavailableGarmentReference')}</p>
                       {!garment && <p className="text-[9px] text-muted-foreground truncate">{garmentId}</p>}
                     </div>
                     {targets.length > 0 && (
                       <select
-                        aria-label={`Move ${garment?.name || garmentId}`}
+                        aria-label={t('fashionUi.moveGarmentToCollection', { name: garment?.name || garmentId })}
                         className="h-7 max-w-28 rounded-md border border-input bg-transparent px-1 text-[10px]"
                         defaultValue=""
                         disabled={Boolean(busy)}
@@ -248,14 +252,14 @@ export default function CanonicalCollectionsView({ garments }) {
                           moveGarment(garmentId, targetId);
                         }}
                       >
-                        <option value="">Move to…</option>
+                        <option value="">{t('fashionUi.moveToCollection')}</option>
                         {targets.map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}
                       </select>
                     )}
                     <button
                       type="button"
                       className="rounded-md p-1 hover:bg-accent disabled:opacity-50"
-                      aria-label={`Remove ${garment?.name || garmentId} from ${selected.name}`}
+                      aria-label={t('fashionUi.removeGarmentFromCollection', { name: garment?.name || garmentId, collection: selected.name })}
                       disabled={Boolean(busy)}
                       onClick={() => mutateSelected(`remove:${garmentId}`, (collection) => model.removeGarment(collection, garmentId))}
                     >

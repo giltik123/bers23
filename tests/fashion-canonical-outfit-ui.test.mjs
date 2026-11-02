@@ -13,6 +13,31 @@ const panel = fs.readFileSync(new URL('../src/components/editor/outfits/OutfitPa
 const model = fs.readFileSync(new URL('../src/application/fashion/canonicalOutfitViewModel.js', import.meta.url), 'utf8');
 const client = fs.readFileSync(new URL('../src/api/managedOutfitClient.js', import.meta.url), 'utf8');
 const server = fs.readFileSync(new URL('../server/core/fashion/postgresOutfitStore.ts', import.meta.url), 'utf8');
+const englishLocale = fs.readFileSync(new URL('../src/lib/i18n/locales/en/index.js', import.meta.url), 'utf8');
+const russianLocale = fs.readFileSync(new URL('../src/lib/i18n/locales/ru/index.js', import.meta.url), 'utf8');
+
+const OUTFIT_COPY_KEYS = Object.freeze([
+  'outfitPanelLabel','outfits','reloadManagedOutfits','outfitAuthorityNotice','newOutfit','outfitLoading','outfitEmpty',
+  'wardrobeLabelsUnavailable','outfitLoadFailed','outfitCreateUnconfirmed','outfitCreateUnconfirmedNoRefresh',
+  'outfitMutationUnconfirmed','outfitMutationUnconfirmedNoRefresh','outfitReadinessLabel','outfitName','outfitStyle',
+  'outfitSeason','outfitOccasion','saveOutfitMetadata','garmentToAdd','layerRoleForNewGarment','autoRole',
+  'unsupportedOutfitLayerRole','emptyOutfitEntries','unavailableGarmentReference','review','layerRoleFor',
+  'moveGarmentUp','moveGarmentDown','removeGarmentFromOutfit',
+]);
+const OUTFIT_TAXONOMIES = Object.freeze({
+  outfitStyles: OUTFIT_STYLES,
+  outfitSeasons: OUTFIT_SEASONS,
+  outfitOccasions: OUTFIT_OCCASIONS,
+  outfitLayerRoles: OUTFIT_LAYER_ROLES,
+  outfitReadiness: ['REFERENCES_READY','EMPTY','GARMENT_UNAVAILABLE','ROLE_REVIEW_REQUIRED'],
+  garmentCategories: ['tshirts','shirts','jackets','hoodies','sweaters','pants','shorts','jeans','skirts','dresses','shoes','boots','sneakers','sandals','hats','glasses','scarves','bags','belts','jewelry','gloves','socks','other'],
+});
+
+function parseFashionUi(source) {
+  const match = source.match(/fashionUi:\s*(\{[\s\S]*?\n\}),\n  assetUi:/);
+  assert.ok(match, 'fashionUi locale catalog exists');
+  return JSON.parse(match[1]);
+}
 
 function parseSet(source, name) {
   const match = source.match(new RegExp(`const ${name} = new Set\\(\\[([^\\]]+)\\]\\)`));
@@ -27,6 +52,33 @@ test('Outfit panel uses only canonical F3 and Wardrobe browser authorities', () 
   assert.match(model, /outfits\.reorderEntries/);
   assert.match(model, /outfits\.setEntryRole/);
   assert.match(model, /outfits\.updateMetadata/);
+});
+
+test('canonical Outfit panel localizes controls, readiness and taxonomies in English and Russian', () => {
+  assert.match(panel, /useTranslation/);
+  const english = parseFashionUi(englishLocale);
+  const russian = parseFashionUi(russianLocale);
+  for (const key of OUTFIT_COPY_KEYS) {
+    assert.equal(typeof english[key], 'string', 'English fashionUi.' + key);
+    assert.equal(typeof russian[key], 'string', 'Russian fashionUi.' + key);
+    assert.ok(english[key].trim().length > 0, 'English fashionUi.' + key + ' is non-empty');
+    assert.ok(russian[key].trim().length > 0, 'Russian fashionUi.' + key + ' is non-empty');
+    assert.ok(panel.includes(key), 'OutfitPanel references ' + key);
+  }
+  for (const [group, values] of Object.entries(OUTFIT_TAXONOMIES)) {
+    assert.ok(panel.includes("'" + group + "'"), 'OutfitPanel localizes ' + group);
+    for (const value of values) {
+      const key = value.toLowerCase();
+      assert.equal(typeof english[group]?.[key], 'string', 'English fashionUi.' + group + '.' + key);
+      assert.equal(typeof russian[group]?.[key], 'string', 'Russian fashionUi.' + group + '.' + key);
+      assert.ok(english[group][key].trim().length > 0, 'English fashionUi.' + group + '.' + key + ' is non-empty');
+      assert.ok(russian[group][key].trim().length > 0, 'Russian fashionUi.' + group + '.' + key + ' is non-empty');
+    }
+  }
+  assert.match(panel, /localizedEnum\(t, 'outfitReadiness'/);
+  assert.match(panel, /localizedEnum\(t, 'garmentCategories'/);
+  assert.match(panel, /localizedEnum\(t, 'outfitLayerRoles', role\)/);
+  assert.doesNotMatch(panel, /\{label\(/);
 });
 
 test('active Outfit UI cannot revive legacy entity, execution, provider or financial authority', () => {
@@ -84,9 +136,11 @@ test('category-aware role projection remains aligned with server admission seman
 });
 
 test('lost or conflicted mutation outcomes reconcile by read only and never retry the mutation', () => {
-  assert.match(panel, /catch \(cause\) \{\s*await reconcileQuietly\(\);[\s\S]*Creation result was not confirmed/);
-  assert.match(panel, /const mutateSelected[\s\S]*catch \(cause\) \{\s*await reconcileQuietly\(\);/);
-  assert.match(panel, /never retried automatically/);
+  assert.match(panel, /const reconcileQuietly = useCallback\(async \(\) => \{[\s\S]*return true;[\s\S]*return false;/);
+  assert.match(panel, /setErrorKey\(reconciled \? 'outfitCreateUnconfirmed' : 'outfitCreateUnconfirmedNoRefresh'\)/);
+  assert.match(panel, /setErrorKey\(reconciled \? 'outfitMutationUnconfirmed' : 'outfitMutationUnconfirmedNoRefresh'\)/);
+  assert.doesNotMatch(panel, /cause\?\.message/);
+  assert.match(panel, /fashionUi\.outfitAuthorityNotice/);
   assert.equal((model.match(/outfits\.create\(/g) ?? []).length, 1, 'create must have one dispatch site');
   assert.equal((model.match(/outfits\.addEntry\(/g) ?? []).length, 1, 'addEntry must have one dispatch site');
   assert.equal((model.match(/outfits\.removeEntry\(/g) ?? []).length, 1, 'removeEntry must have one dispatch site');
@@ -95,15 +149,15 @@ test('lost or conflicted mutation outcomes reconcile by read only and never retr
 
 test('Wardrobe projection is display-only and duplicate/unsupported garment choices are blocked in UX', () => {
   assert.match(model, /wardrobeError/);
-  assert.match(panel, /Outfit references remain canonical/);
-  assert.match(panel, /Unavailable garment reference/);
+  assert.match(panel, /fashionUi\.wardrobeLabelsUnavailable/);
+  assert.match(panel, /fashionUi\.unavailableGarmentReference/);
   assert.match(panel, /!selectedGarmentIds\.has\(item\.garmentId\)/);
   assert.match(panel, /addAllowedRoles\.length === 0/);
-  assert.match(panel, /Update its Wardrobe category before adding it/);
+  assert.match(panel, /fashionUi\.unsupportedOutfitLayerRole/);
 });
 
 test('metadata editing is canonical, revision-bound and unavailable for archived Outfits', () => {
-  for (const marker of ['Outfit name', 'Outfit style', 'Outfit season', 'Outfit occasion', 'Save metadata']) assert.ok(panel.includes(marker));
+  for (const marker of ['outfitName', 'outfitStyle', 'outfitSeason', 'outfitOccasion', 'saveOutfitMetadata']) assert.ok(panel.includes('fashionUi.' + marker));
   assert.match(panel, /model\.updateMetadata/);
   assert.match(panel, /selected\.status !== 'ACTIVE'/);
 });

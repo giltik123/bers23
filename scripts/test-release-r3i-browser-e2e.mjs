@@ -133,7 +133,7 @@ try {
   try { browser = await chromium.launch({ channel: 'chrome', headless: true }); }
   catch (error) { throw new Error(`Mandatory system Google Chrome launch failed: ${error instanceof Error ? error.message : String(error)}`); }
 
-  const browserContext = await browser.newContext();
+  const browserContext = await browser.newContext({ locale: 'en-US' });
   const page = await browserContext.newPage();
   attachDiagnostics(page);
 
@@ -252,7 +252,7 @@ try {
   await outfitRegion.getByRole('button', { name: `${outfitName} (0)`, exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
 
   const garmentSelect = outfitRegion.getByLabel('Garment to add');
-  await garmentSelect.selectOption({ label: `${jacketName} · jackets` });
+  await garmentSelect.selectOption({ value: jacket.id });
   const addJacketWait = waitForCoreResponse(page, 'POST', pathname => pathname === `/api/core/wardrobe/outfits/${outfitId}/entries`);
   await outfitRegion.getByRole('button', { name: 'Add', exact: true }).click();
   const addJacketResponse = await addJacketWait;
@@ -271,7 +271,7 @@ try {
   assert.match(jacketEntryId, /^[0-9a-f-]{36}$/);
   await outfitRegion.getByRole('button', { name: `${outfitName} (1)`, exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
 
-  await garmentSelect.selectOption({ label: `${pantsName} · pants` });
+  await garmentSelect.selectOption({ value: pants.id });
   const addPantsWait = waitForCoreResponse(page, 'POST', pathname => pathname === `/api/core/wardrobe/outfits/${outfitId}/entries`);
   await outfitRegion.getByRole('button', { name: 'Add', exact: true }).click();
   const addPantsResponse = await addPantsWait;
