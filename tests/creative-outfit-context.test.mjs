@@ -206,4 +206,5 @@ test('Creative Studio cards expose localized labels and accessible selected stat
   assert.match(panel, /const localizedIdea = useMemo/u);
   assert.match(panel, /idea: localizedIdea/u);
   assert.match(panel, /creative\.workspaces\./u);
+  assert.match(panel, /translatedWorkspace === workspaceKey/u);
 });
