@@ -59,6 +59,8 @@ test('R3i browser uses built SPA/Core, system Chrome and visible Fashion/Outfit 
   assert.match(harness, /getByRole\('region', \{ name: 'Canonical Outfit builder', exact: true \}\)/);
   assert.match(harness, /getByPlaceholder\('New outfit'\)/);
   assert.match(harness, /getByLabel\('Garment to add'\)/);
+  assert.match(harness, /selectOption\(\{ value: jacket\.id \}\)/, 'R3i garment selection must use stable canonical IDs, not localized display labels');
+  assert.match(harness, /selectOption\(\{ value: pants\.id \}\)/, 'R3i garment selection must remain locale-independent after switching garments');
   assert.match(harness, /Move \$\{pantsName\} up/);
 
   const sqlOperations = [...harness.matchAll(/pool\.query\(\s*`([^`]+)`/g)]
