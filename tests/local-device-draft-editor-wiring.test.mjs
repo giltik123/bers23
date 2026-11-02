@@ -13,16 +13,16 @@ const [panel, controls, storage, recipe, chromeE2e, workflow] = await Promise.al
 
 test('on-device persistence is hidden in a disclosure until the user requests it', () => {
   assert.match(controls, /<details className=/);
-  assert.match(controls, /Save on this device/);
+  assert.match(controls, /t\('localEditorUi\.saveOnDevice'\)/);
   assert.match(controls, /onClick=\{onSaveDevice\}/);
   assert.match(controls, /onClick=\{onRestoreDevice\}/);
   assert.match(controls, /onClick=\{onClearDevice\}/);
-  assert.match(controls, /Save browser draft/);
-  assert.match(controls, /Restore browser draft/);
-  assert.match(controls, /Delete browser draft/);
-  assert.match(controls, /unenc rypted|unencrypted/);
-  assert.match(controls, /edits are NOT automatically saved/);
-  assert.match(controls, /saving replaces any previously saved browser draft/i);
+  assert.match(controls, /t\('localEditorUi\.saveBrowserDraft'\)/);
+  assert.match(controls, /t\('localEditorUi\.restoreBrowserDraft'\)/);
+  assert.match(controls, /t\('localEditorUi\.deleteBrowserDraft'\)/);
+  assert.match(controls, /t\('localEditorUi\.devicePrivacy'\)/);
+  assert.match(controls, /t\('localEditorUi\.devicePrivacy'\)/);
+  assert.match(controls, /t\('localEditorUi\.devicePrivacy'\)/);
 });
 
 test('browser storage is opt-in, never triggered by slider or history effects', () => {
@@ -82,4 +82,20 @@ test('exact-head CI includes both pure storage and UI wiring tests', () => {
   assert.match(workflow, /tests\/local-device-draft\.test\.mjs/);
   assert.match(workflow, /tests\/local-device-draft-editor-wiring\.test\.mjs/);
   assert.match(workflow, /Verify exact candidate SHA/);
+});
+
+
+test('browser-draft privacy copy is explicit in both supported locales', async () => {
+  const [englishLocale, russianLocale] = await Promise.all([
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+  const englishPrivacy = englishLocale.match(/devicePrivacy: "([^"]+)"/u)?.[1];
+  const russianPrivacy = russianLocale.match(/devicePrivacy: "([^"]+)"/u)?.[1];
+  assert.ok(englishPrivacy && russianPrivacy, 'both locale privacy notices must exist');
+  assert.match(englishPrivacy, /unencrypted/);
+  assert.match(englishPrivacy, /NOT automatically saved/);
+  assert.match(englishPrivacy, /previously saved browser draft/);
+  assert.match(russianPrivacy, /без шифрования/);
+  assert.match(russianPrivacy, /НЕ сохраняются автоматически/);
 });

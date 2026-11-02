@@ -11,19 +11,19 @@ const [parent, controls, engine, pixelEngine, browserE2e] = await Promise.all([
 ]);
 
 test('advanced controls are visible with real onChange handlers, outputs and reset', () => {
-  assert.match(controls, /aria-label="Advanced local editing tools"/);
-  assert.match(controls, /Tone curve/);
-  assert.match(controls, /Selective HSL/);
-  assert.match(controls, /Manual clone stamp/);
-  assert.match(controls, /aria-label=\{'Curve ' \+ point\.label\} type="range"/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.advancedTools'\)\}/);
+  assert.match(controls, /t\('localEditorUi\.toneCurve'\)/);
+  assert.match(controls, /t\('localEditorUi\.selectiveHsl'\)/);
+  assert.match(controls, /t\('localEditorUi\.manualCloneStamp'\)/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.curvePoint', \{ label: t\('localEditorUi\.' \+ point\.labelKey\) \}\)\} type="range"/);
   assert.match(controls, /onChange=\{event => editCurve\(point\.key, Number\(event\.target\.value\)\)\}/);
   assert.match(controls, /const editCurve = \(key, value\) => onAdvancedChange\(curveChannel === 'rgb'/);
   assert.match(controls, /\? \{ \.\.\.advanced, curve: \{ \.\.\.advanced\.curve, \[key\]: value \} \}/);
   assert.match(controls, /channelCurves: \{/);
-  assert.match(controls, /aria-label="Selective HSL color range"/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.colorRange'\)\}/);
   assert.match(controls, /onChange=\{event => editHsl\(control\.key, Number\(event\.target\.value\)\)\}/);
-  assert.match(controls, /Reset tone curve/);
-  assert.match(controls, /Reset this color/);
+  assert.match(controls, /t\('localEditorUi\.resetToneCurve'\)/);
+  assert.match(controls, /t\('localEditorUi\.resetThisColor'\)/);
 });
 
 test('all eight color ranges retain their own edits independently', () => {
@@ -59,12 +59,12 @@ test('local canvas preview and full-resolution PNG apply the same advanced pipel
 });
 
 test('clone stamp uses real normalized pointer events, sample source, opacity and safety limits', () => {
-  assert.match(controls, /Pick source/);
+  assert.match(controls, /t\('localEditorUi\.pickSource'\)/);
   assert.match(controls, /onCloneMode\('pick'\)/);
   assert.match(controls, /onCloneMode\('paint'\)/);
-  assert.match(controls, /aria-label="Clone radius"/);
-  assert.match(controls, /aria-label="Clone hardness"/);
-  assert.match(controls, /aria-label="Clone opacity"/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.cloneRadius'\)\}/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.cloneHardness'\)\}/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.cloneOpacity'\)\}/);
   assert.match(parent, /event\.currentTarget\.getBoundingClientRect\(\)/);
   assert.match(parent, /if \(cloneMode === 'pick'\) \{/);
   assert.match(parent, /setCloneSource\(point\)/);
@@ -106,14 +106,14 @@ test('Chrome browser test includes real advanced control acceptance, not fake sl
 
 
 test('gradient mask is a real local pixel blend with bounded inputs and transparent Core separation', () => {
-  assert.match(controls, /Local gradient mask/);
-  assert.match(controls, /aria-label="Local gradient mask direction"/);
+  assert.match(controls, /t\('localEditorUi\.gradientMask'\)/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.direction'\)\}/);
   assert.match(controls, /LOCAL_GRADIENT_MODES\.map\(mode =>/);
-  assert.match(controls, /aria-label="Gradient start"/);
-  assert.match(controls, /aria-label="Gradient end"/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.startTransition'\)\}/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.endTransition'\)\}/);
   assert.match(controls, /advanced\.gradient\.end - 1/);
   assert.match(controls, /advanced\.gradient\.start \+ 1/);
-  assert.match(controls, /Clear gradient mask/);
+  assert.match(controls, /t\('localEditorUi\.clearGradient'\)/);
   assert.match(engine, /blendGradient\(original, output, width, height, advanced\.gradient\)/);
   assert.match(engine, /case 'radial': position = 1 - Math\.hypot/);
   assert.match(engine, /source\[offset \+ channel\] \* \(1 - weight\) \+ output\[offset \+ channel\] \* weight/);
@@ -128,7 +128,7 @@ test('gradient mask is a real local pixel blend with bounded inputs and transpar
 
 
 test('independent RGB tone curves have real channel selector, matching graph, per-channel reset and Chrome pixel acceptance', () => {
-  assert.match(controls, /aria-label="Tone curve channel"/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.curveChannel'\)\}/);
   assert.match(controls, /LOCAL_CURVE_CHANNELS\.map\(channel =>/);
   assert.match(controls, /const visibleCurve = curveChannel === 'rgb' \? advanced\.curve : advanced\.channelCurves\[curveChannel\]/);
   assert.match(controls, /advanced\.channelCurves\[curveChannel\], \[key\]: value/);
@@ -142,10 +142,10 @@ test('independent RGB tone curves have real channel selector, matching graph, pe
 
 
 test('manual clone can select honest color-matched repair with real pixel transfer and bounded tone estimates', () => {
-  assert.match(controls, /aria-label="Local retouch method"/);
-  assert.match(controls, /<option value="clone">Clone · exact pixels<\/option>/);
-  assert.match(controls, /<option value="color-match">Color-matched repair · nearby tones<\/option>/);
-  assert.match(controls, /not Photoshop's full healing algorithm/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.retouchMethod'\)\}/);
+  assert.match(controls, /t\('localEditorUi\.cloneExact'\)/);
+  assert.match(controls, /t\('localEditorUi\.colorMatchedRepair'\)/);
+  assert.match(controls, /t\('localEditorUi\.colorMatchNote'\)/);
   assert.match(parent, /cloneBlendMode, setCloneBlendMode\] = useState\('clone'\)/);
   assert.match(parent, /blendMode: cloneBlendMode/);
   assert.match(parent, /cloneBlendMode=\{cloneBlendMode\}/);
@@ -157,4 +157,58 @@ test('manual clone can select honest color-matched repair with real pixel transf
   assert.match(browserE2e, /getImageData\(8, 3, 1, 1\)/);
   assert.match(browserE2e, /color-matched repair must transfer actual neighboring tone into full-resolution PNG/);
   assert.match(browserE2e, /manual tonal retouch must not mutate Core Project/);
+});
+
+
+test('local editing subpanels use a complete matching RU/EN catalog without changing execution authority', async () => {
+  const [annotationControls, recipeControls, englishSource, russianSource] = await Promise.all([
+    readFile('src/components/editor/local/LocalAnnotationControls.jsx', 'utf8'),
+    readFile('src/components/editor/local/LocalRecipeControls.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+  const englishBlock = englishSource.match(/const localEditorUi = \{([\\s\\S]*?)\\n\\};/u)?.[1];
+  const russianBlock = russianSource.match(/localEditorUi: \{([\\s\\S]*?)\\n  \},/u)?.[1];
+  assert.ok(englishBlock && russianBlock, 'both locale catalogs must define localEditorUi');
+  const catalogKeys = block => {
+    const keysOnly = block
+      .replace(/"([A-Za-z][A-Za-z0-9-]*)"(?=\\s*:)/gu, '$1')
+      .replace(/"[^"]*"/gu, '""');
+    return [...keysOnly.matchAll(/\\b([A-Za-z][A-Za-z0-9-]*):/gu)].map(match => match[1]).sort();
+  };
+  assert.deepEqual(catalogKeys(russianBlock), catalogKeys(englishBlock), 'every local editing key needs both locales');
+  const nestedKeys = (block, name) => {
+    const nested = block.match(new RegExp(name + ': \\{([^}]*)\\}', 'u'))?.[1];
+    assert.ok(nested, 'localEditorUi.' + name + ' must exist');
+    return catalogKeys(nested);
+  };
+  for (const name of ['channel', 'hue', 'gradient', 'annotationTool', 'annotationColor']) {
+    assert.deepEqual(nestedKeys(russianBlock, name), nestedKeys(englishBlock, name), 'localEditorUi.' + name + ' needs matching keys');
+  }
+  assert.match(englishBlock, /devicePrivacy: ".*unencrypted/u);
+  assert.match(englishBlock, /edits are NOT automatically saved/u);
+  assert.match(russianBlock, /devicePrivacy: ".*без шифрования/u);
+  assert.match(russianBlock, /изменения НЕ сохраняются автоматически/u);
+  const englishKeys = new Set(catalogKeys(englishBlock));
+  for (const source of [controls, annotationControls, recipeControls]) {
+    assert.match(source, /useTranslation/);
+    assert.match(source, /localEditorUi\./);
+    for (const match of source.matchAll(/t\('localEditorUi\.([A-Za-z0-9-]+)/gu)) {
+      assert.ok(englishKeys.has(match[1]), 'localEditorUi.' + match[1] + ' must exist in both locales');
+    }
+  }
+  for (const key of [
+    'toneCurve', 'selectiveHsl', 'gradientMask', 'manualCloneStamp',
+    'annotationSection', 'annotationTool.off', 'annotationColor.red',
+    'recipeSection', 'saveRecipe', 'restoreRecipe', 'devicePrivacy',
+    'recipeSaved', 'browserDraftRestored',
+  ]) {
+    const value = key.split('.').reduce((current, part) => current?.[part], russian.localEditorUi);
+    assert.equal(typeof value, 'string', 'Russian key localEditorUi.' + key + ' must be a string');
+    assert.ok(value.trim(), 'Russian key localEditorUi.' + key + ' must not be empty');
+  }
+  assert.match(annotationControls, /localEditorUi\.annotationTool\./);
+  assert.match(recipeControls, /NOTICE_KEYS/);
+  assert.doesNotMatch(annotationControls, /coreClient|acceptFinal|provider|FAL_KEY/);
+  assert.doesNotMatch(recipeControls, /coreClient|acceptFinal|provider|FAL_KEY/);
 });
