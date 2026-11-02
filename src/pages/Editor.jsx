@@ -1591,7 +1591,7 @@ export default function Editor() {
         <summary className="cursor-pointer select-none font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{language === 'ru' ? t('editorUi.moreTools') : 'More tools and activity'}</summary>
         <div className="mt-3 space-y-4">
           <AdaptivePanel title={language === 'ru' ? t('editorUi.workspace') : 'Workspace'}><WorkspaceBar projectId={project.id} /></AdaptivePanel>
-          <AdaptivePanel title={t('editorUi.jobCenter')}><JobQueuePanel /></AdaptivePanel>
+          <AdaptivePanel title={language === 'ru' ? t('editorUi.jobCenter') : 'Job Center'}><JobQueuePanel /></AdaptivePanel>
           <PipelineStatusBar width={project.width} height={project.height} />
           <AdaptivePanel title={language === 'ru' ? t('editorUi.sceneMemory') : 'Scene Memory'}><SceneMemoryPanel project={project} /></AdaptivePanel>
           {PRODUCTION_MASK_UI_ENABLED && <EditorStatusBar
