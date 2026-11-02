@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import './auth-login-single-flight.test.mjs';
+import './auth-session-recovery.test.mjs';
 
 test('public auth routes remain renderable when canonical session check returns auth_required', async () => {
   const [app, protectedRoute, authContext] = await Promise.all([
@@ -19,6 +20,6 @@ test('public auth routes remain renderable when canonical session check returns 
   assert.doesNotMatch(app, /navigateToLogin/);
   assert.doesNotMatch(app, /authError\.type\s*===\s*['"]auth_required['"]/);
   assert.doesNotMatch(authContext, /navigateToLogin/);
-  assert.match(app, /<ProtectedRoute unauthenticatedElement=\{<Navigate to=["']\\?\/login["'] replace \/>\}/);
+  assert.match(app, /<ProtectedRoute unauthenticatedElement=\{<Navigate to=["']\\?/login["'] replace \/>\}/);
   assert.match(protectedRoute, /return unauthenticatedElement/);
 });
