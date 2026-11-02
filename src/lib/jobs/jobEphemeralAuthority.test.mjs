@@ -98,3 +98,11 @@ test('Job Center separates canonical reconciliation from explicit new-operation 
   assert.match(canonicalRow, />Retry workflow</);
   assert.doesNotMatch(canonicalRow, /onRunAgain|onDuplicate|onMoveUp|jobManager|jobStorage/);
 });
+
+test('session Job Center gates browser queue actions to the current Project', async () => {
+  const center = await readFile(centerPath, 'utf8');
+  assert.match(center, /sessionJobsForProject\(\[\.\.\.state\.running, \.\.\.state\.queued, \.\.\.state\.recent\], normalizedProjectId\)/);
+  assert.match(center, /canMoveSessionJobUp\(state\.queued, job\.id, normalizedProjectId\)/);
+  assert.match(center, /Pause all session jobs/);
+  assert.doesNotMatch(center, /const jobs = \[\.\.\.state\.running, \.\.\.state\.queued, \.\.\.state\.recent\];/);
+});
