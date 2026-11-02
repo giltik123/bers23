@@ -81,4 +81,18 @@ export default {
     layeredWide: 'Layered wide composition',
     centeredSubject: 'Centered subject composition',
   },
+  palette: {
+    neutral: 'Neutral',
+    warm_highlight: 'Warm highlight',
+    deep_shadow: 'Deep shadow',
+  },
+  workspaces: {
+    portrait: 'Portrait',
+    fashion: 'Fashion',
+    automotive: 'Automotive',
+    food: 'Food',
+    architecture: 'Architecture',
+    product: 'Product',
+    universal: 'Universal',
+  },
 };
