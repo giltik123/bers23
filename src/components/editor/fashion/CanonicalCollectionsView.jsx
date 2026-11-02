@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, FolderPlus, Loader2, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,7 @@ function replaceCollection(current, next) {
   return sortCollections([...current.filter((item) => item.id !== next.id), next]);
 }
 
-export default function CanonicalCollectionsView({ garments }) {
+export default function CanonicalCollectionsView({ garments, disabled = false }) {
   const model = useMemo(
     () => createCanonicalCollectionViewModel({ collections: coreClient.fashion.collections }),
     [],
@@ -22,6 +22,8 @@ export default function CanonicalCollectionsView({ garments }) {
   const [newName, setNewName] = useState('');
   const [addGarmentId, setAddGarmentId] = useState('');
   const [busy, setBusy] = useState('');
+  const [fresh, setFresh] = useState(false);
+  const requestRef = useRef(0);
   const [error, setError] = useState('');
   const [confirmRemoveId, setConfirmRemoveId] = useState('');
 
@@ -31,22 +33,47 @@ export default function CanonicalCollectionsView({ garments }) {
   }, []);
 
   const reload = useCallback(async () => {
+    const ticket = ++requestRef.current;
+    setFresh(false);
     setBusy('load');
     setError('');
     try {
-      applySnapshot(await model.load());
+      const next = await model.load();
+      if (ticket === requestRef.current) {
+        applySnapshot(next);
+        setFresh(true);
+      }
     } catch (cause) {
-      setError(cause?.message || 'Collections could not be loaded.');
+      if (ticket === requestRef.current) {
+        setFresh(false);
+        setError(cause?.message || 'Collections could not be loaded.');
+      }
     } finally {
-      setBusy('');
+      if (ticket === requestRef.current) setBusy('');
     }
   }, [applySnapshot, model]);
 
   const reconcileQuietly = useCallback(async () => {
-    try { applySnapshot(await model.load()); } catch { /* preserve the originating action error */ }
+    const ticket = ++requestRef.current;
+    setFresh(false);
+    try {
+      const next = await model.load();
+      if (ticket === requestRef.current) {
+        applySnapshot(next);
+        setFresh(true);
+      }
+    } catch {
+      // Preserve the originating action error, but keep mutations disabled.
+      if (ticket === requestRef.current) setFresh(false);
+    }
   }, [applySnapshot, model]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    reload();
+    return () => { requestRef.current += 1; };
+  }, [reload]);
+
+  const canMutate = fresh && !disabled && !busy;
 
   const selected = collections.find((item) => item.id === selectedId) || null;
   const garmentById = useMemo(() => new Map((garments || []).map((item) => [item.id, item])), [garments]);
@@ -60,7 +87,7 @@ export default function CanonicalCollectionsView({ garments }) {
 
   const create = async (event) => {
     event.preventDefault();
-    if (!newName.trim() || busy) return;
+    if (!newName.trim() || !canMutate) return;
     setBusy('create');
     setError('');
     try {
@@ -78,7 +105,7 @@ export default function CanonicalCollectionsView({ garments }) {
   };
 
   const mutateSelected = async (key, action) => {
-    if (!selected || busy) return false;
+    if (!selected || !canMutate) return false;
     setBusy(key);
     setError('');
     try {
@@ -96,7 +123,8 @@ export default function CanonicalCollectionsView({ garments }) {
   };
 
   const removeCollection = async () => {
-    if (!selected || confirmRemoveId !== selected.id || busy) {
+    if (!selected || !canMutate) return;
+    if (confirmRemoveId !== selected.id) {
       setConfirmRemoveId(selected?.id || '');
       return;
     }
@@ -118,7 +146,7 @@ export default function CanonicalCollectionsView({ garments }) {
   };
 
   const moveGarment = async (garmentId, targetId) => {
-    if (!selected || !targetId || busy) return;
+    if (!selected || !targetId || !canMutate) return;
     const target = collections.find((item) => item.id === targetId);
     if (!target) return;
     setBusy(`move:${garmentId}`);
@@ -149,15 +177,20 @@ export default function CanonicalCollectionsView({ garments }) {
         </Button>
       </div>
 
+      {!fresh && !busy && (
+        <p role="status" className="text-[11px] text-amber-700 dark:text-amber-300">
+          Collections are not confirmed by the server. Reload before changing membership.
+        </p>
+      )}
       <form className="flex gap-1.5" onSubmit={create}>
         <Input
           value={newName}
           onChange={(event) => setNewName(event.target.value)}
           placeholder="New collection"
           maxLength={100}
-          disabled={Boolean(busy)}
+          disabled={!canMutate}
         />
-        <Button type="submit" size="sm" disabled={!newName.trim() || Boolean(busy)}>
+        <Button type="submit" size="sm" disabled={!newName.trim() || !canMutate}>
           <FolderPlus className="h-3.5 w-3.5 mr-1" /> Create
         </Button>
       </form>
@@ -193,7 +226,7 @@ export default function CanonicalCollectionsView({ garments }) {
               size="sm"
               className="h-7 text-xs"
               onClick={removeCollection}
-              disabled={Boolean(busy)}
+              disabled={!canMutate}
             >
               <Trash2 className="h-3.5 w-3.5 mr-1" />
               {confirmRemoveId === selected.id ? 'Confirm delete' : 'Delete'}
@@ -205,7 +238,7 @@ export default function CanonicalCollectionsView({ garments }) {
               className="h-8 flex-1 rounded-md border border-input bg-transparent px-2 text-xs"
               value={addGarmentId}
               onChange={(event) => setAddGarmentId(event.target.value)}
-              disabled={Boolean(busy) || availableToAdd.length === 0}
+              disabled={!canMutate || availableToAdd.length === 0}
             >
               <option value="">Add garment…</option>
               {availableToAdd.map((garment) => <option key={garment.id} value={garment.id}>{garment.name}</option>)}
@@ -213,7 +246,7 @@ export default function CanonicalCollectionsView({ garments }) {
             <Button
               size="sm"
               className="h-8"
-              disabled={!addGarmentId || Boolean(busy)}
+              disabled={!addGarmentId || !canMutate}
               onClick={() => mutateSelected(
                 `add:${addGarmentId}`,
                 (collection) => model.addGarment(collection, addGarmentId),
@@ -241,7 +274,7 @@ export default function CanonicalCollectionsView({ garments }) {
                         aria-label={`Move ${garment?.name || garmentId}`}
                         className="h-7 max-w-28 rounded-md border border-input bg-transparent px-1 text-[10px]"
                         defaultValue=""
-                        disabled={Boolean(busy)}
+                        disabled={!canMutate}
                         onChange={(event) => {
                           const targetId = event.target.value;
                           event.target.value = '';
@@ -256,7 +289,7 @@ export default function CanonicalCollectionsView({ garments }) {
                       type="button"
                       className="rounded-md p-1 hover:bg-accent disabled:opacity-50"
                       aria-label={`Remove ${garment?.name || garmentId} from ${selected.name}`}
-                      disabled={Boolean(busy)}
+                      disabled={!canMutate}
                       onClick={() => mutateSelected(`remove:${garmentId}`, (collection) => model.removeGarment(collection, garmentId))}
                     >
                       {busy === `move:${garmentId}` ? <ArrowRight className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
