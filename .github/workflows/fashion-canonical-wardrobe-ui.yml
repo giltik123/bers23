@@ -9,6 +9,9 @@ on:
       - 'src/api/managedGarmentClient.js'
       - 'src/api/managedWardrobeClient.js'
       - 'src/lib/fashion/garmentCategories.js'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/fashion-wardrobe-panel-localization.test.mjs'
       - 'tests/canonical-wardrobe-view-model.test.mjs'
       - 'tests/fashion-canonical-wardrobe-ui.test.mjs'
       - 'tests/fashion-canonical-wardrobe-ui-contract.test.mjs'
@@ -45,6 +48,7 @@ jobs:
         run: |
           node --test tests/fashion-canonical-wardrobe-ui.test.mjs
           node --test tests/fashion-canonical-wardrobe-ui-contract.test.mjs
+          node --test tests/fashion-wardrobe-panel-localization.test.mjs
           node --test tests/editor-zero-object-navigation.test.mjs
       - name: Build production frontend
         run: npm run build
