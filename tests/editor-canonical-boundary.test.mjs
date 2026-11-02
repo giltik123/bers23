@@ -7,6 +7,31 @@ test('Editor single-edit path crosses only an application boundary', async () =>
 test('application edit adapter sends no server-authoritative fields', async () => { const source = await readFile('src/application/creative/CreativeEditApplicationService.js', 'utf8'); assert.match(source, /coreClient\.creative\.execute/); for (const forbidden of ['walletBalance', 'reservationStatus', 'authorizationResult', 'retryCount', 'FAL_KEY', 'REVE_KEY']) assert.equal(source.includes(forbidden), false); });
 test('browser source imports no transaction internals and canonical edit boundaries contain no provider secrets', async () => { for (const file of await collect('src')) { const source = await readFile(file, 'utf8'); assert.equal(/from ['"][^'"]*server\/transactions/.test(source), false, file); } for (const file of ['src/pages/Editor.jsx', 'src/application/creative/CreativeEditApplicationService.js', 'src/api/coreClient.js']) { const source = await readFile(file, 'utf8'); assert.equal(/\b(FAL_KEY|REVE_KEY|FASHN_KEY)\b/.test(source), false, file); } });
 async function collect(directory) { const entries = await readdir(directory, { withFileTypes: true }); return (await Promise.all(entries.map((entry) => entry.isDirectory() ? collect(join(directory, entry.name)) : [join(directory, entry.name)]))).flat().filter((file) => /\.(js|jsx|ts|tsx)$/.test(file)); }
+test('Recipe browser localizes views, categories, search, chain status and empty states in RU/EN', async () => {
+  const [panel, categories, english, russian] = await Promise.all([
+    readFile('src/components/editor/recipes/RecipePanel.jsx', 'utf8'),
+    readFile('src/lib/recipes/recipeCategories.js', 'utf8'),
+    readFile('src/lib/i18n/locales/en/recipes.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+  assert.match(panel, /useTranslation/);
+  for (const key of ['chainsUnavailable', 'chainsUnavailableHint', 'searchPlaceholder', 'emptyFavorites', 'emptyRecent', 'emptySearch']) {
+    assert.ok(panel.includes('recipes.' + key), 'RecipePanel uses recipes.' + key);
+    assert.ok(english.includes(key + ': '), 'English recipes.' + key);
+    assert.ok(russian.includes(key + ': '), 'Russian recipes.' + key);
+  }
+  const categoryIds = [...categories.matchAll(/id: '([^']+)'/g)].map((match) => match[1]);
+  assert.equal(categoryIds.length, 23, 'all existing recipe categories remain represented');
+  for (const id of categoryIds) {
+    assert.ok(english.includes(id + ": '"), 'English recipe category ' + id);
+    assert.ok(russian.includes(id + ": '"), 'Russian recipe category ' + id);
+  }
+  assert.doesNotMatch(panel, /Recommended|Popular|Recent|Favorites|Search recipes|Recipe chains are not enabled|No favorites yet|No recipes used yet|No recipes found/);
+  assert.match(panel, /recipeSearch\.search/);
+  assert.match(panel, /recipeManager\.recommendFor/);
+});
+
+
 test('Editor selection uses the Core mask port and never manufactures a mask UUID', async () => { const source = await readFile('src/pages/Editor.jsx', 'utf8'); assert.match(source, /new CoreMaskArtifactPort\(project\.id\)/); assert.doesNotMatch(source, /persist:\s*async[\s\S]*randomUUID/); assert.match(source, /mask_artifact_id: artifact\.id/); });
 test('Core mask port sends exact alpha and maps the server artifact identity', async () => { const source = await readFile('src/application/selection/CoreMaskArtifactPort.js', 'utf8'); assert.match(source, /alpha: mask\.alpha/); assert.match(source, /id: response\.artifactId/); assert.match(source, /ALPHA_8_LOSSLESS/); });
 test('Editor invert stays bound to SelectionApplicationService and the toolbar exposes only stable editable states', async () => { const editor = await readFile('src/pages/Editor.jsx', 'utf8'); const toolbar = await readFile('src/components/editor/SelectionToolbar.jsx', 'utf8'); assert.match(editor, /onInvert=\{\(\) => updateSelection\(\(service\) => service\.invert\(\)\)\}/); assert.match(toolbar, /aria-label="Invert selection"/); assert.match(toolbar, /const editable = selection\.state === 'SELECTED' \|\| selection\.state === 'REFINING'/); assert.match(toolbar, /disabled=\{!editable\} onClick=\{onInvert\}/); assert.match(toolbar, /const canDone = editable && !selection\.quality\?\.empty/); assert.match(toolbar, /disabled=\{!canDone\} onClick=\{onDone\}/); });
@@ -503,7 +528,7 @@ test('recipe templates remain canonical Prompt inputs while multi-step execution
   const summary = await readFile('src/components/editor/creative/CreativeStrategySummary.jsx', 'utf8');
   const adapter = await readFile('src/application/creative/LegacyRecipeExecutionAdapter.js', 'utf8');
 
-  assert.match(panel, /Individual recipes remain available as prompt templates/);
+  assert.match(panel, /recipes\.chainsUnavailableHint/);
   for (const forbidden of ['RECIPE_CHAINS', 'onRunChain', 'Apply strategy']) assert.equal(panel.includes(forbidden), false, forbidden);
   assert.match(detail, /onUse\(prompt, recipe\)/);
   assert.match(detail, /recipeEngine\.compile/);
