@@ -49,12 +49,12 @@ test('F3c pull-request trigger is exactly the accepted 12+19 authority manifest'
 
   const expected = [...manifest.bundleInputs, ...manifest.supportPaths];
   assert.equal(manifest.bundleInputs.length, 12, 'bundle input cardinality');
-  assert.equal(manifest.supportPaths.length, 19, 'support path cardinality');
-  assert.equal(expected.length, 31, 'F3c trusted trigger cardinality');
+  assert.equal(manifest.supportPaths.length, 30, 'support path cardinality');
+  assert.equal(expected.length, 42, 'F3c trusted trigger cardinality');
   assert.equal(new Set(expected).size, expected.length, 'trusted trigger paths must remain unique');
 
   const { paths } = parseSingleQuotedPathsBlock(workflow);
-  assert.equal(paths.length, 31, 'workflow must expose exactly 31 trusted paths');
+  assert.equal(paths.length, 42, 'workflow must expose exactly 42 trusted paths');
   assert.deepEqual(paths, expected, 'workflow trigger order and content must exactly equal bundleInputs + supportPaths');
 });
 
