@@ -43,7 +43,7 @@
     "test:core-server-postgres-vertical": "node -e \"if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required: the Core/PostgreSQL vertical test cannot be skipped'); process.exit(1) }\" && mkdir -p .test-cache/migrations && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/application-adapters-node-import.test.ts','tests/core-server-postgres-vertical.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outdir:'.test-cache',external:['pg','sharp','node:*']});\" && cp server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql .test-cache/migrations/001_transaction_store.sql && cp server/core/artifacts/migrations/002_canonical_mask_artifacts.sql .test-cache/migrations/002_canonical_mask_artifacts.sql && cp server/core/artifacts/migrations/003_canonical_final_image_artifacts.sql .test-cache/migrations/003_canonical_final_image_artifacts.sql && cp server/core/projects/migrations/004_canonical_projects_and_originals.sql .test-cache/migrations/004_canonical_projects_and_originals.sql && cp server/core/projects/migrations/005_canonical_project_history_versions.sql .test-cache/migrations/005_canonical_project_history_versions.sql && node --test ./.test-cache/application-adapters-node-import.test.js ./.test-cache/core-server-postgres-vertical.test.js",
     "test:creative-learning-postgres": "node -e \"if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required: real PostgreSQL creative-learning tests cannot be skipped or mocked'); process.exit(1) }\" && mkdir -p node_modules/.cache && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/creative-learning-postgres.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/creative-learning-postgres.test.mjs',external:['pg','node:*']});\" && node --test node_modules/.cache/creative-learning-postgres.test.mjs",
     "test:creative-learning": "mkdir -p node_modules/.cache && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/creative-learning.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/creative-learning.test.mjs',external:['node:*']});\" && node node_modules/.cache/creative-learning.test.mjs",
-    "test:canonical-product-vertical": "mkdir -p node_modules/.cache/canonical-product && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/canonical-product-vertical-slice.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/canonical-product/vertical.test.mjs',external:['node:*']});\" && node node_modules/.cache/canonical-product/vertical.test.mjs && node --test tests/editor-canonical-boundary.test.mjs tests/auth-client-contract.test.mjs",
+    "test:canonical-product-vertical": "mkdir -p node_modules/.cache/canonical-product && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/canonical-product-vertical-slice.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/canonical-product/vertical.test.mjs',external:['node:*']});\" && node node_modules/.cache/canonical-product/vertical.test.mjs && node --test tests/editor-canonical-boundary.test.mjs tests/auth-client-contract.test.mjs && node --test tests/asset-library-reconciliation.test.mjs",
     "test:core-http": "npm run test:core-http-boundary && npm run server:test && npm run test:core-cutover",
     "server:dev": "npm run server:build && npm run server:start",
     "server:build": "node scripts/build-core-server.mjs",
@@ -95,7 +95,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
-    "dompurify": "^3.4.17",
+    "dompurify": "^3.4.16",
     "embla-carousel-react": "^8.5.2",
     "framer-motion": "^11.16.4",
     "html2canvas": "^1.4.1",
@@ -121,7 +121,8 @@
     "sonner": "^2.0.1",
     "tailwind-merge": "^3.0.2",
     "three": "^0.171.0",
-    "vaul": "^1.1.2"
+    "vaul": "^1.1.2",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.19.0",
