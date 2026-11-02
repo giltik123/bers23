@@ -110,7 +110,7 @@ test('saved mask entries live alongside adjustment controls and have honest visi
   const sidebar = editor.indexOf('aria-label="Editing controls"');
   const sidebarClose = editor.indexOf('</aside>', sidebar);
   assert.ok(list > sidebar && list < sidebarClose, 'saved MASK list must stay inside contextual editing sidebar');
-  assert.match(objectPanel, /they do not edit the image/);
+  assert.match(objectPanel, /editorUi\.objectPanel\.guideHelp/);
 });
 
 test('real browser R3e exercises color and opacity of rendered overlay while Core keeps exact mask authority', async () => {
