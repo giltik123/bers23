@@ -15,11 +15,13 @@ const critical = [
   'src/components/projects/ProjectCard.jsx',
   'src/components/projects/ProjectActionsMenu.jsx',
   'src/pages/AssetLibrary.jsx',
+  'src/components/editor/scene/SceneMemoryPanel.jsx',
+  'src/components/editor/scene/ConsistencyWarning.jsx',
 ];
 
 test('Russian locale covers auth, projects and navigation with English counterparts', async () => {
   const english = await readFile('src/lib/i18n/locales/en/index.js', 'utf8');
-  for (const namespace of ['authUi', 'projectUi', 'navUi', 'assetUi']) {
+  for (const namespace of ['authUi', 'projectUi', 'navUi', 'assetUi', 'sceneUi']) {
     const values = russian[namespace];
     assert.ok(values && Object.keys(values).length >= 10, namespace + ' must be translated');
     assert.ok(english.includes(namespace + ': {'), namespace + ' needs an English module');
@@ -38,7 +40,7 @@ test('key user journeys use live translation without bypassing canonical Project
   for (const path of critical) {
     const source = await readFile(path, 'utf8');
     assert.match(source, /useTranslation/, path + ' must use the locale context');
-    for (const match of source.matchAll(/\bt\(['"]((?:authUi|projectUi|navUi|assetUi)\.\w+)['"]/gu)) {
+    for (const match of source.matchAll(/\bt\(['"]((?:authUi|projectUi|navUi|assetUi|sceneUi)\.\w+)['"]/gu)) {
       const [namespace, key] = match[1].split('.');
       assert.ok(russian[namespace]?.[key], path + ' references missing Russian key ' + match[1]);
     }
@@ -83,4 +85,39 @@ test('Russian editor, preview and Try-On keep explicit review and controlled act
   assert.match(runner, /fashionUi\.refreshError/);
   assert.match(runner, /setSelectedEntryId\(''\)/, 'failed or changed outfit must invalidate a stale item');
   assert.doesNotMatch(navigation, /coreClient\./, 'translation must never start creative execution');
+});
+
+test('Scene Memory and consistency warnings are localized without claiming canonical scene authority', async () => {
+  const [scene, warning, memory, styleLock, english] = await Promise.all([
+    readFile('src/components/editor/scene/SceneMemoryPanel.jsx', 'utf8'),
+    readFile('src/components/editor/scene/ConsistencyWarning.jsx', 'utf8'),
+    readFile('src/lib/scene/sceneMemory.js', 'utf8'),
+    readFile('src/lib/scene/styleLock.js', 'utf8'),
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+  ]);
+  const englishBlock = english.match(/sceneUi: \{([\s\S]*?)\n  \},/u)?.[1];
+  assert.ok(englishBlock, 'English sceneUi catalog must exist');
+  assert.ok(russian.sceneUi && Object.keys(russian.sceneUi).length >= 20);
+  for (const [key, value] of Object.entries(russian.sceneUi)) {
+    assert.equal(typeof value, 'string', 'sceneUi.' + key + ' must be plain text');
+    assert.ok(value.trim(), 'sceneUi.' + key + ' must not be empty');
+    assert.match(englishBlock, new RegExp('"' + key + '"\\s*:'));
+  }
+  const referenced = new Set();
+  for (const source of [scene, warning]) {
+    for (const match of source.matchAll(/'sceneUi\.([A-Za-z0-9]+)'/g)) referenced.add(match[1]);
+  }
+  for (const key of referenced) assert.ok(russian.sceneUi[key], 'sceneUi.' + key + ' must be translated');
+  assert.match(scene, /aria-expanded=\{open\}/);
+  assert.match(scene, /aria-controls=\{panelId\}/);
+  assert.match(scene, /setLocked\(styleLock\.isEnabled\(project\.id\)\), \[project\.id\]\)/);
+  assert.match(scene, /sceneUi\.advisoryNotice/);
+  assert.match(memory, /authority: 'BROWSER_ADVISORY'/);
+  assert.match(memory, /SCENE_MEMORY_ANALYSIS_NOT_WIRED/);
+  assert.match(styleLock, /localStorage/);
+  assert.match(warning, /WARNING_LABEL_KEYS\[warning\.category\]/);
+  assert.doesNotMatch(warning, /warning\.message/);
+  assert.match(warning, /role="alert"/);
+  assert.doesNotMatch(scene, /Scene Memory|Style Lock|Drift risk|Consistent|Scene fingerprint/);
+  assert.doesNotMatch(warning, /Scene consistency warning|Auto-correct|Continue anyway/);
 });
