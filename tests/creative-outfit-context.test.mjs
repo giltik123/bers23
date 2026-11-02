@@ -70,6 +70,10 @@ test('Creative Studio reads Outfit data only through the canonical read port and
   assert.match(panel, /isLoadingAuth/u);
   assert.match(panel, /setSaved\(null\)/u);
   assert.match(panel, /setSavedStrategy\(null\)/u);
+  assert.match(panel, /historyStrategy/u);
+  assert.match(panel, /recommendations: Object\.freeze\(\{[\s\S]*outfits: EMPTY_OUTFITS/u);
+  assert.match(panel, /creativeHistory\.save\(historyStrategy\)/u);
+  assert.doesNotMatch(panel, /creativeHistory\.save\(strategy\)/u);
   assert.match(panel, /if \(!active\) return/u);
   assert.match(summary, /strategy\.recommendations\?\.outfits/u);
   assert.match(summary, /outfitsStatus === 'error'/u);
