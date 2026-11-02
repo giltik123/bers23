@@ -58,6 +58,7 @@ on:
       - 'src/pages/Projects.jsx'
       - 'src/pages/Editor.jsx'
       - 'src/lib/i18n/locales/en/notifications.js'
+      - 'src/lib/i18n/locales/en/index.js'
       - 'src/lib/i18n/locales/ru/index.js'
       - 'tests/editor-notification-localization.test.mjs'
       - 'src/platform/creative/deterministic/**'
