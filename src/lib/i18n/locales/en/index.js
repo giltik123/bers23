@@ -250,6 +250,7 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   "sizeUnknown": "One image cannot be measured. Before and After remain available when its preview loads.",
   "qualityHint": "Zoom uses actual decoded image dimensions (one CSS pixel per source pixel at 100%). This remains a visual preview, not a pixel-level quality certificate. Accept alone commits to Project history.",
   "localCorePreview": "Local / Core preview",
+  "secondsAbbrev": "s",
   "reviewPendingAria": "Review pending image before accepting",
   "reviewImageLoadFailed": "The image could not be loaded for review. Accept is blocked.",
   "reviewBothImagesBeforeAccept": "Load and inspect both Before and After images for the current candidate before accepting.",

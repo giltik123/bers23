@@ -14,7 +14,7 @@ test('ResultCompare review states have distinct English and Russian copy', async
     readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
   ]);
   const required = [
-    'localCorePreview', 'reviewPendingAria', 'reviewImageLoadFailed',
+    'localCorePreview', 'secondsAbbrev', 'reviewPendingAria', 'reviewImageLoadFailed',
     'reviewBothImagesBeforeAccept', 'scopedReviewLabel', 'scopedMaskedReview',
     'scopedWholeImageReview', 'manualReviewDisclaimer', 'fashionReviewAria',
     'fashionReviewRequired', 'fashionReviewFit', 'fashionReviewOcclusion',
@@ -32,7 +32,7 @@ test('ResultCompare review states have distinct English and Russian copy', async
 test('ResultCompare uses shared translations without weakening explicit review and Accept gates', async () => {
   const source = await readFile('src/components/editor/ResultCompare.jsx', 'utf8');
   const keys = [
-    'localCorePreview', 'reviewPendingAria', 'reviewImageLoadFailed',
+    'localCorePreview', 'secondsAbbrev', 'reviewPendingAria', 'reviewImageLoadFailed',
     'reviewBothImagesBeforeAccept', 'scopedReviewLabel', 'scopedMaskedReview',
     'scopedWholeImageReview', 'manualReviewDisclaimer', 'fashionReviewAria',
     'fashionReviewRequired', 'fashionReviewFit', 'fashionReviewOcclusion',
@@ -42,6 +42,7 @@ test('ResultCompare uses shared translations without weakening explicit review a
   assert.match(source, /FASHION_REVIEW\.map\(\(\[key,labelKey\]\)/);
   assert.match(source, /\{t\(labelKey\)\}/);
   assert.doesNotMatch(source, /[А-Яа-яЁё]/u, 'ResultCompare must not contain hard-coded Russian UI copy');
+  assert.ok(source.includes("t('editControls.secondsAbbrev')"));
   assert.match(source, /canAcceptReviewedCandidate/);
   assert.match(source, /disabled=\{busy \|\| reviewBlocked\}/);
   assert.match(source, /onClick=\{onAccept\}/);

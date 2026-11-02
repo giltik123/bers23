@@ -126,7 +126,7 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
     || { width: '100%', height: 340 };
   const executionLabel = result?.provider || t('editControls.localCorePreview');
   const durationLabel = Number.isFinite(result?.generation_time_ms) && result.generation_time_ms > 0
-    ? ` · ${(result.generation_time_ms / 1000).toFixed(1)}s` : '';
+    ? ` · ${(result.generation_time_ms / 1000).toFixed(1)}${t('editControls.secondsAbbrev')}` : '';
 
   return (
     <section className="border border-border/60 rounded-2xl p-3 space-y-3" aria-label={t('editControls.reviewPendingAria')}>
@@ -153,7 +153,7 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, k
         <p className="text-xs text-muted-foreground" role="status">
           {t('editControls.source')}: {naturalSizes.before ? `${naturalSizes.before.width}×${naturalSizes.before.height}` : t('editControls.unavailable')}
           {' → '}
-          {t('editControls.candidate')}: {naturalSizes.after ? `${naturalSizes.after.width}×${naturalSizes.after.height}` : 'unavailable'} {t('editControls.pixels')}
+          {t('editControls.candidate')}: {naturalSizes.after ? `${naturalSizes.after.width}×${naturalSizes.after.height}` : t('editControls.unavailable')} {t('editControls.pixels')}
         </p>
       )}
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
