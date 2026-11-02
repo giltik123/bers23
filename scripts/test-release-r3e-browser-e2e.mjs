@@ -149,7 +149,7 @@ try {
   // exact signed Core bytes currently rendered by the Project, never a local
   // draft or a transient Preview.
   const originalExport = await downloadCurrentCanonicalProjectImage(page);
-  assert.match(originalExport.filename, /\\.(png|jpe?g|webp)$/iu);
+  assert.match(originalExport.filename, /\.(png|jpe?g|webp)$/iu);
   assert.deepEqual(originalExport.bytes, await readCurrentProjectImageBytes(page),
     'ORIGINAL download must match the exact current signed Core delivery bytes');
   assert.deepEqual(await readProjectState(projectId), initial,
