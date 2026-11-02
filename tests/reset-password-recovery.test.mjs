@@ -118,7 +118,7 @@ test('HTTP denial remains indistinguishable from accepted email, including rate 
   const h = requestHarness(async () => { throw Object.assign(Error('sensitive response'), { status: 429 }); });
   await h.submit();
   assert.deepEqual(h.sent, [true]);
-  assert.equal(h.errors.at(-1), undefined);
+  assert.deepEqual(h.errors.filter(Boolean), []);
 });
 
 test('network failure does not falsely claim a reset email was sent and can retry', async () => {
