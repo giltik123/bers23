@@ -281,6 +281,9 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   "refreshError": "Try-On choices could not be refreshed. Reload canonical Outfits before trying again.",
   "selectionInvalid": "Try-On selection is invalid.",
   "panelLabel": "Canonical wardrobe and collections",
+  "backToEditor": "Back to editor",
+  "backToProjects": "Back to projects",
+  "pageDescription": "Manage garments, photos and collections outside the main workspace."
   "loadFailed": "The canonical wardrobe could not be loaded.",
   "appendOutcomeUncertain": "The garment view may already be saved. Refresh the wardrobe before uploading again.",
   "mutationConflict": "The wardrobe changed elsewhere. It has been refreshed; review the latest state before trying again.",
