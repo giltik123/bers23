@@ -5,28 +5,39 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
-import { TranslationProvider } from '@/lib/i18n/TranslationProvider';
+import { TranslationProvider, useTranslation } from '@/lib/i18n/TranslationProvider';
 import ScrollToTop from './components/ScrollToTop';
-// Add page imports here
 import { Navigate } from 'react-router-dom';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import Login from '@/pages/Login';
-import Register from '@/pages/Register';
-import ForgotPassword from '@/pages/ForgotPassword';
-import ResetPassword from '@/pages/ResetPassword';
 import AppLayout from '@/components/AppLayout';
-import Projects from '@/pages/Projects';
-import Editor from '@/pages/Editor';
-import Wardrobe from '@/pages/Wardrobe';
-import Settings from '@/pages/Settings';
-import AssetLibrary from '@/pages/AssetLibrary';
-import AutomationStudio from '@/pages/AutomationStudio';
+
+// Keep each top-level journey out of the initial bundle. Authentication and
+// routing remain eager so lazy UI code never becomes a session authority.
+const Login = lazy(() => import('@/pages/Login'));
+const Register = lazy(() => import('@/pages/Register'));
+const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
+const Projects = lazy(() => import('@/pages/Projects'));
+const Editor = lazy(() => import('@/pages/Editor'));
+const Wardrobe = lazy(() => import('@/pages/Wardrobe'));
+const Settings = lazy(() => import('@/pages/Settings'));
+const AssetLibrary = lazy(() => import('@/pages/AssetLibrary'));
+const AutomationStudio = lazy(() => import('@/pages/AutomationStudio'));
 
 // Never expose this standalone, unauthoritative image lab in deployed builds.
 // It cannot create or accept Core FINAL Artifacts and cannot upload images.
 const EDITOR_PRO_LAB_LOCAL_ONLY = import.meta.env.DEV &&
   import.meta.env.VITE_BERS_EDITOR_PRO_LAB === 'true';
 const ProfessionalEditorLabRND = lazy(() => import('@/pages/ProfessionalEditorLabRND'));
+
+function RouteLoading() {
+  const { t } = useTranslation();
+  return (
+    <div role="status" className="flex min-h-[40vh] items-center justify-center p-6 text-sm text-muted-foreground">
+      {t('common.loading')}
+    </div>
+  );
+}
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings } = useAuth();
@@ -44,7 +55,8 @@ const AuthenticatedApp = () => {
   }
 
   return (
-    <Routes>
+    <Suspense fallback={<RouteLoading />}>
+      <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -69,7 +81,8 @@ const AuthenticatedApp = () => {
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 };
 
