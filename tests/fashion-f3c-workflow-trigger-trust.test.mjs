@@ -79,7 +79,7 @@ const CREATIVE_STUDIO_COMPILE_STEP = `      - name: Prove bounded Creative Studi
           NODE
 `;
 
-const CREATIVE_STUDIO_POLICY_STEP = `      - name: Allow only read-only canonical Outfit context in Creative Studio
+const CREATIVE_STUDIO_POLICY_STEP = String.raw\`      - name: Allow only read-only canonical Outfit context in Creative Studio
         run: |
           set -euo pipefail
           FILE=src/components/editor/creative/CreativeStudioPanel.jsx
@@ -90,15 +90,15 @@ const CREATIVE_STUDIO_POLICY_STEP = `      - name: Allow only read-only canonica
           grep -q 'creativeHistory.save(historyStrategy)' "$FILE"
           grep -q 'outfits: EMPTY_OUTFITS' "$FILE"
           ! grep -q 'creativeHistory.save(strategy)' "$FILE"
-          ! grep -E -q 'outfitManager|coreClient\\.entities|coreClient\\.fashion\\.(garments|collections|wardrobe|checkTryOnReadiness|admitManualParametricRepresentation)|coreClient\\.fashion\\.outfits\\.(get|create|updateMetadata|duplicate|archive|restore|remove|addEntry|replaceEntry|removeEntry|setEntryRole|reorderEntries)|coreClient\\.creative\\.execute|Core\\.UploadFile|integrations\\.Core|compositeContinuations|functions\\.invoke|FASHN|billing|credits|provider|onCommit|onRollback|fetch\\(' "$FILE"
-          ! grep -q 'outfits: \\[\\]' "$FILE"
-`;
+          ! grep -E -q 'outfitManager|coreClient\.entities|coreClient\.fashion\.(garments|collections|wardrobe|checkTryOnReadiness|admitManualParametricRepresentation)|coreClient\.fashion\.outfits\.(get|create|updateMetadata|duplicate|archive|restore|remove|addEntry|replaceEntry|removeEntry|setEntryRole|reorderEntries)|coreClient\.creative\.execute|Core\.UploadFile|integrations\.Core|compositeContinuations|functions\.invoke|FASHN|billing|credits|provider|onCommit|onRollback|fetch\(' "$FILE"
+          ! grep -q 'outfits: \[\]' "$FILE"
+\`;
 
-const ACCEPTED_CREATIVE_STUDIO_POLICY_STEP = `      - name: Keep Creative Studio disconnected from Outfit data
+const ACCEPTED_CREATIVE_STUDIO_POLICY_STEP = String.raw\`      - name: Keep Creative Studio disconnected from Outfit data
         run: |
           ! grep -E -q 'coreClient|outfitManager' src/components/editor/creative/CreativeStudioPanel.jsx
-          grep -q 'outfits: \\[\\]' src/components/editor/creative/CreativeStudioPanel.jsx
-`;
+          grep -q 'outfits: \[\]' src/components/editor/creative/CreativeStudioPanel.jsx
+\`;
 
 function replaceExactLine(source, line, replacement, label) {
   const occurrences = source.split(line).length - 1;
