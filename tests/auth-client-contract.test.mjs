@@ -212,7 +212,7 @@ test('Core browser client uses localized allowlisted error presentation instead 
   assert.match(client, /localizationManager\.t\(key\)/);
   assert.match(client, /error\.userMessageKey = presentation\.key/);
   assert.doesNotMatch(client, /new Error\(data\?\.message/);
-  assert.match(helper, /Object\.freeze\(CODE_KEYS\)/);
+  assert.match(helper, /const CODE_KEYS = Object\.freeze\(\{/);
   assert.match(helper, /errors\.serviceUnavailable/);
   for (const key of ['authentication', 'sessionExpired', 'permission', 'notFound', 'conflict', 'projectChanged', 'executionRunNotFound', 'automationNotFound', 'uploadTooLarge', 'unsupportedFile', 'rateLimited', 'serviceUnavailable', 'modelUnavailable']) {
     assert.match(english, new RegExp('\\b' + key + ':'));
