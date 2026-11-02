@@ -2,10 +2,39 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { GARMENT_CATEGORIES } from '../src/lib/fashion/garmentCategories.js';
-import { modules as en } from '../src/lib/i18n/locales/en/index.js';
-import { modules as ru } from '../src/lib/i18n/locales/ru/index.js';
+
 
 const PANEL = 'src/components/editor/fashion/FashionPanel.jsx';
+
+function extractObject(source, property) {
+  const marker = source.indexOf(`${property}: {`);
+  assert.notEqual(marker, -1, `locale must contain ${property}`);
+  const start = source.indexOf('{', marker);
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = start; index < source.length; index += 1) {
+    const character = source[index];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') quoted = false;
+      continue;
+    }
+    if (character === '"') quoted = true;
+    else if (character === '{') depth += 1;
+    else if (character === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error(`unterminated ${property} locale object`);
+}
+
+function parseLocaleObject(source, property) {
+  const objectSource = extractObject(source, property).replace(/,\\s*([}\\]])/g, '$1');
+  return JSON.parse(objectSource);
+}
 
 function leafPaths(value, prefix = '') {
   return Object.entries(value).flatMap(([key, child]) => {
@@ -36,8 +65,14 @@ test('canonical Wardrobe panel copy is driven by the selected RU/EN locale', asy
   }
 });
 
-test('RU and EN Wardrobe dictionaries have exact nested key parity and complete taxonomy coverage', () => {
-  assert.deepEqual(leafPaths(en.fashionUi), leafPaths(ru.fashionUi));
+test('RU and EN Wardrobe dictionaries have exact nested key parity and complete taxonomy coverage', async () => {
+  const [enSource, ruSource] = await Promise.all([
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+  const en = parseLocaleObject(enSource, 'fashionUi');
+  const ru = parseLocaleObject(ruSource, 'fashionUi');
+  assert.deepEqual(leafPaths(en), leafPaths(ru));
   assert.deepEqual(
     Object.keys(en.fashionUi.categories).sort(),
     GARMENT_CATEGORIES.map(category => category.id).sort(),
