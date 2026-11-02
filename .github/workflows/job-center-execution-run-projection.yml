@@ -10,6 +10,7 @@ on:
       - 'src/lib/jobs/executionRunProjection.test.mjs'
       - 'src/lib/jobs/executionRunFinalResultProjection.test.mjs'
       - 'src/lib/jobs/executionRunProjectionAuthority.test.mjs'
+      - 'tests/job-center-accessibility.test.mjs'
       - 'src/lib/jobs/creativeExecutionControl.js'
       - 'src/lib/jobs/creativeExecutionControl.test.mjs'
       - 'src/lib/jobs/workflowExecutionRetryControl.js'
@@ -61,7 +62,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Prove GET-only recovery, durable FINAL and Local authority projection, owning controls and explicit session repeat semantics
-        run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/executionRunFinalResultProjection.test.mjs src/lib/jobs/creativeExecutionControl.test.mjs src/lib/jobs/workflowExecutionRetryControl.test.mjs src/lib/jobs/jobRepeatPolicy.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
+        run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/executionRunFinalResultProjection.test.mjs src/lib/jobs/creativeExecutionControl.test.mjs src/lib/jobs/workflowExecutionRetryControl.test.mjs src/lib/jobs/jobRepeatPolicy.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs tests/job-center-accessibility.test.mjs
       - name: Preserve accepted server recovery HTTP contract
         run: node --experimental-strip-types --test server/core/http/executionRunRecoveryHttpAdapter.test.mjs
       - name: Typecheck browser and Core contracts
