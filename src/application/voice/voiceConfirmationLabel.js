@@ -1,21 +1,21 @@
-const LABELS = Object.freeze({
-  PROMPT_REPLACE: 'Подтвердить текст',
-  PROMPT_APPEND: 'Добавить текст в промпт',
-  PROMPT_CLEAR: 'Очистить промпт',
-  NAVIGATE: 'Перейти к разделу',
-  NAVIGATE_PROMPT: 'Открыть промпт',
-  WARDROBE_QUERY: 'Открыть поиск в гардеробе',
-  TRYON_SELECT_PROPOSAL: 'Подготовить выбор вещи для примерки',
-  AGENT_PROPOSAL: 'Подготовить задачу Agent',
-  HISTORY_UNDO: 'Отменить последнее редактирование',
-  HISTORY_REDO: 'Повторить редактирование',
-  HISTORY_RESTORE: 'Вернуть оригинал',
-  TRANSFORM: 'Создать предпросмотр поворота или отражения',
-  RESIZE: 'Создать предпросмотр изменения размера',
+const KEYS = Object.freeze({
+  PROMPT_REPLACE: 'voiceUi.confirmPrompt',
+  PROMPT_APPEND: 'voiceUi.confirmAppend',
+  PROMPT_CLEAR: 'voiceUi.confirmClear',
+  NAVIGATE: 'voiceUi.confirmNavigate',
+  NAVIGATE_PROMPT: 'voiceUi.confirmPromptOpen',
+  WARDROBE_QUERY: 'voiceUi.confirmWardrobe',
+  TRYON_SELECT_PROPOSAL: 'voiceUi.confirmTryOn',
+  AGENT_PROPOSAL: 'voiceUi.confirmAgent',
+  HISTORY_UNDO: 'voiceUi.confirmUndo',
+  HISTORY_REDO: 'voiceUi.confirmRedo',
+  HISTORY_RESTORE: 'voiceUi.confirmRestore',
+  TRANSFORM: 'voiceUi.confirmTransform',
+  RESIZE: 'voiceUi.confirmResize',
 });
 
-export function getVoiceConfirmationLabel(kind) {
-  return typeof kind === 'string' && Object.hasOwn(LABELS, kind)
-    ? LABELS[kind]
-    : 'Подтвердить действие';
+export function getVoiceConfirmationKey(kind) {
+  return typeof kind === 'string' && Object.hasOwn(KEYS, kind)
+    ? KEYS[kind]
+    : 'voiceUi.confirmAction';
 }
