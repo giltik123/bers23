@@ -17,7 +17,7 @@ test('advanced controls are visible with real onChange handlers, outputs and res
   assert.match(controls, /t\('localEditorUi\.toneCurve'\)/);
   assert.match(controls, /t\('localEditorUi\.selectiveHsl'\)/);
   assert.match(controls, /t\('localEditorUi\.manualCloneStamp'\)/);
-  assert.match(controls, /aria-label=\{'Curve ' \+ point\.label\} type="range"/);
+  assert.match(controls, /aria-label=\{t\('localEditorUi\.curvePoint', \{ label: t\('localEditorUi\.' \+ point\.labelKey\) \}\)\} type="range"/);
   assert.match(controls, /onChange=\{event => editCurve\(point\.key, Number\(event\.target\.value\)\)\}/);
   assert.match(controls, /const editCurve = \(key, value\) => onAdvancedChange\(curveChannel === 'rgb'/);
   assert.match(controls, /\? \{ \.\.\.advanced, curve: \{ \.\.\.advanced\.curve, \[key\]: value \} \}/);
