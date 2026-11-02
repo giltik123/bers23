@@ -20,6 +20,6 @@ test('public auth routes remain renderable when canonical session check returns 
   assert.doesNotMatch(app, /navigateToLogin/);
   assert.doesNotMatch(app, /authError\.type\s*===\s*['"]auth_required['"]/);
   assert.doesNotMatch(authContext, /navigateToLogin/);
-  assert.match(app, /<ProtectedRoute unauthenticatedElement=\{<Navigate to=["']\\?/login["'] replace \/>\}/);
+  assert.match(app, /<ProtectedRoute unauthenticatedElement=\{<Navigate to=["']\\?\/login["'] replace \/>\}/);
   assert.match(protectedRoute, /return unauthenticatedElement/);
 });
