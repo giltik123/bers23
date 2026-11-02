@@ -106,7 +106,6 @@ class ImagePipeline {
     pipelineEvents.emit({ status: 'ready', stage: null });
     return restored;
   }
-
 }
 
 export const imagePipeline = new ImagePipeline();
