@@ -10,7 +10,7 @@ const start = source.indexOf('  const handleSubmit = async (e) => {');
 const end = source.indexOf('\n  return (\n', start);
 assert.ok(start >= 0 && end > start, 'login handlers must remain testable');
 
-function harness(login) {
+function harness(login, provider = () => {}) {
   const errors = [];
   const loading = [];
   const calls = [];
@@ -30,7 +30,10 @@ function harness(login) {
         calls.push({ email, password });
         return login();
       },
-      loginWithProvider: (...args) => providerCalls.push(args),
+      loginWithProvider: (...args) => {
+        providerCalls.push(args);
+        return provider();
+      },
     } },
   };
   const { handleSubmit, handleGoogle } = runInNewContext(
@@ -60,6 +63,32 @@ test('two rapid login submits produce only one Core request and one redirect', a
   assert.equal(h.location.href, '/');
   assert.equal(h.requestInFlight.current, false);
   assert.deepEqual(h.loading, [true, false]);
+});
+
+test('two rapid Google actions start only one provider navigation and block email login', async () => {
+  const h = harness(() => {});
+  h.google();
+  h.google();
+  await h.submit();
+  assert.equal(h.providerCalls.length, 1);
+  assert.equal(h.calls.length, 0, 'email login must not interrupt a pending provider navigation');
+  assert.equal(h.requestInFlight.current, true);
+  assert.deepEqual(h.loading, [true]);
+});
+
+test('a rejected Google navigation exposes only localized recovery and can retry', () => {
+  let attempts = 0;
+  const h = harness(() => {}, () => {
+    attempts += 1;
+    if (attempts === 1) throw new TypeError('private provider navigation details');
+  });
+  assert.doesNotThrow(() => h.google());
+  assert.equal(h.errors.at(-1), 'errors.network');
+  assert.equal(h.requestInFlight.current, false);
+  assert.deepEqual(h.loading, [true, false]);
+  h.google();
+  assert.equal(h.providerCalls.length, 2);
+  assert.equal(h.requestInFlight.current, true);
 });
 
 test('invalid credentials do not expose untrusted Core error text and can retry', async () => {

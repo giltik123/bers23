@@ -45,7 +45,17 @@ export default function Login() {
 
   const handleGoogle = () => {
     if (requestInFlight.current) return;
-    coreClient.auth.loginWithProvider("google", "/");
+    requestInFlight.current = true;
+    setError("");
+    setLoading(true);
+    try {
+      // A successful call navigates away; keep controls locked until it does.
+      coreClient.auth.loginWithProvider("google", "/");
+    } catch (err) {
+      setError(t(typeof err?.status === "number" ? "errors.generic" : "errors.network"));
+      requestInFlight.current = false;
+      setLoading(false);
+    }
   };
 
   return (
