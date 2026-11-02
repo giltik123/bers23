@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { ArrowDown, ArrowUp, Loader2, Plus, RotateCcw, Save, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +26,16 @@ function movePoint(points, from, to) {
   return next;
 }
 
+function contourFeedbackMessage(feedback, t) {
+  const keys = {
+    invalid: 'unavailable', too_complex: 'tooMany', invalid_point: 'invalidPoint', too_few_points: 'tooFew',
+    duplicate_point: 'duplicate', degenerate: 'invalidGeometry', self_intersection: 'selfIntersection', ready: 'ready',
+  };
+  return t('fashion.manualTryOn.contourFeedback.' + (keys[feedback.code] || 'unavailable'), {
+    max: MANUAL_PARAMETRIC_MAX_POINTS,
+  });
+}
+
 export default function CanonicalTryOnContourEditor({
   source,
   onSave,
@@ -33,13 +44,14 @@ export default function CanonicalTryOnContourEditor({
   onCancel,
   disabled = false,
 }) {
+  const { t } = useTranslation();
   const sourceState = useMemo(() => {
     try {
       return Object.freeze({ source: normalizeManualContourEditorSource(source), error: '' });
     } catch {
-      return Object.freeze({ source: null, error: 'The canonical garment image is unavailable for contour editing.' });
+      return Object.freeze({ source: null, error: t('fashion.manualTryOn.garmentSourceUnavailable') });
     }
-  }, [source]);
+  }, [source, t]);
   const safeSource = sourceState.source;
   const sourceKey = safeSource
     ? `${safeSource.garmentId}:${safeSource.expectedRevision}:${safeSource.imageUrl}:${safeSource.imageExpiresAt}`
@@ -70,7 +82,7 @@ export default function CanonicalTryOnContourEditor({
   const appendPoint = (point) => {
     if (blocked) return;
     if (points.length >= MANUAL_PARAMETRIC_MAX_POINTS) {
-      setError(`Use at most ${MANUAL_PARAMETRIC_MAX_POINTS} explicit outline points.`);
+      setError(t('fashion.manualTryOn.maxPoints', { max: MANUAL_PARAMETRIC_MAX_POINTS }));
       return;
     }
     setError('');
@@ -86,7 +98,7 @@ export default function CanonicalTryOnContourEditor({
     const x = explicitCoordinate(draftX);
     const y = explicitCoordinate(draftY);
     if (x === null || y === null) {
-      setError('Enter explicit X and Y coordinates from 0 to 1.');
+      setError(t('fashion.manualTryOn.invalidCoordinates'));
       return;
     }
     appendPoint([x, y]);
@@ -110,7 +122,7 @@ export default function CanonicalTryOnContourEditor({
     const value = explicitCoordinate(input.value);
     if (value === null) {
       input.value = Number.isFinite(currentValue) ? String(currentValue) : '';
-      setError('Point coordinates must stay between 0 and 1.');
+      setError(t('fashion.manualTryOn.coordinateRange'));
       return;
     }
     setError('');
@@ -155,15 +167,15 @@ export default function CanonicalTryOnContourEditor({
         points,
       });
       setLocked(true);
-      setStatus('Contour saved. Recheck canonical Try-On readiness before another submission.');
+      setStatus(t('fashion.manualTryOn.contourSaved'));
       if (typeof onSaved === 'function') onSaved();
     } catch (cause) {
       if (cause?.code === 'TRYON_MANUAL_CONTOUR_SAVED_RELOAD_PENDING') {
         setLocked(true);
-        setStatus(manualAcquisitionErrorMessage(cause));
+        setStatus(manualAcquisitionErrorMessage(cause, t));
         if (typeof onReloadRequired === 'function') onReloadRequired();
       } else {
-        setError(manualAcquisitionErrorMessage(cause));
+        setError(manualAcquisitionErrorMessage(cause, t));
       }
     } finally {
       setBusy(false);
@@ -172,7 +184,7 @@ export default function CanonicalTryOnContourEditor({
 
   if (!safeSource) {
     return (
-      <section className="rounded-xl border border-border p-3" aria-label="Manual garment contour editor">
+      <section className="rounded-xl border border-border p-3" aria-label={t('fashion.manualTryOn.contourEditor')}>
         <p className="text-xs text-destructive" role="alert">{sourceState.error}</p>
       </section>
     );
@@ -181,16 +193,16 @@ export default function CanonicalTryOnContourEditor({
   const polygon = points.map((point) => `${point[0] * 100},${point[1] * 100}`).join(' ');
 
   return (
-    <section className="rounded-xl border border-border p-3 space-y-3" aria-label="Manual garment contour editor">
+    <section className="rounded-xl border border-border p-3 space-y-3" aria-label={t('fashion.manualTryOn.contourEditor')}>
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-sm font-medium">Garment outline</p>
+          <p className="text-sm font-medium">{t('fashion.manualTryOn.contourTitle')}</p>
           <p className="text-[11px] text-muted-foreground">
-            Place only points you explicitly choose on the managed {safeSource.category} image. Core performs the final geometry validation.
+            {t('fashion.manualTryOn.contourDescription')}
           </p>
         </div>
         {typeof onCancel === 'function' && (
-          <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={busy} aria-label="Close manual contour editor">
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={busy} aria-label={t('fashion.manualTryOn.closeContourEditor')}>
             <X className="h-3.5 w-3.5" />
           </Button>
         )}
@@ -204,7 +216,7 @@ export default function CanonicalTryOnContourEditor({
         <img
           ref={imageRef}
           src={safeSource.imageUrl}
-          alt="Managed garment primary view for manual contour editing"
+          alt={t('fashion.manualTryOn.garmentImageAlt')}
           className="block h-auto w-full select-none"
           draggable={false}
         />
@@ -217,7 +229,7 @@ export default function CanonicalTryOnContourEditor({
         </svg>
       </div>
 
-      <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5" aria-label="Add contour point by coordinates">
+      <div className="grid grid-cols-[1fr_1fr_auto] gap-1.5" aria-label={t('fashion.manualTryOn.addContourPointByCoordinates')}>
         <Input
           type="number"
           min="0"
@@ -226,8 +238,8 @@ export default function CanonicalTryOnContourEditor({
           inputMode="decimal"
           value={draftX}
           onChange={(event) => setDraftX(event.target.value)}
-          placeholder="X 0…1"
-          aria-label="New contour point x"
+          placeholder={t('fashion.manualTryOn.xRange')}
+          aria-label={t('fashion.manualTryOn.newPointX')}
           disabled={blocked}
         />
         <Input
@@ -238,17 +250,17 @@ export default function CanonicalTryOnContourEditor({
           inputMode="decimal"
           value={draftY}
           onChange={(event) => setDraftY(event.target.value)}
-          placeholder="Y 0…1"
-          aria-label="New contour point y"
+          placeholder={t('fashion.manualTryOn.yRange')}
+          aria-label={t('fashion.manualTryOn.newPointY')}
           disabled={blocked}
         />
         <Button type="button" size="sm" onClick={addTypedPoint} disabled={blocked || points.length >= MANUAL_PARAMETRIC_MAX_POINTS}>
-          <Plus className="h-3.5 w-3.5 mr-1" /> Add
+          <Plus className="h-3.5 w-3.5 mr-1" /> {t('fashion.manualTryOn.addPoint')}
         </Button>
       </div>
 
       {points.length > 0 && (
-        <div className="space-y-1" aria-label="Contour point controls">
+        <div className="space-y-1" aria-label={t('fashion.manualTryOn.contourPointControls')}>
           {points.map((point, index) => (
             <div key={`control:${index}:${point[0]}:${point[1]}`} className="grid grid-cols-[auto_1fr_1fr_auto_auto_auto] items-center gap-1 rounded-lg bg-secondary/30 p-1.5">
               <span className="w-6 text-center text-[10px] text-muted-foreground">{index + 1}</span>
@@ -261,7 +273,7 @@ export default function CanonicalTryOnContourEditor({
                 defaultValue={point[0]}
                 onBlur={(event) => commitCoordinate(index, 0, event.currentTarget)}
                 onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }}
-                aria-label={`Contour point ${index + 1} x`}
+                aria-label={t('fashion.manualTryOn.contourPointX', { index: index + 1 })}
                 disabled={blocked}
               />
               <Input
@@ -273,16 +285,16 @@ export default function CanonicalTryOnContourEditor({
                 defaultValue={point[1]}
                 onBlur={(event) => commitCoordinate(index, 1, event.currentTarget)}
                 onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }}
-                aria-label={`Contour point ${index + 1} y`}
+                aria-label={t('fashion.manualTryOn.contourPointY', { index: index + 1 })}
                 disabled={blocked}
               />
-              <button type="button" className="rounded-md p-1 disabled:opacity-40" onClick={() => reorderPoint(index, index - 1)} disabled={blocked || index === 0} aria-label={`Move contour point ${index + 1} earlier`}>
+              <button type="button" className="rounded-md p-1 disabled:opacity-40" onClick={() => reorderPoint(index, index - 1)} disabled={blocked || index === 0} aria-label={t('fashion.manualTryOn.movePointEarlier', { index: index + 1 })}>
                 <ArrowUp className="h-3.5 w-3.5" />
               </button>
-              <button type="button" className="rounded-md p-1 disabled:opacity-40" onClick={() => reorderPoint(index, index + 1)} disabled={blocked || index === points.length - 1} aria-label={`Move contour point ${index + 1} later`}>
+              <button type="button" className="rounded-md p-1 disabled:opacity-40" onClick={() => reorderPoint(index, index + 1)} disabled={blocked || index === points.length - 1} aria-label={t('fashion.manualTryOn.movePointLater', { index: index + 1 })}>
                 <ArrowDown className="h-3.5 w-3.5" />
               </button>
-              <button type="button" className="rounded-md p-1 text-destructive disabled:opacity-40" onClick={() => removePoint(index)} disabled={blocked} aria-label={`Remove contour point ${index + 1}`}>
+              <button type="button" className="rounded-md p-1 text-destructive disabled:opacity-40" onClick={() => removePoint(index)} disabled={blocked} aria-label={t('fashion.manualTryOn.removeContourPoint', { index: index + 1 })}>
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -292,7 +304,7 @@ export default function CanonicalTryOnContourEditor({
 
       <div id="manual-contour-feedback" className="space-y-1">
         <p className={`text-[11px] ${feedback.canSave ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-300'}`} role="status">
-          {feedback.message} {points.length}/{MANUAL_PARAMETRIC_MAX_POINTS} points.
+          {contourFeedbackMessage(feedback, t)} {t('fashion.manualTryOn.pointCount', { count: points.length, max: MANUAL_PARAMETRIC_MAX_POINTS })}
         </p>
         {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
         {status && <p className="text-xs text-muted-foreground" role="status">{status}</p>}
@@ -300,11 +312,11 @@ export default function CanonicalTryOnContourEditor({
 
       <div className="flex flex-wrap justify-end gap-1.5">
         <Button type="button" variant="ghost" size="sm" onClick={clear} disabled={blocked || points.length === 0}>
-          <RotateCcw className="h-3.5 w-3.5 mr-1" /> Clear
+          <RotateCcw className="h-3.5 w-3.5 mr-1" /> {t('fashion.manualTryOn.clear')}
         </Button>
         <Button type="button" size="sm" onClick={save} disabled={blocked || !feedback.canSave || typeof onSave !== 'function'}>
           {busy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
-          Save contour
+          {t('fashion.manualTryOn.saveContour')}
         </Button>
       </div>
     </section>
