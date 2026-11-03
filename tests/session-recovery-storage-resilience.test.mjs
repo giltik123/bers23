@@ -63,7 +63,7 @@ test('Editor and bounded Agent recovery degrade safely and resume session persis
     values.set(SESSION_KEY, JSON.stringify({
       route: '/stale-route',
       editor: { projectId: 'stale-project', selectionId: null, historyIndex: 0 },
-      savedAt: 1,
+      savedAt: Number.MAX_SAFE_INTEGER,
     }));
     replaceSessionStorage({
       value: {

@@ -25,12 +25,9 @@ class SessionRecovery {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          const hasMemory = Object.keys(this.memory).length > 0;
-          const memorySavedAt = Number(this.memory.savedAt);
-          const persistedSavedAt = Number(parsed.savedAt);
-          const persistedIsNewer = Number.isFinite(persistedSavedAt)
-            && (!Number.isFinite(memorySavedAt) || persistedSavedAt > memorySavedAt);
-          if (!hasMemory || persistedIsNewer) {
+          // This adapter is the only writer for KEY. Once this tab has a snapshot,
+          // persisted data must not replace it; a fresh tab still hydrates from storage.
+          if (Object.keys(this.memory).length === 0) {
             this.memory = parsed;
           }
         }
