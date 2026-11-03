@@ -7,4 +7,17 @@ export default {
   objects: 'Objects', versions: 'Versions', newVersion: 'New version',
   sceneMemory: 'Scene Memory', workspace: 'Workspace', jobCenter: 'Job Center',
   instructionPlaceholder: 'Describe your edit…', projectNotFound: 'Project not found',
+  planStatus: { ready: 'Ready', needsClarification: 'Needs clarification', invalid: 'Cannot run' },
+  planScope: { wholeImage: 'Whole image', noObject: 'No object' },
+  statusBar: {
+    region: 'Editor diagnostics',
+    objects: 'Objects: {count}',
+    selection: 'Selected: {count} · mode: {mode}',
+    masks: 'Masks: {count}/{total}',
+    segmentation: 'Segmentation: {status}',
+    cache: 'Cache: {status}',
+    selectionModes: { single: 'Single' },
+    segmentationStates: { completed: 'Completed', idle: 'Idle' },
+    cacheStates: { empty: 'Empty' },
+  },
 };
