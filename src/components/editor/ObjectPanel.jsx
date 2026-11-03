@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { ChevronDown, ChevronRight, Eye, EyeOff, User, Car, Trees, Cloud, Shirt, Dog, Box, Layers2 } from 'lucide-react';
 
 const iconFor = (label = '') => {
@@ -12,7 +13,7 @@ const iconFor = (label = '') => {
   return Box;
 };
 
-function ObjectRow({ obj, objects, depth, hidden, onToggleHidden, onSelect }) {
+function ObjectRow({ obj, objects, depth, hidden, onToggleHidden, onSelect, t }) {
   const [expanded, setExpanded] = useState(true);
   const children = objects.filter((o) => o.parent_object === obj.id);
   const isMask = Boolean(obj.mask_artifact_id);
@@ -22,7 +23,7 @@ function ObjectRow({ obj, objects, depth, hidden, onToggleHidden, onSelect }) {
     <>
       <div
         role="group"
-        aria-label={'Object ' + obj.label}
+        aria-label={t('editorUi.objectPanel.objectGroup', { label: obj.label })}
         className={[
           'flex min-h-11 items-center gap-2 rounded-xl px-2 py-1 text-sm transition-colors',
           obj.selected ? 'bg-primary/10 text-primary' : 'hover:bg-accent',
@@ -35,7 +36,7 @@ function ObjectRow({ obj, objects, depth, hidden, onToggleHidden, onSelect }) {
             type="button"
             onClick={() => setExpanded(!expanded)}
             aria-expanded={expanded}
-            aria-label={expanded ? 'Collapse ' + obj.label : 'Expand ' + obj.label}
+            aria-label={t(expanded ? 'editorUi.objectPanel.collapseObject' : 'editorUi.objectPanel.expandObject', { label: obj.label })}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg hover:bg-accent"
           >
             {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
@@ -46,34 +47,35 @@ function ObjectRow({ obj, objects, depth, hidden, onToggleHidden, onSelect }) {
         <button
           type="button"
           aria-pressed={Boolean(obj.selected)}
-          aria-label={obj.selected ? 'Deselect ' + obj.label : 'Select ' + obj.label}
+          aria-label={t(obj.selected ? 'editorUi.objectPanel.deselectObject' : 'editorUi.objectPanel.selectObject', { label: obj.label })}
           className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left hover:bg-accent"
           onClick={() => onSelect(obj.selected ? null : obj)}
         >
           <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span className="flex-1 truncate">{obj.label}</span>
-          {isMask && <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary" title="Saved canonical alpha mask">Mask</span>}
+          {isMask && <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary" title={t('editorUi.objectPanel.savedMaskTitle')}>{t('editorUi.objectPanel.mask')}</span>}
           {obj.confidence != null && <span className="text-xs tabular-nums text-muted-foreground">{Math.round(obj.confidence * 100)}%</span>}
         </button>
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onToggleHidden(obj.id); }}
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label={isHidden ? "Show object overlay" : "Hide object overlay"}
+          aria-label={t(isHidden ? 'editorUi.objectPanel.showObjectOverlay' : 'editorUi.objectPanel.hideObjectOverlay')}
           aria-pressed={!isHidden}
-          title={isHidden ? "Show selection frame on image" : "Hide selection frame on image"}
+          title={t(isHidden ? 'editorUi.objectPanel.showSelectionFrame' : 'editorUi.objectPanel.hideSelectionFrame')}
         >
           {isHidden ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
         </button>
       </div>
       {expanded && children.map((c) => (
-        <ObjectRow key={c.id} obj={c} objects={objects} depth={depth + 1} hidden={hidden} onToggleHidden={onToggleHidden} onSelect={onSelect} />
+        <ObjectRow key={c.id} obj={c} objects={objects} depth={depth + 1} hidden={hidden} onToggleHidden={onToggleHidden} onSelect={onSelect} t={t} />
       ))}
     </>
   );
 }
 
 export default function ObjectPanel({ objects, onSelect, hidden, onToggleHidden }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(true);
   const roots = objects.filter((o) => !o.parent_object);
   const maskCount = objects.filter((object) => Boolean(object.mask_artifact_id)).length;
@@ -81,16 +83,20 @@ export default function ObjectPanel({ objects, onSelect, hidden, onToggleHidden 
   const toggleHidden = (id) => onToggleHidden(id);
 
   return (
-    <section className="rounded-2xl border border-border/70 bg-card" aria-label="Saved masks and objects">
+    <section className="rounded-2xl border border-border/70 bg-card" aria-label={t('editorUi.objectPanel.sectionLabel')}>
       <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex min-h-11 w-full items-center justify-between px-4 py-2.5 text-sm font-semibold">
-        <span>Masks &amp; objects ({objects.length})</span>
+        <span>{t('editorUi.objectPanel.heading', { count: objects.length })}</span>
         {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
       </button>
       {open && (
         <div className="px-1.5 pb-2 max-h-64 overflow-y-auto">
-          <p className="px-2 pb-2 text-xs leading-5 text-muted-foreground">{maskCount} saved {maskCount === 1 ? 'mask' : 'masks'}. Select one to adjust exposure, white balance or levels in the tool panel. Eye icons only show or hide on-canvas guides; they do not edit the image.</p>
+          <p className="px-2 pb-2 text-xs leading-5 text-muted-foreground">
+            {t('editorUi.objectPanel.savedMaskCount', { count: maskCount })}{' '}
+            {t('editorUi.objectPanel.adjustmentHelp')}{' '}
+            {t('editorUi.objectPanel.guideHelp')}
+          </p>
           {roots.map((o) => (
-            <ObjectRow key={o.id} obj={o} objects={objects} depth={0} hidden={hidden} onToggleHidden={toggleHidden} onSelect={onSelect} />
+            <ObjectRow key={o.id} obj={o} objects={objects} depth={0} hidden={hidden} onToggleHidden={toggleHidden} onSelect={onSelect} t={t} />
           ))}
         </div>
       )}

@@ -253,7 +253,25 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   "originalImage": "Original image",
   "editedImage": "Unaccepted edited image",
   "rightSplit": "Edited image, right side of split",
-  "leftSplit": "Original image, left side of split"
+  "leftSplit": "Original image, left side of split",
+  "objectPanel": {
+    "sectionLabel": "Saved masks and objects",
+    "heading": "Masks & objects ({count})",
+    "savedMaskCount": "Saved masks: {count}.",
+    "adjustmentHelp": "Select a saved mask to adjust exposure, white balance or levels in the tool panel.",
+    "guideHelp": "Eye icons only show or hide on-canvas guides; they do not edit the image.",
+    "objectGroup": "Object {label}",
+    "collapseObject": "Collapse {label}",
+    "expandObject": "Expand {label}",
+    "deselectObject": "Deselect {label}",
+    "selectObject": "Select {label}",
+    "mask": "Mask",
+    "savedMaskTitle": "Saved canonical alpha mask",
+    "showObjectOverlay": "Show object overlay",
+    "hideObjectOverlay": "Hide object overlay",
+    "showSelectionFrame": "Show selection frame on image",
+    "hideSelectionFrame": "Hide selection frame on image"
+  }
 },
   fashionUi: {
   "wardrobe": "Wardrobe",

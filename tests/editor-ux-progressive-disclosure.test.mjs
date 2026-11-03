@@ -66,7 +66,7 @@ test('object eye controls update the actual canvas overlays, not just the list s
   assert.match(editor, /hidden=\{hiddenObjectIds\} onToggleHidden=\{toggleHiddenObject\}/);
   assert.match(canvas, /objects\.filter\(\(obj\) => !hiddenObjectIds\.has\(obj\.id\)\)\.map/);
   assert.match(objectPanel, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onToggleHidden\(obj\.id\); \}\}/);
-  assert.match(objectPanel, /aria-label=\{isHidden \? "Show object overlay" : "Hide object overlay"\}/);
+  assert.match(objectPanel, /editorUi\.objectPanel\.showObjectOverlay/);
   assert.match(objectPanel, /onClick=\{\(\) => onSelect\(obj\.selected \? null : obj\)\}/);
-  assert.match(objectPanel, /they do not edit the image/);
+  assert.match(objectPanel, /editorUi\.objectPanel\.guideHelp/);
 });
