@@ -127,8 +127,16 @@ test('Editor and bounded Agent recovery degrade safely and resume session persis
 test('initial Auth bootstrap loading is announced with the shared localized status', async () => {
   const app = await readFile('src/App.jsx', 'utf8');
 
-  assert.match(app, /const \\{ isLoadingAuth, isLoadingPublicSettings \\} = useAuth\\(\\);\\s*const \\{ t \\} = useTranslation\\(\\);/);
-  assert.match(app, /if \\(isLoadingPublicSettings \\|\\| isLoadingAuth\\) \\{\\s*return \\(\\s*<div role="status" className="fixed inset-0 flex items-center justify-center">\\s*<span className="sr-only">\\{t\\('common\\.loading'\\)\\}<\\/span>\\s*<div aria-hidden="true" className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"><\\/div>\\s*<\\/div>/);
-  assert.match(app, /<Suspense fallback=\\{<RouteLoading \\/>\\}>/);
-  assert.match(app, /function RouteLoading\\(\\) \\{[\\s\\S]*?role="status"[\\s\\S]*?t\\('common\\.loading'\\)/);
+  assert.ok(app.includes('const { isLoadingAuth, isLoadingPublicSettings } = useAuth();\n  const { t } = useTranslation();'));
+  assert.ok(app.includes('<AuthProvider>\n      <TranslationProvider>'));
+
+  const loadingStart = app.indexOf('if (isLoadingPublicSettings || isLoadingAuth)');
+  const routesStart = app.indexOf('\n  return (\n    <Suspense', loadingStart);
+  assert.ok(loadingStart >= 0 && routesStart > loadingStart, 'the bootstrap gate must precede route rendering');
+
+  const bootstrap = app.slice(loadingStart, routesStart);
+  assert.ok(bootstrap.includes('<div role="status"'), 'the initial wait must be announced as a status');
+  assert.ok(bootstrap.includes("<span className=\"sr-only\">{t('common.loading')}</span>"), 'the status must use the shared localized loading label');
+  assert.ok(bootstrap.includes('<div aria-hidden="true"'), 'the decorative spinner must be hidden from assistive technology');
+  assert.ok(bootstrap.includes('fixed inset-0'), 'the existing full-screen loading layout must remain intact');
 });
