@@ -40,6 +40,44 @@ test('browser auth is HttpOnly-cookie based and exposes no JS-readable bearer au
   assert.equal(/setItem\([^,]+,\s*password/.test(client), false);
 });
 
+
+test('legacy browser bearer cleanup still scrubs the URL when the storage getter is denied', async () => {
+  const source = await readFile('src/lib/app-params.js', 'utf8');
+  const replacements = [];
+  const window = {
+    get localStorage() { throw new Error('storage denied'); },
+    location: { href: 'https://bers.example/login?access_token=secret&keep=1#return' },
+    history: { replaceState(...args) { replacements.push(args); } },
+  };
+
+  assert.doesNotThrow(() => runInNewContext(source, { window, document: { title: 'BERS' }, URL }));
+  assert.equal(replacements.length, 1);
+  assert.equal(replacements[0][2], '/login?keep=1#return');
+  assert.doesNotMatch(replacements[0][2], /access_token|secret/);
+});
+
+test('legacy browser bearer cleanup continues after an individual storage removal fails', async () => {
+  const source = await readFile('src/lib/app-params.js', 'utf8');
+  const removed = [];
+  const replacements = [];
+  const window = {
+    localStorage: {
+      removeItem(key) {
+        removed.push(key);
+        if (key === 'core_token') throw new Error('storage denied');
+      },
+    },
+    location: { href: 'https://bers.example/login?clear_access_token=secret&keep=1#return' },
+    history: { replaceState(...args) { replacements.push(args); } },
+  };
+
+  assert.doesNotThrow(() => runInNewContext(source, { window, document: { title: 'BERS' }, URL }));
+  assert.deepEqual(removed, ['core_access_token', 'core_token', 'token', 'core_from_url']);
+  assert.equal(replacements.length, 1);
+  assert.equal(replacements[0][2], '/login?keep=1#return');
+  assert.doesNotMatch(replacements[0][2], /clear_access_token|secret/);
+});
+
 test('browser anti-forgery proof is session-bound server output and remains memory-only', async () => {
   const client = await readFile('src/api/coreClient.js','utf8');
   assert.match(client, /const CSRF_HEADER\s*=\s*['"]X-Bers-CSRF-Token['"]/);
