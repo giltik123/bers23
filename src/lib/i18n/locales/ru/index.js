@@ -32,6 +32,10 @@ export const modules = {
     moveUp: 'Переместить выше',
     estimatedSeconds: 'Оценка: {seconds} с',
     stage: 'Этап: {stage}',
+    stages: {
+      preparing: 'Подготовка',
+      running: 'Выполнение',
+    },
     priority: {
       high: 'Высокий',
       normal: 'Обычный',
