@@ -237,3 +237,25 @@ test('AI Command Studio intent explanations and controls resolve in English and 
     assert.equal(typeof resolveTranslation(russian, key), 'string', 'missing Russian translation: ' + key);
   }
 });
+
+
+test('Editor AI Studio handoff exposes safe RU/EN errors and keeps UNKNOWN non-retryable', async () => {
+  const editor = await readFile('src/pages/Editor.jsx', 'utf8');
+  const keys = [
+    'invalidScope', 'planNotReady', 'styleConfirmation', 'busy', 'maskRequired',
+    'unsupportedOperation', 'editFailed', 'providerPending',
+  ];
+  for (const key of keys) {
+    const fullKey = `editorAi.errors.${key}`;
+    assert.equal(typeof resolveTranslation(english, fullKey), 'string', `English ${fullKey}`);
+    assert.equal(typeof resolveTranslation(russian, fullKey), 'string', `Russian ${fullKey}`);
+    assert.ok(resolveTranslation(english, fullKey).trim());
+    assert.ok(resolveTranslation(russian, fullKey).trim());
+    assert.ok(editor.includes(`t('${fullKey}')`), `Editor uses ${fullKey}`);
+  }
+  assert.match(editor, /result\.status === 'UNKNOWN'[\s\S]*PROVIDER_OUTCOME_PENDING/);
+  assert.match(editor, /retryable: false/);
+  assert.match(editor, /const safeAiError = e\.code === 'PROVIDER_OUTCOME_PENDING'/);
+  assert.match(editor, /if \(instructionOverride\)[\s\S]*throw new Error\(safeAiError\)/);
+  assert.doesNotMatch(editor, /AI Studio: выберите допустимый запрос|Core Creative Edit: команда пока не проходит|Смена стиля требует дополнительного подтверждения|Закончите предыдущую операцию до нового AI-запроса|Сначала подтвердите выбранную область с Core-маской|Эта операция ещё не принята BERS Core/);
+});
