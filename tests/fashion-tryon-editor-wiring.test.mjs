@@ -73,7 +73,13 @@ test('runner locks to the admitted Outfit, source artifact and beforeUrl and nev
   const liveProjectSource = runner.indexOf('sourceArtifactId: project.current_image_artifact_id');
   assert.ok(lockedBranch >= 0 && liveProjectSource > lockedBranch, 'live Project source may be used only after the locked-selection branch');
   assert.match(runner, /!hostActive && \(/);
-  assert.match(runner, /Selection alone never starts execution/);
+  assert.match(runner, /t\('fashionUi\.tryOnHint'\)/);
+  const [english, russian] = await Promise.all([
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+  assert.match(english, /"tryOnHint": "Choose one canonical Outfit entry\. Selection alone never starts execution\."/);
+  assert.match(russian, /"tryOnHint": "Выберите одну вещь из сохранённого образа\. Сам выбор не запускает примерку\."/);
   const effectStart = runner.indexOf('useEffect(() => {');
   const effectEnd = runner.indexOf('}, [load, outfitRevision]);', effectStart);
   assert.ok(effectStart >= 0 && effectEnd > effectStart, 'read-only Outfit load effect must remain explicit');

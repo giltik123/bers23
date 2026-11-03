@@ -261,6 +261,8 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   "voiceQuery": "Voice query: {query}.",
   "voiceQueryMatches": {
     "one": "Found {count} ready Try-On entry.",
+    "few": "Found {count} ready Try-On entries.",
+    "many": "Found {count} ready Try-On entries.",
     "other": "Found {count} ready Try-On entries."
   },
   "voiceQuerySingleMatch": "Found {garmentName} in {outfitName}. Confirm the selection below.",

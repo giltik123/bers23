@@ -78,7 +78,8 @@ test('product context failures stay local while manual failures remain rejectabl
   const actionStart = runner.indexOf('const action = (name) =>');
   const manualStart = runner.indexOf('const withManualContext =', actionStart);
   const action = runner.slice(actionStart, manualStart);
-  assert.match(action, /setError\(cause\?\.message \|\| 'Try-On selection is invalid\.'\)/);
+  assert.match(action, /setError\(t\('fashionUi\.selectionInvalid'\)\)/);
+  assert.doesNotMatch(action, /cause|\.message/);
   assert.match(action, /return undefined/);
   assert.doesNotMatch(action, /Promise\.reject/);
 
