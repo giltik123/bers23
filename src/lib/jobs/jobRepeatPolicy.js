@@ -33,3 +33,23 @@ export function buildNewOperationRepeatMetadata(job) {
     repeatRootJobId: inheritedRoot,
   });
 }
+
+
+// An explicit user confirmation is required before a browser-only task is
+// re-dispatched. A repeat is a NEW operation, never a recovery of the old run.
+export const JOB_REPEAT_ACTIONS = Object.freeze({
+  RUN_AGAIN: 'RUN_AGAIN',
+  DUPLICATE: 'DUPLICATE',
+});
+
+export function manualRepeatConsentMessage(job, action, language = 'en') {
+  if (job?.executionClass !== JOB_EXECUTION_CLASSES.EPHEMERAL_CLIENT_TASK
+    || typeof job.id !== 'string' || !job.id.trim()) return null;
+  if (action === JOB_REPEAT_ACTIONS.RUN_AGAIN && job.status !== 'failed') return null;
+  if (action === JOB_REPEAT_ACTIONS.DUPLICATE
+    && !['completed', 'failed', 'cancelled'].includes(job.status)) return null;
+  if (action !== JOB_REPEAT_ACTIONS.RUN_AGAIN && action !== JOB_REPEAT_ACTIONS.DUPLICATE) return null;
+  return language === 'ru'
+    ? 'Это запустит НОВУЮ операцию, а не восстановит прежнюю. При использовании платного провайдера могут списаться кредиты. Продолжить?'
+    : 'This starts a NEW operation, not recovery of the previous one. A paid provider may consume credits. Continue?';
+}

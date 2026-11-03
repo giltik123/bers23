@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { JOB_EXECUTION_CLASSES } from './jobModel.js';
-import { JOB_REPEAT_SEMANTICS, buildNewOperationRepeatMetadata } from './jobRepeatPolicy.js';
+import { JOB_REPEAT_ACTIONS, JOB_REPEAT_SEMANTICS, buildNewOperationRepeatMetadata, manualRepeatConsentMessage } from './jobRepeatPolicy.js';
 
 const source = Object.freeze({
   id: 'job-source-1',
@@ -67,4 +68,40 @@ test('repeat policy fails closed for non-ephemeral or malformed source identitie
     () => buildNewOperationRepeatMetadata({ ...source, executionClass: 'CREATIVE_EXECUTION' }),
     /Only EPHEMERAL_CLIENT_TASK may be repeated/,
   );
+});
+
+test('new-operation consent is explicit, localized and fails closed for unsupported jobs/actions', () => {
+  const failed = { ...source, status: 'failed' };
+  const completed = { ...source, status: 'completed' };
+  const cancelled = { ...source, status: 'cancelled' };
+  const queued = { ...source, status: 'queued' };
+  const en = manualRepeatConsentMessage(failed, JOB_REPEAT_ACTIONS.RUN_AGAIN, 'en');
+  const ru = manualRepeatConsentMessage(failed, JOB_REPEAT_ACTIONS.RUN_AGAIN, 'ru');
+  assert.match(en, /NEW operation/);
+  assert.match(en, /may consume credits/);
+  assert.match(ru, /НОВУЮ операцию/);
+  assert.match(ru, /кредиты/);
+  assert.ok(manualRepeatConsentMessage(completed, JOB_REPEAT_ACTIONS.DUPLICATE));
+  assert.ok(manualRepeatConsentMessage(cancelled, JOB_REPEAT_ACTIONS.DUPLICATE));
+  assert.equal(manualRepeatConsentMessage(completed, JOB_REPEAT_ACTIONS.RUN_AGAIN), null);
+  assert.equal(manualRepeatConsentMessage(queued, JOB_REPEAT_ACTIONS.DUPLICATE), null);
+  assert.equal(manualRepeatConsentMessage(failed, 'AUTOMATIC_RETRY'), null);
+  assert.equal(manualRepeatConsentMessage({ ...failed, executionClass: 'CREATIVE_EXECUTION' }, JOB_REPEAT_ACTIONS.RUN_AGAIN), null);
+  assert.equal(manualRepeatConsentMessage({ ...failed, id: '' }, JOB_REPEAT_ACTIONS.RUN_AGAIN), null);
+  assert.equal(manualRepeatConsentMessage(null, JOB_REPEAT_ACTIONS.RUN_AGAIN), null);
+});
+
+test('Job Center repeat controls confirm before dispatch, prevent double click and surface failures', async () => {
+  const row = await readFile(new URL('../../components/editor/jobs/JobRow.jsx', import.meta.url), 'utf8');
+  assert.match(row, /manualRepeatConsentMessage\(job, action, language\)/);
+  assert.match(row, /if \(!warning \|\| !window\.confirm\(warning\)\) return;/);
+  assert.match(row, /if \(repeatInFlight\.current \|\| typeof handler !== 'function'\) return;/);
+  assert.match(row, /repeatInFlight\.current = true;/);
+  assert.match(row, /repeatInFlight\.current = false;/);
+  assert.match(row, /await handler\(job\.id\)/);
+  assert.match(row, /setRepeatError\(language === 'ru'/);
+  assert.match(row, /role="alert"/);
+  assert.match(row, /JOB_REPEAT_ACTIONS\.RUN_AGAIN/);
+  assert.match(row, /JOB_REPEAT_ACTIONS\.DUPLICATE/);
+  assert.doesNotMatch(row, /\.catch\(\(\) => \{\}\)/);
 });
