@@ -183,10 +183,12 @@ try {
   await page.getByRole('region', { name: 'Примерка одежды', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
 
+  const outfitDisclosure = page.locator('summary').filter({ hasText: 'Комплекты одежды' });
+  assert.equal(await outfitDisclosure.count(), 1, 'the native Outfit disclosure summary must be present exactly once');
   await waitForCoreResponses(page, [
     '/api/core/wardrobe/outfits',
     '/api/core/wardrobe/garments',
-  ], () => page.getByRole('button', { name: /Комплекты одежды/ }).click());
+  ], () => outfitDisclosure.click());
   await page.getByRole('region', { name: 'Canonical Outfit builder', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
   await page.getByText('No managed outfits yet. Create one to compose stable garment references.', { exact: true })
