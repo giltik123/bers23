@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "modelId": "mobilesam-vit-t",
   "version": "1.0.2",
-  "status": "CANDIDATE",
+  "status": "PRODUCTION_APPROVED",
   "upstream": {
     "repository": "https://github.com/ChaoningZhang/MobileSAM",
     "revision": "f706ad9c4eb7f219c00d9050e46328518ffb65d2",

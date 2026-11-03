@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "program": "BERS_V1_STAGE_D_GENERATIVE_DECISION_MATRIX",
-  "evidenceBaseSha": "13e85cfb6b3bb9ab2ba2c9f4d10a3e278eb9b59a",
-  "releaseAuthority": "NO_ENTRY_GRANTS_PRODUCTION_AUTHORITY",
+  "evidenceBaseSha": "28c9e5b781979e4deef5b4e82d54cc88d260f89d",
+  "releaseAuthority": "ENTRY_SCOPED_PRODUCTION_AUTHORITY",
   "decisionLaw": "Missing production-grade device, quality, artifact or runtime evidence is a valid reason to reject a model from the v1 default while retaining its research issue.",
   "entries": [
     {
@@ -10,22 +10,20 @@
       "manifestPath": "src/platform/creative/local-ai/models/interactive-segmentation.manifest.json",
       "modelId": "mobilesam-vit-t",
       "version": "1.0.2",
-      "manifestStatus": "CANDIDATE",
-      "readiness": "SOFTWARE_READY_EVIDENCE_PENDING",
-      "v1Decision": "EXPLICIT_REJECTION_FOR_V1_DEFAULT",
+      "manifestStatus": "PRODUCTION_APPROVED",
+      "readiness": "PRODUCTION_ADMITTED_WITH_EVIDENCE",
+      "v1Decision": "ADMITTED_FOR_V1_DEFAULT",
       "productFallback": "MANUAL_CANONICAL_SELECTION",
-      "productionEnabled": false,
-      "blockers": [
-        "REAL_SUPPORTED_DEVICE_RUNTIME_EVIDENCE",
-        "REPRESENTATIVE_REAL_IMAGE_MASK_QUALITY_REVIEW"
-      ],
+      "productionEnabled": true,
+      "blockers": [],
       "evidence": {
         "runtimePackageBytes": 44466632,
         "packageScope": "SIGNED_ENCODER_PLUS_DECODER",
-        "quality": "PENDING_REAL_IMAGE_REVIEW",
-        "latencyMemory": "PENDING_SUPPORTED_DEVICE_MEASUREMENT",
-        "deviceTier": "NO_PRODUCTION_TIER_ADMITTED",
+        "quality": "REAL_IMAGE_MASK_QUALITY_REVIEWED_ACCEPTED",
+        "latencyMemory": "BROWSER_WASM_MEASURED_FIRST_CLICK_6_8S_TO_10_9S_REFINEMENT_0_37S",
+        "deviceTier": "BROWSER_WASM_ADMITTED_HOSTED_CHROMIUM_151_DEVICE_ADMISSION_GOVERNED",
         "determinismReplay": "MODEL_OUTPUT_NOT_USED_AS_RELEASE_AUTHORITY",
+        "evidenceDocument": "docs/v1-mobilesam-segmentation-production-evidence.md",
         "license": "Apache-2.0"
       }
     },
