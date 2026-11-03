@@ -35,7 +35,7 @@ test('browser auth is HttpOnly-cookie based and exposes no JS-readable bearer au
   assert.match(appParams, /core_access_token/);
   assert.match(appParams, /removeItem\(key\)/);
   assert.match(appParams, /searchParams\.delete\(name\)/);
-  assert.doesNotMatch(appParams, /setItem|getAppParamValue|core_from_url\s*=|window\.location\.href[^;]*localStorage/);
+  assert.doesNotMatch(appParams, /getItem|setItem|getAppParamValue|core_from_url\s*=|window\.location\.href[^;]*localStorage/);
   assert.match(appParams, /core_from_url/,'retired URL cache is explicitly removed');
   assert.equal(/setItem\([^,]+,\s*password/.test(client), false);
 });
