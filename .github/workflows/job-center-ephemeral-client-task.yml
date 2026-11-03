@@ -20,6 +20,9 @@ on:
       - 'src/components/editor/jobs/CanonicalExecutionRunRow.jsx'
       - 'src/components/editor/jobs/JobCenter.jsx'
       - 'src/components/editor/jobs/JobRow.jsx'
+      - 'src/lib/i18n/locales/en/jobs.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/job-center-row-localization.test.mjs'
       - 'server/core/http/executionRunRecoveryHttpAdapter.ts'
       - 'server/core/http/executionRunRecoveryHttpAdapter.test.mjs'
       - 'server/core/localExecution/LocalExecutionLedger.ts'
@@ -53,7 +56,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Prove exact ephemeral classification, explicit new-operation repeat lineage and retry lockdown
-        run: node --test src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobRepeatPolicy.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs src/lib/jobs/executionRunFinalResultProjection.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs
+        run: node --test src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobRepeatPolicy.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs src/lib/jobs/executionRunFinalResultProjection.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs tests/job-center-row-localization.test.mjs
       - name: Typecheck and build production browser
         run: |
           npm run typecheck
@@ -81,17 +84,17 @@ jobs:
           ! grep -E -q 'setTimeout|clearTimeout|\.enqueue\(' src/lib/jobs/jobRetryManager.js src/lib/jobs/jobScheduler.js
           grep -q 'Run again starts a new operation' src/components/editor/jobs/JobCenter.jsx
           grep -q 'onRunAgain={(id) => jobManager.runAgain(id)}' src/components/editor/jobs/JobCenter.jsx
-          grep -q '>Run again<' src/components/editor/jobs/JobRow.jsx
+          grep -q "t('jobs.runAgain')" src/components/editor/jobs/JobRow.jsx
           ! grep -q 'jobManager.retry' src/components/editor/jobs/JobCenter.jsx
           ! grep -E -q 'onRetry|>Retry<' src/components/editor/jobs/JobRow.jsx
-          grep -q '>Retry workflow<' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "t('jobs.retryWorkflow')" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           ! grep -E -q '\.(cancel|retry|duplicate|runAgain|reorder)\(' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q 'RESULT_PATH' src/lib/jobs/executionRunProjection.js
           grep -q "run.result?.kind === 'FINAL_IMAGE'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q 'LOCAL_AUTHORITY_STATE' src/lib/jobs/executionRunProjection.js
           grep -q "value.cancellation !== 'UNSUPPORTED'" src/lib/jobs/executionRunProjection.js
           grep -q 'data-local-execution-authority' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
-          grep -q 'Cancellation unsupported.' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "t('jobs.cancellationUnsupported')" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           ! grep -E -q 'coreClient|jobManager|jobStorage|\.cancel\(|\.retry\(|\.issue\(|\.start\(' src/lib/jobs/executionRunProjection.js
           grep -q 'type ExecutionRunResultReader' server/core/http/executionRunRecoveryHttpAdapter.ts
           grep -q 'type ExecutionRunLocalAuthorityReader' server/core/http/executionRunRecoveryHttpAdapter.ts
