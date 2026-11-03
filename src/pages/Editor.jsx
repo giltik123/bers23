@@ -977,7 +977,7 @@ export default function Editor() {
         sideEffects: [
           {
             label: 'Failed to create accepted-edit notification',
-            run: () => notificationCenter.push({ title: 'Edit saved', message: 'Your accepted result has been added to project history.', type: 'success', projectId: project.id }),
+            run: () => notificationCenter.push({ title: t('notifications.saved'), message: t('notifications.savedMessage'), type: 'success', projectId: project.id }),
           },
           {
             label: 'Failed to update scene memory',

@@ -39,7 +39,7 @@ export default function ProjectCard({ project, onRename, onToggleFavorite, onTog
           onClick={(e) => { e.preventDefault(); onToggleFavorite(project); }}
           className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-slate-950/75 px-3 text-xs font-medium text-white shadow-sm backdrop-blur hover:bg-slate-950"
           aria-label={project.favorite ? t('projectUi.removeFavorite') : t('projectUi.addFavorite')}
-          title={project.favorite ? "Remove from favorites" : "Add to favorites"}
+          title={project.favorite ? t('projectUi.removeFavorite') : t('projectUi.addFavorite')}
         >
           <Star className={project.favorite ? 'h-4 w-4 fill-amber-400 text-amber-400' : 'h-4 w-4'} aria-hidden="true" />
           {project.favorite ? t('projectUi.saved') : t('projectUi.favorite')}

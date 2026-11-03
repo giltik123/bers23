@@ -57,6 +57,10 @@ on:
       - 'src/pages/Login.jsx'
       - 'src/pages/Projects.jsx'
       - 'src/pages/Editor.jsx'
+      - 'src/lib/i18n/locales/en/notifications.js'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/editor-notification-localization.test.mjs'
       - 'src/platform/creative/deterministic/**'
       - 'src/platform/creative/local-ai/browser/BrowserOnnxSessionFactory.ts'
       - 'server/core/auth/**'
@@ -179,6 +183,7 @@ jobs:
           node --test tests/core-image-csp.test.mjs
           node --test tests/managed-garment-browser-client.test.mjs
           node --test tests/release-r3a-browser-boundaries.test.mjs
+          node --test tests/editor-notification-localization.test.mjs
           node --test tests/release-r3b-browser-boundaries.test.mjs
           node --test tests/release-r3c-browser-boundaries.test.mjs
           node --test tests/release-r3d-browser-boundaries.test.mjs
