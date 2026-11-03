@@ -172,13 +172,12 @@ try {
   await page.getByText('No managed garments yet. Add a garment photo to create the first stable wardrobe item.', { exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
 
-  await waitForCoreResponses(page, [
-    '/api/core/wardrobe/outfits',
-    '/api/core/wardrobe/garments',
-  ], async () => {
-    await page.getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ }).click();
-    await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId && url.searchParams.get('mode') === 'fashion');
-  });
+  // Returning to the same Editor Project may reuse canonical Fashion reads
+  // already completed during this journey. Do not require duplicate network
+  // requests on navigation; the journey-level read counts below still prove
+  // that canonical Outfits and Garments were loaded through real Core.
+  await page.getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ }).click();
+  await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId && url.searchParams.get('mode') === 'fashion');
   await page.getByRole('region', { name: 'Примерка одежды', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
 
