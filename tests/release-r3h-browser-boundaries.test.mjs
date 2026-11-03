@@ -122,7 +122,7 @@ test('R3h, R3i and R3j follow the localized canonical Fashion region label', asy
     read('scripts/test-release-r3j-browser-e2e.mjs'),
   ]);
 
-  assert.match(fashion, /aria-label=\\{t\\('fashionUi\\.panelLabel'\\)\\}/);
+  assert.ok(fashion.includes("aria-label={t('fashionUi.panelLabel')}"));
   assert.match(english, /"panelLabel": "Canonical wardrobe and collections"/);
   for (const harness of [r3h, r3i, r3j]) {
     assert.ok(harness.includes("name: 'Canonical wardrobe and collections', exact: true"));
