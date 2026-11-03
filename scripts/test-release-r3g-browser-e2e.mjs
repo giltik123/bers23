@@ -157,7 +157,7 @@ try {
     '/api/core/wardrobe/outfits',
     '/api/core/wardrobe/garments',
   ], () => fashion.click());
-  await page.getByRole('region', { name: 'Примерка одежды', exact: true })
+  await page.getByRole('region', { name: 'Virtual Try-On', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
   await assertActiveNavigation(fashion, 'Fashion');
 
