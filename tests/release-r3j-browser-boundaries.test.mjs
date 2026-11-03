@@ -21,6 +21,7 @@ test('R3j browser journey uses real production composition and post-response amb
     "'/api/core/fashion/try-on/preview'",
     "':garment-warp:v1'",
     "':texture-composite:v1'",
+    "getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ })",
   ]) assert.equal(harness.includes(required), true, required);
 
   for (const forbidden of [

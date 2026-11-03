@@ -212,7 +212,7 @@ try {
   assert.equal(Number(garmentBeforeContour.revision), 2);
   assert.equal(garmentBeforeContour.category, 'jackets');
 
-  await page.getByRole('link', { name: /Back to workspace|Назад к редактору/ }).click();
+  await page.getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ }).click();
   await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId);
   const outfitLoad = waitForCoreResponses(page, [
     ['GET', '/api/core/wardrobe/outfits'],

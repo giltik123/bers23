@@ -221,7 +221,7 @@ try {
   assert.equal(Number(durablePants.revision), 2);
   assert.equal(await countGarmentViews(), 2, 'each browser-created garment must persist one immutable initial view');
 
-  await page.getByRole('link', { name: /Back to workspace|Назад к редактору/ }).click();
+  await page.getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ }).click();
   await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId);
   const initialOutfitLoad = waitForCoreResponses(page, [
     ['GET', '/api/core/wardrobe/outfits'],
