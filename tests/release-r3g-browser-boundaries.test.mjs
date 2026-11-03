@@ -38,7 +38,7 @@ test('R3g drives visible zero-object navigation into canonical Fashion and Outfi
     "getByRole('button', { name: 'More', exact: true })",
     "getByRole('region', { name: 'Canonical wardrobe and collections', exact: true })",
     "getByRole('region', { name: 'Canonical Outfit builder', exact: true })",
-    "page.locator('summary').filter({ hasText: 'Комплекты одежды' })",
+    "page.locator('summary').filter({ hasText: 'Outfit sets' })",
   ]) assert.equal(harness.includes(text), true, `R3g harness must drive ${text}`);
 
   assert.match(harness, /new canonical Project must begin with zero detected\/selected objects/);
