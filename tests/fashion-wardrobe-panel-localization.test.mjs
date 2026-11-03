@@ -58,6 +58,7 @@ test('canonical Wardrobe panel copy is driven by the selected RU/EN locale', asy
   assert.match(page, /fashionUi\.pageDescription/);
   assert.match(page, /t\('fashionUi\.wardrobe'\)/);
   assert.match(page, /location\.state\?\.voiceQuery/);
+  assert.match(page, /state=\{voiceQuery \? \{ voiceQuery \} : undefined\}/);
   assert.match(page, /encodeURIComponent\(projectId\).*mode=fashion/);
   assert.match(source, /plural\('fashionUi\.views'/);
   assert.match(source, /fashionUi\.categories\.\$\{category\?\.id/);

@@ -16,7 +16,7 @@ export default function Wardrobe() {
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5 px-4 py-6 sm:px-6">
-      <Link to={backTo} className="inline-flex min-h-11 items-center gap-2 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
+      <Link to={backTo} state={voiceQuery ? { voiceQuery } : undefined} className="inline-flex min-h-11 items-center gap-2 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         {projectId ? t('fashionUi.backToEditor') : t('fashionUi.backToProjects')}
       </Link>
