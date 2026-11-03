@@ -3,7 +3,11 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 test('Editor defers mask UI and the local selection runtime until explicit user initiation', async () => {
-  const editor = await readFile('src/pages/Editor.jsx', 'utf8');
+  const [editor, english, russian] = await Promise.all([
+    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
   const lines = editor.split(String.fromCharCode(10));
   const deferredPanels = ['SelectionToolbar', 'AutoSceneMasksPanel', 'ObjectPanel', 'EditorStatusBar', 'SegmentationProgress', 'PipelineStatusBar', 'SceneMemoryPanel', 'WorkspaceBar', 'JobQueuePanel'];
   for (const moduleName of deferredPanels) {
@@ -20,6 +24,14 @@ test('Editor defers mask UI and the local selection runtime until explicit user 
   assert.ok(editor.includes('currentProject?.id !== requestedProjectId'));
   assert.ok(editor.includes('projectId: requestedProjectId,'), 'selection segmentation must use the captured canonical Project ID');
   assert.ok(editor.includes('currentProject?.current_image_artifact_id !== imageArtifactId'));
+  assert.ok(editor.includes("setAiError(t('editorUi.selectionIdentityUnavailable'))"));
+  assert.ok(editor.includes("setAiError(t('editorUi.selectionLoadFailed'))"));
+  assert.ok(english.includes('"selectionIdentityUnavailable": "The current Project image is unavailable.'));
+  assert.ok(english.includes('"selectionLoadFailed": "Selection tools could not be loaded.'));
+  assert.ok(russian.includes('"selectionIdentityUnavailable": "Текущее изображение проекта недоступно.'));
+  assert.ok(russian.includes('"selectionLoadFailed": "Не удалось загрузить инструменты выделения.'));
+  assert.equal(editor.includes('Canonical project image identity is unavailable'), false);
+  assert.equal(editor.includes('Selection tools could not be loaded. Your Project and existing masks were not changed.'), false);
   assert.ok(editor.includes('onStart={startSelection}'));
   assert.ok(editor.includes('onManualSelect={startSelection}'));
   assert.ok(!editor.includes('startSelection()'), 'selection must not start automatically during render or mount');
