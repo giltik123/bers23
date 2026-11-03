@@ -56,6 +56,7 @@ test('release preflight rejects placeholder identity, invalid versions and malfo
 test('Android shell is a minimal SDK 36 TWA without dangerous permissions or a second Auth channel', () => {
   const gradle = readFileSync('android/app/build.gradle', 'utf8');
   const manifest = readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
+  const dataRules = readFileSync('android/app/src/main/res/xml/data_extraction_rules.xml', 'utf8');
   assert.match(gradle, /^import java\.net\.URI\n\nplugins \{\n    id 'com\.android\.application'\n\}\n/);
   assert.match(gradle, /compileSdk 36/);
   assert.match(gradle, /targetSdk 36/);
@@ -64,6 +65,10 @@ test('Android shell is a minimal SDK 36 TWA without dangerous permissions or a s
   assert.match(manifest, /com\.google\.androidbrowserhelper\.trusted\.LauncherActivity/);
   assert.match(manifest, /android:usesCleartextTraffic="false"/);
   assert.match(manifest, /android:allowBackup="false"/);
+  assert.match(manifest, /android:dataExtractionRules="@xml\/data_extraction_rules"/);
+  assert.match(manifest, /android:fullBackupContent="false"/);
+  assert.match(dataRules, /<cloud-backup>/);
+  assert.match(dataRules, /<device-transfer>/);
   assert.equal((manifest.match(/<uses-permission/g) || []).length, 1);
   assert.match(manifest, /android\.permission\.INTERNET/);
   assert.doesNotMatch(`${gradle}\n${manifest}`, /WebView|Capacitor|localStorage|sessionStorage|SameSite=None/i);
