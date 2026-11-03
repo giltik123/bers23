@@ -29,26 +29,44 @@ const manifests = new Map([
   ['D6_KANDINSKY_REFINEMENT', kandinsky],
 ]);
 
+// D1 is the single track admitted to production for v1, on the strength of
+// docs/v1-mobilesam-segmentation-production-evidence.md. Every other track keeps
+// an explicit non-production decision with concrete blockers.
+const ADMITTED_TRACK = 'D1_MOBILESAM_SEGMENTATION';
+
 test('Stage D v1 matrix covers every mandatory D1-D6 track exactly once with an explicit non-ambiguous product decision', () => {
   assert.equal(matrix.schemaVersion, 1);
   assert.equal(matrix.program, 'BERS_V1_STAGE_D_GENERATIVE_DECISION_MATRIX');
-  assert.equal(matrix.releaseAuthority, 'NO_ENTRY_GRANTS_PRODUCTION_AUTHORITY');
+  assert.equal(matrix.releaseAuthority, 'ENTRY_SCOPED_PRODUCTION_AUTHORITY');
   assert.match(matrix.evidenceBaseSha, /^[0-9a-f]{40}$/);
 
   const tracks = matrix.entries.map(entry => entry.track).sort();
   assert.deepEqual(tracks, [...expectedTracks].sort());
   assert.equal(new Set(tracks).size, expectedTracks.length);
 
+  const admitted = matrix.entries.filter(entry => entry.productionEnabled);
+  assert.deepEqual(admitted.map(entry => entry.track), [ADMITTED_TRACK]);
+
   const allowedReadiness = new Set(['SOFTWARE_READY_EVIDENCE_PENDING', 'CANDIDATE', 'R&D_ONLY']);
   const allowedDecisions = new Set(['EXPLICIT_REJECTION_FOR_V1_DEFAULT', 'DETERMINISTIC_FALLBACK']);
   for (const entry of matrix.entries) {
-    assert.equal(allowedReadiness.has(entry.readiness), true, `${entry.track} readiness must remain non-production`);
-    assert.equal(allowedDecisions.has(entry.v1Decision), true, `${entry.track} must have an explicit v1 decision`);
-    assert.equal(entry.productionEnabled, false, `${entry.track} must not be production enabled`);
     assert.equal(typeof entry.productFallback, 'string');
     assert.ok(entry.productFallback.length > 0);
-    assert.ok(Array.isArray(entry.blockers) && entry.blockers.length > 0, `${entry.track} must retain concrete blockers`);
-    assert.equal(entry.evidence.deviceTier, 'NO_PRODUCTION_TIER_ADMITTED');
+    if (entry.track === ADMITTED_TRACK) {
+      assert.equal(entry.readiness, 'PRODUCTION_ADMITTED_WITH_EVIDENCE');
+      assert.equal(entry.v1Decision, 'ADMITTED_FOR_V1_DEFAULT');
+      assert.equal(entry.productionEnabled, true);
+      assert.deepEqual(entry.blockers, [], `${entry.track} admission requires an empty blocker list`);
+      assert.notEqual(entry.evidence.deviceTier, 'NO_PRODUCTION_TIER_ADMITTED');
+      assert.equal(typeof entry.evidence.evidenceDocument, 'string');
+      assert.ok(entry.evidence.evidenceDocument.length > 0, `${entry.track} must name its evidence document`);
+    } else {
+      assert.equal(allowedReadiness.has(entry.readiness), true, `${entry.track} readiness must remain non-production`);
+      assert.equal(allowedDecisions.has(entry.v1Decision), true, `${entry.track} must have an explicit v1 decision`);
+      assert.equal(entry.productionEnabled, false, `${entry.track} must not be production enabled`);
+      assert.ok(Array.isArray(entry.blockers) && entry.blockers.length > 0, `${entry.track} must retain concrete blockers`);
+      assert.equal(entry.evidence.deviceTier, 'NO_PRODUCTION_TIER_ADMITTED');
+    }
   }
 });
 
@@ -59,7 +77,11 @@ test('Stage D matrix identity and status stay bound to the exact candidate manif
     assert.equal(entry.modelId, manifest.modelId, `${entry.track} model identity drift`);
     assert.equal(entry.version, manifest.version, `${entry.track} version drift`);
     assert.equal(entry.manifestStatus, manifest.status, `${entry.track} release status drift`);
-    assert.equal(manifest.status, 'CANDIDATE', `${entry.track} cannot silently promote while matrix says non-production`);
+    if (entry.track === ADMITTED_TRACK) {
+      assert.equal(manifest.status, 'PRODUCTION_APPROVED', `${entry.track} production admission requires an approved manifest`);
+    } else {
+      assert.equal(manifest.status, 'CANDIDATE', `${entry.track} cannot silently promote while matrix says non-production`);
+    }
   }
 });
 
@@ -75,8 +97,21 @@ test('Stage D package evidence is either manifest-bound or explicitly unknown', 
   assert.equal(byTrack.D6_KANDINSKY_REFINEMENT.evidence.runtimePackageBytes, kandinsky.decoder.safeWeightBytes);
 });
 
+test('the admitted D1 model is present in production authority exactly as bound, and only via the approved release', () => {
+  const d1 = matrix.entries.find(entry => entry.track === ADMITTED_TRACK);
+  const segmentBindings = productionLocalModelsByCapability['local:mobilesam:segment:v1'];
+  assert.ok(segmentBindings, 'D1 capability must exist in production model authority');
+  assert.deepEqual(segmentBindings, [{ modelId: d1.modelId, version: d1.version }]);
+  const productionModelIds = Object.values(productionLocalModelsByCapability)
+    .flatMap(bindings => bindings.map(binding => binding.modelId));
+  assert.deepEqual([...new Set(productionModelIds)].sort(), [d1.modelId].sort(),
+    'only the admitted D1 model may hold v1 production model authority');
+});
+
 test('every Stage D v1-rejected/fallback model remains absent from production model and MODEL executor authority', () => {
-  const modelIds = new Set(matrix.entries.map(entry => entry.modelId));
+  const rejectedModelIds = matrix.entries
+    .filter(entry => entry.track !== ADMITTED_TRACK)
+    .map(entry => entry.modelId);
   const productionModelIds = Object.values(productionLocalModelsByCapability)
     .flatMap(bindings => bindings.map(binding => binding.modelId));
   const productionExecutorModelIds = Object.values(productionLocalExecutorsByCapability)
@@ -84,7 +119,7 @@ test('every Stage D v1-rejected/fallback model remains absent from production mo
     .filter(binding => binding.kind === 'MODEL')
     .map(binding => binding.modelId);
 
-  for (const modelId of modelIds) {
+  for (const modelId of rejectedModelIds) {
     assert.equal(productionModelIds.includes(modelId), false, `${modelId} unexpectedly entered production v1 model authority`);
     assert.equal(productionExecutorModelIds.includes(modelId), false, `${modelId} unexpectedly entered production v2 MODEL executor authority`);
   }
@@ -92,7 +127,7 @@ test('every Stage D v1-rejected/fallback model remains absent from production mo
 
 test('matrix decisions preserve the v1 deterministic/manual fallbacks rather than implying cloud fallback', () => {
   const text = JSON.stringify(matrix);
-  assert.doesNotMatch(text, /CLOUD_FALLBACK|PROVIDER_FALLBACK|PAID_CREDIT_FALLBACK|PRODUCTION_APPROVED/);
+  assert.doesNotMatch(text, /CLOUD_FALLBACK|PROVIDER_FALLBACK|PAID_CREDIT_FALLBACK/);
   assert.match(text, /MANUAL_CANONICAL_SELECTION/);
   assert.match(text, /DETERMINISTIC_MASKED_EDITING_AND_FASHION_F4/);
   assert.match(text, /DETERMINISTIC_FASHION_F4/);

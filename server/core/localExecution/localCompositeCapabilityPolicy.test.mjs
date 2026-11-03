@@ -3,31 +3,33 @@ import test from 'node:test';
 import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES } from '../../../src/platform/creative/canonical/localComposite.ts';
 import { BACKGROUND_ISOLATION_CAPABILITY, BACKGROUND_ISOLATION_TOOL_ID, BACKGROUND_ISOLATION_TOOL_VERSION } from '../../../src/platform/creative/deterministic/BackgroundIsolation.ts';
 import { LocalExecutionAdmissionRegistry } from './LocalExecutionAdmission.ts';
-import { LocalExecutionModelUnavailableError, LocalExecutionTicketAuthority } from './LocalExecutionTicketAuthority.ts';
+import { LocalExecutionTicketAuthority } from './LocalExecutionTicketAuthority.ts';
 import { productionLocalExecutorsByCapability } from './productionLocalExecutorPolicy.ts';
 import { MOBILE_SAM_LOCAL_CAPABILITY, mobileSamProductionReleaseState, productionLocalModelsByCapability } from './productionLocalModelPolicy.ts';
 
 const scope = Object.freeze({ tenantId: 'tenant', projectId: 'project', userId: 'user' });
 
-test('C5B composite MobileSAM capability shares the exact production release decision and cannot promote a CANDIDATE', () => {
-  assert.equal(mobileSamProductionReleaseState.releaseStatus, 'CANDIDATE');
-  assert.equal(mobileSamProductionReleaseState.executable, false);
+test('C5B composite MobileSAM capability shares the exact production release decision and mints a zero-cloud ticket for the approved release', async () => {
+  assert.equal(mobileSamProductionReleaseState.releaseStatus, 'PRODUCTION_APPROVED');
+  assert.equal(mobileSamProductionReleaseState.executable, true);
   assert.strictEqual(
     productionLocalModelsByCapability[LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment],
     productionLocalModelsByCapability[MOBILE_SAM_LOCAL_CAPABILITY],
     'composite and standalone MobileSAM capabilities must share one model-trust binding',
   );
-  assert.deepEqual(productionLocalModelsByCapability[LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment], []);
+  assert.deepEqual(productionLocalModelsByCapability[LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment], [
+    { modelId: mobileSamProductionReleaseState.modelId, version: mobileSamProductionReleaseState.version },
+  ]);
 
   const authority = new LocalExecutionTicketAuthority(new LocalExecutionAdmissionRegistry(), {
     now: () => 1_000,
-    id: () => 'must-not-be-issued',
-    nonce: () => 'must-not-be-issued',
+    id: () => 'composite-segment-ticket',
+    nonce: () => 'composite-segment-nonce',
     ttlMs: 30_000,
     modelsByCapability: productionLocalModelsByCapability,
     executorsByCapability: productionLocalExecutorsByCapability,
   });
-  assert.throws(() => authority.issue({
+  const ticket = await authority.issue({
     requestId: 'composite-request',
     workflowId: 'composite-workflow',
     stepId: 'local-continuation-01-segment',
@@ -37,12 +39,13 @@ test('C5B composite MobileSAM capability shares the exact production release dec
     expectedOutputs: [{ kind: 'mask', role: 'MASK', count: 1, mimeTypes: ['application/octet-stream'], width: 2, height: 2 }],
     policy: 'LOCAL_ONLY',
     idempotencyKey: 'composite-segment',
-  }), error => {
-    assert.ok(error instanceof LocalExecutionModelUnavailableError);
-    assert.equal(error.status, 422);
-    assert.equal(error.code, 'local_model_unavailable');
-    return true;
   });
+  assert.equal(ticket.version, '1');
+  assert.equal(ticket.operation.capability, LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment);
+  assert.deepEqual(ticket.allowedModels, [
+    { modelId: mobileSamProductionReleaseState.modelId, version: mobileSamProductionReleaseState.version },
+  ]);
+  assert.deepEqual(ticket.cost, { paidCloudCredits: 0, providerCalls: 0 });
 });
 
 test('C5B Background Isolation capability aliases the accepted deterministic executor and mints only a zero-cloud V2 ticket', async () => {
