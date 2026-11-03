@@ -51,6 +51,21 @@ test('R3a measures protected Projects -> Editor -> Recipes readiness and cold ro
   assert.doesNotMatch(script, /page\.route\(|browserContext\.route\(|context\.route\(/);
 });
 
+test('R3a repeats cold-document route measurements and reports median plus range', async () => {
+  const script = await readFile('scripts/test-release-r3a-browser-e2e.mjs', 'utf8');
+  assert.match(script, /const PERFORMANCE_SAMPLE_COUNT = 3;/);
+  assert.match(script, /sampleIndex < PERFORMANCE_SAMPLE_COUNT/);
+  assert.match(script, /Network\.setCacheDisabled', \{ cacheDisabled: true \}/);
+  assert.match(script, /sampleCount: performanceSamples\.length/);
+  assert.match(script, /editor: summarizeBrowserRouteTiming\(performanceSamples\.map\(sample => sample\.editor\)\)/);
+  assert.match(script, /recipes: summarizeBrowserRouteTiming\(performanceSamples\.map\(sample => sample\.recipes\)\)/);
+  assert.match(script, /durationMs: summarizeBrowserValues/);
+  assert.match(script, /scriptTransferBytes: summarizeBrowserValues/);
+  assert.match(script, /median: Math\.round\(median \* 100\) \/ 100/);
+  assert.match(script, /min: ordered\[0\]/);
+  assert.match(script, /max: ordered\[ordered\.length - 1\]/);
+});
+
 test('R3a release workflow executes and captures the exact-head route performance measurement', async () => {
   const workflow = await readFile('.github/workflows/release-r3a-browser-e2e.yml', 'utf8');
   assert.match(workflow, /CANDIDATE_SHA/);
