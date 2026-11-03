@@ -61,7 +61,7 @@ export default function CanonicalTryOnRunnerPanel({
       // An archived or emptied Outfit must never remain a hidden select value.
       setSelectedOutfitId((current) => selectable.some((outfit) => outfit.id === current) ? current : '');
       setSelectedEntryId('');
-    } catch (cause) {
+    } catch {
       if (request === loadRequestRef.current) {
         // A failed canonical read cannot authorize Run from a prior snapshot.
         // Leave Reload usable, but require a fresh successful selection.
@@ -74,7 +74,7 @@ export default function CanonicalTryOnRunnerPanel({
     } finally {
       if (request === loadRequestRef.current) setLoading(false);
     }
-  }, [busy, hostActive, model, t, language]);
+  }, [busy, hostActive, model, t]);
 
   useEffect(() => {
     void load(); // read-only refresh; never starts Try-On execution
@@ -138,7 +138,7 @@ export default function CanonicalTryOnRunnerPanel({
     if (typeof onAction !== 'function') return undefined;
     try {
       return onAction(name, context());
-    } catch (cause) {
+    } catch {
       setError(t('fashionUi.selectionInvalid'));
       return undefined;
     }
