@@ -204,7 +204,7 @@ try {
   await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
   await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
   await fashionLoad;
-  const wardrobeRegion = page.getByRole('region', { name: 'Canonical fashion wardrobe', exact: true });
+  const wardrobeRegion = page.getByRole('region', { name: 'Canonical wardrobe and collections', exact: true });
   await wardrobeRegion.waitFor({ state: 'visible', timeout: 15_000 });
 
   const garment = await createGarmentThroughUi();

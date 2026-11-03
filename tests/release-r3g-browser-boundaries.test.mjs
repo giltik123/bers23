@@ -21,22 +21,34 @@ test('R3g drives visible zero-object navigation into canonical Fashion and Outfi
   assert.match(navigation, /<button[\s\S]*key=\{item\.id\}[\s\S]*onClick=\{\(\) => onChange\(item\.id\)\}/);
   assert.match(navigation, /aria-pressed=\{active === item\.id\}/);
   assert.match(navigation, /type="button"/);
-  assert.match(fashion, /aria-label="Canonical fashion wardrobe"/);
+  assert.match(fashion, /aria-label=\{t\('fashionUi\.panelLabel'\)\}/);
   assert.match(outfits, /aria-label="Canonical Outfit builder"/);
   assert.match(tryOnRunner, /aria-label="Canonical deterministic Try-On runner"/);
   assert.ok(harness.includes("getByRole('button', { name: 'Открыть гардероб', exact: true })"));
   assert.ok(harness.includes("url.pathname === '/wardrobe'"));
+  assert.ok(harness.includes("getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ })"), 'R3g must accept the canonical RU/EN Wardrobe return label');
 
   for (const text of [
     "getByRole('button', { name: 'Prompt', exact: true })",
     "getByRole('button', { name: 'Fashion', exact: true })",
     "getByRole('button', { name: 'More', exact: true })",
-    "getByRole('region', { name: 'Canonical fashion wardrobe', exact: true })",
+    "getByRole('region', { name: 'Canonical wardrobe and collections', exact: true })",
     "getByRole('region', { name: 'Canonical Outfit builder', exact: true })",
   ]) assert.equal(harness.includes(text), true, `R3g harness must drive ${text}`);
 
   assert.match(harness, /new canonical Project must begin with zero detected\/selected objects/);
   assert.match(harness, /Fashion\/Wardrobe\/Outfits navigation must not mutate canonical Project state or objects/);
+});
+
+test('R3g attaches Core response waits to the triggering UI action immediately', async () => {
+  const harness = await readFile(HARNESS, 'utf8');
+
+  assert.match(harness, /async function waitForCoreResponses\(page, paths, action\)/);
+  assert.match(harness, /await Promise\.all\(\[action\(\), Promise\.all\(waits\)\]\)/);
+  assert.match(harness, /diagnostics\.fashionReads\.slice\(diagnosticsStart\)/);
+  assert.match(harness, /R3g Core read barrier failed; expected=/);
+  assert.equal((harness.match(/await waitForCoreResponses\(page,/g) || []).length, 4);
+  assert.doesNotMatch(harness, /const (?:fashionMode|wardrobe|returnMode|outfit)Load = waitForCoreResponses/);
 });
 
 test('R3g uses built SPA built production Core and PostgreSQL only as correctness oracle', async () => {
@@ -90,6 +102,20 @@ test('R3g proves canonical Fashion and dual Outfit reads without Detect Object M
   assert.doesNotMatch(harness, /page\.route|browserContext\.route|context\.route|route\.abort|route\.fulfill|route\.continue/);
   assert.doesNotMatch(harness, /saveObjects|persistMask|smartPoint|selectionPointer|Start selection|Detect objects/);
   assert.doesNotMatch(harness, /financialAccount|financialTrial|credit_grants|credit_wallets/);
+});
+
+test('R3g workflow guard follows the localized Fashion region and panel label', async () => {
+  const [workflow, fashion, harness] = await Promise.all([
+    readFile(WORKFLOW, 'utf8'),
+    readFile('src/components/editor/fashion/FashionPanel.jsx', 'utf8'),
+    readFile(HARNESS, 'utf8'),
+  ]);
+
+  assert.ok(workflow.includes('grep -q "Примерка одежды" "$script"'));
+  assert.ok(workflow.includes('grep -q "fashionUi.panelLabel" src/components/editor/fashion/FashionPanel.jsx'));
+  assert.equal(workflow.includes('grep -q "Canonical fashion wardrobe" "$script"'), false);
+  assert.ok(fashion.includes("aria-label={t('fashionUi.panelLabel')}"));
+  assert.ok(harness.includes("getByRole('region', { name: 'Примерка одежды', exact: true })"));
 });
 
 test('R3 release workflow makes R3g cumulative evidence an exact-head merge gate', async () => {

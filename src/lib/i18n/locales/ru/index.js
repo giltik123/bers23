@@ -283,7 +283,7 @@ export const modules = {
   "restore": "Восстановить",
   "removeFavorite": "Убрать {name} из избранного",
   "addFavorite": "Добавить {name} в избранное",
-  "views": "Ракурсов: {count}",
+  "views": { "one": "{count} ракурс", "few": "{count} ракурса", "many": "{count} ракурсов", "other": "{count} ракурса" },
   "captureReady": "Готовы четыре ракурса",
   "captureCoverage": "Покрытие ракурсов: {count}%",
   "captureUnknown": "Ракурсы не проверены",
@@ -296,7 +296,26 @@ export const modules = {
   "garmentForTryon": "Вещь для примерки",
   "locked": "Выбрано: {name}",
   "refreshError": "Не удалось обновить образы. Загрузите их повторно перед примеркой.",
-  "selectionInvalid": "Неверный выбор для примерки."
+  "selectionInvalid": "Неверный выбор для примерки.",
+  "panelLabel": "Канонический гардероб и коллекции",
+  "backToEditor": "Назад к редактору",
+  "backToProjects": "К проектам",
+  "pageDescription": "Управляйте вещами, фотографиями и коллекциями отдельно от основного рабочего пространства.",
+  "loadFailed": "Не удалось загрузить канонический гардероб.",
+  "appendOutcomeUncertain": "Возможно, ракурс уже сохранён. Обновите гардероб перед повторной загрузкой.",
+  "mutationConflict": "Гардероб изменился в другом окне. Данные обновлены — проверьте актуальное состояние перед повтором.",
+  "voiceSearchSummary": "Голосовой поиск: {query} — найдено {count} из {total} вещей.",
+  "voiceSearchNoMatches": "По голосовому запросу ничего не найдено. Уточните категорию или цвет.",
+  "categories": {
+    "tshirts": "Футболки", "shirts": "Рубашки", "jackets": "Куртки", "hoodies": "Худи", "sweaters": "Свитеры",
+    "pants": "Брюки", "shorts": "Шорты", "jeans": "Джинсы", "skirts": "Юбки", "dresses": "Платья",
+    "shoes": "Обувь", "boots": "Ботинки", "sneakers": "Кроссовки", "sandals": "Сандалии", "hats": "Головные уборы",
+    "glasses": "Очки", "scarves": "Шарфы", "bags": "Сумки", "belts": "Ремни", "jewelry": "Украшения",
+    "gloves": "Перчатки", "socks": "Носки", "other": "Другое"
+  },
+  "seasons": {
+    "all_season": "На все сезоны", "spring": "Весна", "summer": "Лето", "autumn": "Осень", "winter": "Зима"
+  }
 },
   assetUi: {
     "untitled": "Проект без названия",

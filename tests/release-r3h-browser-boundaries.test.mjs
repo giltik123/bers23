@@ -113,6 +113,23 @@ test('R3h binds selected browser image pixels and revisions to durable Garment v
   assert.doesNotMatch(harness, /financialAccount|financialTrial|credit_grants|credit_wallets/);
 });
 
+test('R3h, R3i and R3j follow the localized canonical Fashion region label', async () => {
+  const [fashion, english, r3h, r3i, r3j] = await Promise.all([
+    readFile('src/components/editor/fashion/FashionPanel.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('scripts/test-release-r3h-browser-e2e.mjs', 'utf8'),
+    readFile('scripts/test-release-r3i-browser-e2e.mjs', 'utf8'),
+    readFile('scripts/test-release-r3j-browser-e2e.mjs', 'utf8'),
+  ]);
+
+  assert.ok(fashion.includes("aria-label={t('fashionUi.panelLabel')}"));
+  assert.match(english, /"panelLabel": "Canonical wardrobe and collections"/);
+  for (const harness of [r3h, r3i, r3j]) {
+    assert.ok(harness.includes("name: 'Canonical wardrobe and collections', exact: true"));
+    assert.equal(harness.includes('Canonical fashion wardrobe'), false);
+  }
+});
+
 test('R3 release workflow makes R3h cumulative evidence and Managed Garment split-origin regression exact-head merge gates', async () => {
   const workflow = await readFile(WORKFLOW, 'utf8');
 
@@ -126,4 +143,16 @@ test('R3 release workflow makes R3h cumulative evidence and Managed Garment spli
   assert.match(workflow, /scripts\/test-release-r3h-browser-e2e\.mjs/);
   assert.match(workflow, /R3h managed garment create favorite collection membership journey/);
   assert.match(workflow, /R3H_BROWSER_MANAGED_GARMENT_COLLECTION_ACCEPTED/);
+});
+
+test('Wardrobe return navigation preserves the active Project and exposes both localized destinations', async () => {
+  const [wardrobe, harness] = await Promise.all([
+    readFile('src/pages/Wardrobe.jsx', 'utf8'),
+    readFile(HARNESS, 'utf8'),
+  ]);
+
+  assert.match(wardrobe, /const backTo = projectId \? `\/editor\?id=\$\{encodeURIComponent\(projectId\)\}&mode=fashion` : '\/'/);
+  assert.match(wardrobe, /projectId \? t\('fashionUi\.backToEditor'\) : t\('fashionUi\.backToProjects'\)/);
+  assert.equal((harness.match(/Back to \(\?:editor\|projects\)\|Назад к редактору\|К проектам/g) || []).length, 2);
+  assert.equal(harness.includes('Back to workspace'), false);
 });

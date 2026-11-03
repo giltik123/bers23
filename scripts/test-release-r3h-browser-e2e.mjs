@@ -173,7 +173,7 @@ try {
   await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
   await initialFashionLoad;
 
-  const wardrobeRegion = page.getByRole('region', { name: 'Canonical fashion wardrobe', exact: true });
+  const wardrobeRegion = page.getByRole('region', { name: 'Canonical wardrobe and collections', exact: true });
   const collectionsRegion = page.locator('[aria-label="Canonical garment collections"]');
   await wardrobeRegion.waitFor({ state: 'visible', timeout: 15_000 });
   await collectionsRegion.waitFor({ state: 'visible', timeout: 15_000 });
@@ -295,7 +295,7 @@ try {
   await collectionsRegion.getByRole('button', { name: `${collectionName} (1)`, exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
   await collectionsRegion.getByText(garmentName, { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
 
-  await page.getByRole('link', { name: /Back to workspace|Назад к редактору/ }).click();
+  await page.getByRole('link', { name: /Back to (?:editor|projects)|Назад к редактору|К проектам/ }).click();
   await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId);
   const remountLoad = waitForCoreResponses(page, [
     ['GET', '/api/core/garments'],
@@ -355,7 +355,7 @@ try {
 
   const finalProject = await readProjectState(projectId);
   assert.deepEqual(finalProject, initialProject, 'Managed Wardrobe mutations must not mutate canonical Project state or objects');
-  await page.getByRole('link', { name: /Back to workspace|Назад к редактору/ }).click();
+  await page.getByRole('link', { name: /Back to (?:editor|projects)|Назад к редактору|К проектам/ }).click();
   const returnedProjectImage = page.getByRole('img', { name: 'Project', exact: true });
   await returnedProjectImage.waitFor({ state: 'visible', timeout: 15_000 });
   assert.equal(new URL(await returnedProjectImage.evaluate(element => element.src)).origin, coreOrigin,

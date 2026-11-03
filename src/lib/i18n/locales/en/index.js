@@ -267,7 +267,7 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   "restore": "Restore",
   "removeFavorite": "Remove {name} from favorites",
   "addFavorite": "Add {name} to favorites",
-  "views": "{count} views",
+  "views": { "one": "{count} view", "few": "{count} views", "many": "{count} views", "other": "{count} views" },
   "captureReady": "4-view capture ready",
   "captureCoverage": "{count}% cardinal coverage",
   "captureUnknown": "Capture not assessed",
@@ -280,7 +280,26 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   "garmentForTryon": "Garment entry for deterministic Try-On",
   "locked": "Locked selection: {name}",
   "refreshError": "Try-On choices could not be refreshed. Reload canonical Outfits before trying again.",
-  "selectionInvalid": "Try-On selection is invalid."
+  "selectionInvalid": "Try-On selection is invalid.",
+  "panelLabel": "Canonical wardrobe and collections",
+  "backToEditor": "Back to editor",
+  "backToProjects": "Back to projects",
+  "pageDescription": "Manage garments, photos and collections outside the main workspace.",
+  "loadFailed": "The canonical wardrobe could not be loaded.",
+  "appendOutcomeUncertain": "The garment view may already be saved. Refresh the wardrobe before uploading again.",
+  "mutationConflict": "The wardrobe changed elsewhere. It has been refreshed; review the latest state before trying again.",
+  "voiceSearchSummary": "Voice search: {query} — {count} of {total} garments matched.",
+  "voiceSearchNoMatches": "No garments match this voice query. Refine the category or color.",
+  "categories": {
+    "tshirts": "T-shirts", "shirts": "Shirts", "jackets": "Jackets", "hoodies": "Hoodies", "sweaters": "Sweaters",
+    "pants": "Pants", "shorts": "Shorts", "jeans": "Jeans", "skirts": "Skirts", "dresses": "Dresses",
+    "shoes": "Shoes", "boots": "Boots", "sneakers": "Sneakers", "sandals": "Sandals", "hats": "Hats",
+    "glasses": "Glasses", "scarves": "Scarves", "bags": "Bags", "belts": "Belts", "jewelry": "Jewelry",
+    "gloves": "Gloves", "socks": "Socks", "other": "Other"
+  },
+  "seasons": {
+    "all_season": "All-season", "spring": "Spring", "summer": "Summer", "autumn": "Autumn", "winter": "Winter"
+  }
 },
   assetUi: {
     "untitled": "Untitled project",

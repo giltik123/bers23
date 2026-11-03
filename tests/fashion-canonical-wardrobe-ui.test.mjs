@@ -11,7 +11,7 @@ test('FashionPanel mounts only canonical Managed Garment and Wardrobe browser au
   assert.match(source, /coreClient\.fashion\.garments/);
   assert.match(source, /coreClient\.fashion\.wardrobe/);
   assert.match(source, /createCanonicalWardrobeViewModel/);
-  assert.match(source, /Canonical fashion wardrobe/);
+  assert.match(source, /t\('fashionUi\.panelLabel'\)/);
   assert.match(source, /captureAssessment/);
   assert.match(source, /wardrobe\.setFavorite/);
   assert.match(source, /wardrobe\.archive/);
