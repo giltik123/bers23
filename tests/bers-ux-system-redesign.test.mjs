@@ -182,3 +182,47 @@ test('shared theme preference persists when storage works and stays usable when 
   assert.match(source, /persistThemePreference\(dark\)/);
   assert.match(source, /window\.dispatchEvent\(new CustomEvent\('bers-theme-change'/);
 });
+
+
+test('Asset Library card and details use localized labels and independent accessible actions', async () => {
+  const [card, details, englishAssets, russianPack] = await Promise.all([
+    read('src/components/assets/AssetCard.jsx'),
+    read('src/components/assets/AssetDetails.jsx'),
+    read('src/lib/i18n/locales/en/assets.js'),
+    read('src/lib/i18n/locales/ru/index.js'),
+  ]);
+
+  assert.match(card, /useTranslation/);
+  assert.match(card, /t\('assets\.selectAsset'/);
+  assert.match(card, /t\('assets\.addFavorite'/);
+  assert.match(card, /t\('assets\.removeFavorite'/);
+  assert.match(card, /aria-pressed=\{Boolean\(selected\)\}/);
+  assert.match(card, /aria-pressed=\{Boolean\(asset\.favorite\)\}/);
+  assert.equal((card.match(/<button/g) || []).length, 2, 'selection and favorite must be separate buttons');
+  assert.doesNotMatch(card, /<span role="button"/, 'do not nest a simulated button inside the selection button');
+
+  assert.match(details, /t\('assets\.selectAssetHint'\)/);
+  assert.match(details, /t\('assets\.tags'\)/);
+  assert.match(details, /t\('assets\.relatedAssets'\)/);
+  assert.match(details, /t\('assets\.addToActiveCollection'\)/);
+  assert.match(details, /t\('assets\.usageHistory'\)/);
+  assert.match(details, /t\('assets\.noRecordedUsage'\)/);
+  assert.doesNotMatch(details, /Select an asset to view details|>Tags<|>Related assets<|>Usage history<|Add to active collection|No recorded usage yet/);
+
+  for (const key of [
+    'selectAsset',
+    'selectAssetHint',
+    'projectType',
+    'addFavorite',
+    'removeFavorite',
+    'tags',
+    'relatedAssets',
+    'addToActiveCollection',
+    'usageHistory',
+    'usageCount',
+    'noRecordedUsage',
+  ]) {
+    assert.match(englishAssets, new RegExp('\\b' + key + ':'));
+    assert.match(russianPack, new RegExp('\\b' + key + ':'));
+  }
+});
