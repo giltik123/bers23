@@ -257,6 +257,22 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
 },
   fashionUi: {
   "wardrobe": "Wardrobe",
+  "runnerLabel": "Canonical deterministic Try-On runner",
+  "voiceQuery": "Voice query: {query}.",
+  "voiceQueryMatches": {
+    "one": "Found {count} ready Try-On entry.",
+    "other": "Found {count} ready Try-On entries."
+  },
+  "voiceQuerySingleMatch": "Found {garmentName} in {outfitName}. Confirm the selection below.",
+  "voiceQueryNoMatches": "No ready entries match this voice query.",
+  "voiceQueryManualChoice": "Choose one suitable garment manually; BERS does not guess an identifier.",
+  "voiceQueryNoAutoRun": "Voice search never starts Try-On.",
+  "entryNotReady": "not ready",
+  "manualContourSourceUnavailable": "Manual contour source loading is unavailable.",
+  "manualContourSaveUnavailable": "Manual contour saving is unavailable.",
+  "manualBodyAnchorsSaveUnavailable": "Manual body-anchor saving is unavailable.",
+  "manualContourInvalid": "Manual contour selection is invalid.",
+  "manualBodyAnchorsInvalid": "Manual body-anchor selection is invalid.",
   "reload": "Reload wardrobe",
   "addGarment": "Add garment",
   "notice": "Images, stable garment identity and capture evidence come from Managed Garment authority; category, season, material, tags and favorite state come from the revisioned Wardrobe authority.",
