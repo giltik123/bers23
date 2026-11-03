@@ -26,6 +26,7 @@ on:
       - 'scripts/test-release-r3m-auth-lifecycle-browser-e2e.mjs'
       - 'tests/auth-client-contract.test.mjs'
       - 'tests/auth-public-route-routing.test.mjs'
+      - 'tests/reset-password-recovery.test.mjs'
       - '.github/workflows/release-r3m-auth-lifecycle-browser-e2e.yml'
   workflow_dispatch:
 
@@ -77,6 +78,7 @@ jobs:
           npm run server:typecheck
           node --test tests/auth-client-contract.test.mjs
           node --test tests/auth-public-route-routing.test.mjs
+          node --test tests/reset-password-recovery.test.mjs
           node --check scripts/release-r3m-auth-email-capture-preload.mjs
       - name: Build immutable Core and apply packaged production migrations
         run: |
