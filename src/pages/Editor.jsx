@@ -43,38 +43,35 @@ import VersionsPanel from '@/components/editor/VersionsPanel';
 import ErrorBanner from '@/components/editor/ErrorBanner';
 import PlanPreview from '@/components/editor/PlanPreview';
 import { aiPlanner } from '@/lib/planner/aiPlanner';
-import ObjectPanel from '@/components/editor/ObjectPanel';
-import AutoSceneMasksPanel from '@/components/editor/AutoSceneMasksPanel';
-import EditorStatusBar from '@/components/editor/EditorStatusBar';
-import SegmentationProgress from '@/components/editor/SegmentationProgress';
-import PipelineStatusBar from '@/components/editor/PipelineStatusBar';
 import { sceneMemory } from '@/lib/scene/sceneMemory';
 import { styleLock } from '@/lib/scene/styleLock';
 import { consistencyEngine } from '@/lib/scene/consistencyEngine';
-import SceneMemoryPanel from '@/components/editor/scene/SceneMemoryPanel';
 import ConsistencyWarning from '@/components/editor/scene/ConsistencyWarning';
 import { workspaceManager } from '@/lib/workspace/workspaceManager';
 import { workspaceHistory } from '@/lib/workspace/workspaceHistory';
-import WorkspaceBar from '@/components/editor/workspace/WorkspaceBar';
 import WorkspaceToolbar from '@/components/editor/workspace/WorkspaceToolbar';
 import WorkspaceRecommendations from '@/components/editor/workspace/WorkspaceRecommendations';
 const VirtualTryOnPanel = lazy(() => import('@/components/editor/outfits/VirtualTryOnPanel'));
 const OutfitPanel = lazy(() => import('@/components/editor/outfits/OutfitPanel'));
 const CanonicalTryOnRunnerPanel = lazy(() => import('@/components/editor/outfits/CanonicalTryOnRunnerPanel'));
 const CreativeStudioPanel = lazy(() => import('@/components/editor/creative/CreativeStudioPanel'));
+const SelectionToolbar = lazy(() => import('@/components/editor/SelectionToolbar'));
+const AutoSceneMasksPanel = lazy(() => import('@/components/editor/AutoSceneMasksPanel'));
+const ObjectPanel = lazy(() => import('@/components/editor/ObjectPanel'));
+const EditorStatusBar = lazy(() => import('@/components/editor/EditorStatusBar'));
+const SegmentationProgress = lazy(() => import('@/components/editor/SegmentationProgress'));
+const PipelineStatusBar = lazy(() => import('@/components/editor/PipelineStatusBar'));
+const SceneMemoryPanel = lazy(() => import('@/components/editor/scene/SceneMemoryPanel'));
+const WorkspaceBar = lazy(() => import('@/components/editor/workspace/WorkspaceBar'));
+const JobQueuePanel = lazy(() => import('@/components/editor/jobs/JobQueuePanel'));
 import useCanonicalTryOnEditor from '@/components/editor/outfits/useCanonicalTryOnEditor';
 import AdaptiveLayout from '@/components/adaptive/AdaptiveLayout';
 import AdaptiveToolbar from '@/components/adaptive/AdaptiveToolbar';
 import AdaptivePanel from '@/components/adaptive/AdaptivePanels';
 import AdaptiveNavigation from '@/components/adaptive/AdaptiveNavigation';
 import { usePlatformProfile } from '@/lib/platform/PlatformManager';
-import JobQueuePanel from '@/components/editor/jobs/JobQueuePanel';
 import { notificationCenter } from '@/lib/notifications/notificationCenter';
 import { sessionRecovery } from '@/lib/performance/sessionRecovery';
-import SelectionToolbar from '@/components/editor/SelectionToolbar';
-import { SelectionApplicationService } from '@/application/selection';
-import { createSelectionSegmentation } from '@/application/createSelectionSegmentation';
-import { CoreMaskArtifactPort } from '@/application/selection/CoreMaskArtifactPort';
 import { finalizeAcceptedResult } from '@/application/editor/finalizeAcceptedResult';
 import { isFinalSourceConflict, recoverFinalSourceConflict } from '@/application/editor/recoverFinalSourceConflict';
 
@@ -193,7 +190,13 @@ export default function Editor() {
   });
   const [driftWarning, setDriftWarning] = useState(null);
   const [selection, setSelection] = useState(null);
+  const [selectionStarting, setSelectionStarting] = useState(false);
+  const selectionStartInFlightRef = useRef(false);
+  const selectionStartGenerationRef = useRef(0);
+  const activeProjectRef = useRef(project);
+  activeProjectRef.current = project;
   const [maskToolsOpen, setMaskToolsOpen] = useState(false);
+  const [additionalToolsOpened, setAdditionalToolsOpened] = useState(false);
   const PRODUCTION_MASK_UI_ENABLED = maskToolsOpen;
   const [hiddenObjectIds, setHiddenObjectIds] = useState(() => new Set());
   const [brushSize, setBrushSize] = useState(24);
@@ -239,8 +242,9 @@ export default function Editor() {
   const resizeInteractionActive = Boolean(resizeDraft);
   const tryOnActive = tryOn.state.host.active || tryOn.busy || pendingResult?.kind === 'FASHION_TRYON';
   const agentActive = boundedAgent.state.active || boundedAgent.busy;
-  const editorBusy = localEditorBusy || tryOnActive || agentActive;
+  const editorBusy = localEditorBusy || tryOnActive || agentActive || selectionStarting;
   const tryOnBlockedByEditor = localEditorBusy
+    || selectionStarting
     || agentActive
     || committing
     || Boolean(selection)
@@ -249,6 +253,7 @@ export default function Editor() {
     || Boolean(driftWarning)
     || (Boolean(pendingResult) && pendingResult?.kind !== 'FASHION_TRYON');
   const agentBlockedByEditor = localEditorBusy
+    || selectionStarting
     || tryOnActive
     || committing
     || Boolean(selection)
@@ -257,7 +262,11 @@ export default function Editor() {
     || Boolean(driftWarning)
     || Boolean(pendingResult);
 
-  useEffect(() => () => disposePendingPreview(pendingResultRef.current), []);
+  useEffect(() => () => {
+    selectionStartGenerationRef.current += 1;
+    selectionStartInFlightRef.current = false;
+    disposePendingPreview(pendingResultRef.current);
+  }, []);
   useEffect(() => { setHiddenObjectIds(new Set()); }, [project?.id]);
   useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); }, [project?.current_image_artifact_id]);
   useEffect(() => { setHiddenObjectIds(new Set()); }, [project?.current_image_artifact_id]);
@@ -322,15 +331,52 @@ export default function Editor() {
     }
   };
 
-  const startSelection = () => {
-    if (orthogonalTransformInFlightRef.current || editorBusy || committing || pendingResult || cropInteractionActive || resizeInteractionActive) return;
-    const imageArtifactId = project.current_image_artifact_id;
-    if (!imageArtifactId) throw new Error('Canonical project image identity is unavailable');
-    const segmentation = createSelectionSegmentation({ projectId: project.id, imageArtifactId, source: project.current_image_url });
-    const artifacts = new CoreMaskArtifactPort(project.id);
-    const service = new SelectionApplicationService(segmentation, artifacts);
-    selectionServiceRef.current = service;
-    setSelection(service.start({ imageArtifactId, width: project.width, height: project.height }));
+  const startSelection = async () => {
+    if (orthogonalTransformInFlightRef.current || editorBusy || committing || pendingResult || cropInteractionActive || resizeInteractionActive || selectionStartInFlightRef.current) return;
+    const initialProject = activeProjectRef.current;
+    const requestedProjectId = initialProject?.id;
+    const imageArtifactId = initialProject?.current_image_artifact_id;
+    if (!requestedProjectId || !imageArtifactId) {
+      setAiError('Canonical project image identity is unavailable');
+      return;
+    }
+    const startGeneration = ++selectionStartGenerationRef.current;
+    selectionStartInFlightRef.current = true;
+    setSelectionStarting(true);
+    setAiError(null);
+    try {
+      const [selectionModule, segmentationModule, artifactModule] = await Promise.all([
+        import('@/application/selection'),
+        import('@/application/createSelectionSegmentation'),
+        import('@/application/selection/CoreMaskArtifactPort'),
+      ]);
+      const currentProject = activeProjectRef.current;
+      if (
+        startGeneration !== selectionStartGenerationRef.current
+        || currentProject?.id !== requestedProjectId
+        || currentProject?.current_image_artifact_id !== imageArtifactId
+      ) return;
+      const segmentation = segmentationModule.createSelectionSegmentation({
+        projectId: requestedProjectId,
+        imageArtifactId,
+        source: currentProject.current_image_url,
+      });
+      const { CoreMaskArtifactPort } = artifactModule;
+      const { SelectionApplicationService } = selectionModule;
+      const artifacts = new CoreMaskArtifactPort(project.id);
+      const service = new SelectionApplicationService(segmentation, artifacts);
+      selectionServiceRef.current = service;
+      setSelection(service.start({ imageArtifactId, width: currentProject.width, height: currentProject.height }));
+    } catch {
+      if (startGeneration === selectionStartGenerationRef.current) {
+        setAiError('Selection tools could not be loaded. Your Project and existing masks were not changed.');
+      }
+    } finally {
+      if (startGeneration === selectionStartGenerationRef.current) {
+        selectionStartInFlightRef.current = false;
+        setSelectionStarting(false);
+      }
+    }
   };
   const updateSelection = (action) => {
     const service = selectionServiceRef.current;
@@ -1248,7 +1294,11 @@ export default function Editor() {
 
       <GenerationProgress />
 
-      {PRODUCTION_MASK_UI_ENABLED && <SegmentationProgress />}
+      {PRODUCTION_MASK_UI_ENABLED && (
+        <Suspense fallback={<div role="status" className="py-3 text-center text-sm text-muted-foreground">{t('editorUi.loadingPanel')}</div>}>
+          <SegmentationProgress />
+        </Suspense>
+      )}
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(19rem,23rem)]">
         <section className="min-w-0 space-y-3 rounded-3xl border border-border/70 bg-card p-3 shadow-sm sm:p-4" aria-label="Image canvas">
@@ -1337,6 +1387,9 @@ export default function Editor() {
           disabled={editorBusy || Boolean(pendingResult) || cropInteractionActive || resizeInteractionActive}
           onClick={() => {
             if (PRODUCTION_MASK_UI_ENABLED) {
+              selectionStartGenerationRef.current += 1;
+              selectionStartInFlightRef.current = false;
+              setSelectionStarting(false);
               selectionServiceRef.current?.cancel();
               selectionServiceRef.current = null;
               setSelection(null);
@@ -1346,6 +1399,7 @@ export default function Editor() {
           }}>
           {PRODUCTION_MASK_UI_ENABLED ? 'Скрыть маски' : 'Маски и SAM3 · по запросу'}
         </Button>
+        <Suspense fallback={<div role="status" className="py-3 text-center text-sm text-muted-foreground">{t('editorUi.loadingPanel')}</div>}>
         {PRODUCTION_MASK_UI_ENABLED && !cropInteractionActive && !resizeInteractionActive && <SelectionToolbar
         selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} brushHardness={brushHardness} onBrushHardness={setBrushHardness}
         brushOpacity={brushOpacity} onBrushOpacity={setBrushOpacity}
@@ -1403,19 +1457,24 @@ export default function Editor() {
           && !pendingResult && !tryOnActive && !agentActive && !applying && !committing && !isolatingBackground && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
         applyingLevels={applyingMaskedLevels}
         onApplyLevels={() => applyMaskedLevels()}
-      />}
-      </section>}
-        {PRODUCTION_MASK_UI_ENABLED && <AutoSceneMasksPanel
-          project={project}
-          disabled={editorBusy || committing || Boolean(pendingResult) || Boolean(selection) || cropInteractionActive || resizeInteractionActive}
-          onComplete={reload}
-          onManualSelect={startSelection}
         />}
-        {PRODUCTION_MASK_UI_ENABLED && objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && (
-          <AdaptivePanel title={language === 'ru' ? t('editorUi.masks') : 'Masks & objects'}>
-            <ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj?.id ?? null)} hidden={hiddenObjectIds} onToggleHidden={toggleHiddenObject} />
-          </AdaptivePanel>
-        )}
+      </Suspense>
+      </section>}
+        <Suspense fallback={<div role="status" className="py-3 text-center text-sm text-muted-foreground">{t('editorUi.loadingPanel')}</div>}>
+          {PRODUCTION_MASK_UI_ENABLED && <AutoSceneMasksPanel
+              project={project}
+              disabled={editorBusy || committing || Boolean(pendingResult) || Boolean(selection) || cropInteractionActive || resizeInteractionActive}
+              onComplete={reload}
+              onManualSelect={startSelection}
+          />}
+        </Suspense>
+        <Suspense fallback={<div role="status" className="py-3 text-center text-sm text-muted-foreground">{t('editorUi.loadingPanel')}</div>}>
+          {PRODUCTION_MASK_UI_ENABLED && objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && (
+            <AdaptivePanel title={language === 'ru' ? t('editorUi.masks') : 'Masks & objects'}>
+              <ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj?.id ?? null)} hidden={hiddenObjectIds} onToggleHidden={toggleHiddenObject} />
+            </AdaptivePanel>
+          )}
+        </Suspense>
         </aside>
       </div>
 
@@ -1587,22 +1646,27 @@ export default function Editor() {
         </>
       )}
 
-      <details className="rounded-2xl border border-border/60 p-3 text-sm" aria-label="Additional editor tools and status">
+      <details className="rounded-2xl border border-border/60 p-3 text-sm" aria-label="Additional editor tools and status"
+        onToggle={(event) => { if (event.currentTarget.open) setAdditionalToolsOpened(true); }}>
         <summary className="cursor-pointer select-none font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{language === 'ru' ? t('editorUi.moreTools') : 'More tools and activity'}</summary>
-        <div className="mt-3 space-y-4">
-          <AdaptivePanel title={language === 'ru' ? t('editorUi.workspace') : 'Workspace'}><WorkspaceBar projectId={project.id} /></AdaptivePanel>
-          <AdaptivePanel title={language === 'ru' ? t('editorUi.jobCenter') : 'Job Center'}><JobQueuePanel /></AdaptivePanel>
-          <PipelineStatusBar width={project.width} height={project.height} />
-          <AdaptivePanel title={language === 'ru' ? t('editorUi.sceneMemory') : 'Scene Memory'}><SceneMemoryPanel project={project} /></AdaptivePanel>
-          {PRODUCTION_MASK_UI_ENABLED && <EditorStatusBar
-            objectCount={objects.length}
-            selectionCount={objects.filter((o) => o.selected).length}
-            selectionMode="single"
-            maskedCount={objects.filter((o) => o.mask_url).length}
-            segmentationStatus={objects.length ? 'completed' : 'idle'}
-            cacheStatus="empty"
-          />}
-        </div>
+        {additionalToolsOpened && (
+          <Suspense fallback={<div role="status" className="mt-3 py-3 text-center text-sm text-muted-foreground">{t('editorUi.loadingPanel')}</div>}>
+            <div className="mt-3 space-y-4">
+              <AdaptivePanel title={language === 'ru' ? t('editorUi.workspace') : 'Workspace'}><WorkspaceBar projectId={project.id} /></AdaptivePanel>
+              <AdaptivePanel title={language === 'ru' ? t('editorUi.jobCenter') : 'Job Center'}><JobQueuePanel projectId={project.id} /></AdaptivePanel>
+              <PipelineStatusBar width={project.width} height={project.height} />
+              <AdaptivePanel title={language === 'ru' ? t('editorUi.sceneMemory') : 'Scene Memory'}><SceneMemoryPanel project={project} /></AdaptivePanel>
+              {PRODUCTION_MASK_UI_ENABLED && <EditorStatusBar
+                objectCount={objects.length}
+                selectionCount={objects.filter((o) => o.selected).length}
+                selectionMode="single"
+                maskedCount={objects.filter((o) => o.mask_url).length}
+                segmentationStatus={objects.length ? 'completed' : 'idle'}
+                cacheStatus="empty"
+              />}
+            </div>
+          </Suspense>
+        )}
       </details>
     </AdaptiveLayout>
   );
