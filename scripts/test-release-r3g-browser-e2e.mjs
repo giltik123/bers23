@@ -176,7 +176,7 @@ try {
     '/api/core/wardrobe/outfits',
     '/api/core/wardrobe/garments',
   ], async () => {
-    await page.getByRole('link', { name: /Back to workspace|Назад к редактору/ }).click();
+    await page.getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ }).click();
     await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId && url.searchParams.get('mode') === 'fashion');
   });
   await page.getByRole('region', { name: 'Примерка одежды', exact: true })
