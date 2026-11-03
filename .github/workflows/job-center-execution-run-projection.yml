@@ -22,6 +22,10 @@ on:
       - 'src/lib/jobs/jobScheduler.js'
       - 'src/lib/jobs/jobEphemeralAuthority.test.mjs'
       - 'src/components/editor/jobs/CanonicalExecutionRunRow.jsx'
+      - 'src/lib/jobs/executionRunPresentation.js'
+      - 'src/lib/i18n/locales/en/jobs.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/job-center-canonical-row-i18n.test.mjs'
       - 'src/components/editor/jobs/JobCenter.jsx'
       - 'src/components/editor/jobs/JobQueuePanel.jsx'
       - 'src/components/editor/jobs/JobRow.jsx'
@@ -62,6 +66,8 @@ jobs:
       - run: npm ci
       - name: Prove GET-only recovery, durable FINAL and Local authority projection, owning controls and explicit session repeat semantics
         run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/executionRunFinalResultProjection.test.mjs src/lib/jobs/creativeExecutionControl.test.mjs src/lib/jobs/workflowExecutionRetryControl.test.mjs src/lib/jobs/jobRepeatPolicy.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
+      - name: Verify RU/EN canonical Job Center row labels
+        run: node --test tests/job-center-canonical-row-i18n.test.mjs
       - name: Preserve accepted server recovery HTTP contract
         run: node --experimental-strip-types --test server/core/http/executionRunRecoveryHttpAdapter.test.mjs
       - name: Typecheck browser and Core contracts
@@ -94,10 +100,10 @@ jobs:
           grep -q "run.capability === 'LOCAL_EXECUTION'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q "run.authorityKind === 'LOCAL_EXECUTION_TICKET'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q 'data-local-execution-authority' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
-          grep -q 'Cancellation unsupported.' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "t('jobs.canonical.cancellationUnsupported')" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q "run.capability === 'WORKFLOW_CONTINUATION'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q "retryControl?.state === 'AVAILABLE'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
-          grep -q '>Retry workflow<' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "t('jobs.canonical.retryWorkflow')" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           ! grep -E -q 'jobManager|jobStorage|onRunAgain|onDuplicate|onMoveUp|coreClient|execution-runs|runAgain|duplicate' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q 'new CreativeExecutionControlPolicy(coreClient.creative)' src/components/editor/jobs/JobCenter.jsx
           grep -q 'new WorkflowExecutionRetryPolicy(coreClient.agent)' src/components/editor/jobs/JobCenter.jsx
