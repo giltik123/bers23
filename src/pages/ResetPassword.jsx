@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { coreClient } from "@/api/coreClient";
 import { Button } from "@/components/ui/button";
@@ -27,21 +27,26 @@ export default function ResetPassword() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const submitting = useRef(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting.current || !resetToken) return;
     setError("");
     if (newPassword !== confirmPassword) {
       setError(t("authUi.passwordMismatch"));
       return;
     }
+    submitting.current = true;
     setLoading(true);
     try {
       await coreClient.auth.resetPassword({ resetToken, newPassword });
       window.location.href = "/login";
-    } catch (err) {
-      setError(err.message || t("authUi.resetFailed"));
+    } catch {
+      // Do not reflect untrusted Core/provider error text into the account UI.
+      setError(t("authUi.resetFailed"));
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   };
@@ -72,8 +77,11 @@ export default function ResetPassword() {
       subtitle={t("authUi.newPasswordHint")}
     >
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
-          {error}
+        <div role="alert" className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+          <p>{error}</p>
+          <Link to="/forgot-password" className="mt-2 inline-block font-medium underline underline-offset-2">
+            {t("authUi.requestNewLink")}
+          </Link>
         </div>
       )}
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -89,6 +97,7 @@ export default function ResetPassword() {
               placeholder="••••••••"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
+              disabled={loading}
               className="pl-10 h-12"
               required
             />
@@ -105,6 +114,7 @@ export default function ResetPassword() {
               placeholder="••••••••"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
+              disabled={loading}
               className="pl-10 h-12"
               required
             />
