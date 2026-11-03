@@ -70,3 +70,27 @@ test('object eye controls update the actual canvas overlays, not just the list s
   assert.match(objectPanel, /onClick=\{\(\) => onSelect\(obj\.selected \? null : obj\)\}/);
   assert.match(objectPanel, /they do not edit the image/);
 });
+
+test('secondary Editor diagnostics localize RU/EN and never label a dimension estimate as FINAL', async () => {
+  const [status, pipeline, english, russian] = await Promise.all([
+    readFile('src/components/editor/EditorStatusBar.jsx', 'utf8'),
+    readFile('src/components/editor/PipelineStatusBar.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+  for (const key of ['objects', 'selected', 'masks', 'segmentation', 'cache',
+    'pipelineError', 'pipelineReady', 'pipelineIdle', 'previewLimit', 'currentImage',
+    'estimatedTier', 'tierHd', 'validation', 'export']) {
+    for (const [name, pack] of [['en', english], ['ru', russian]]) {
+      assert.ok(pack.includes('"' + key + '":'), name + ' missing Editor status key ' + key);
+    }
+  }
+  assert.match(status, /useTranslation/);
+  assert.match(status, /editorStatusUi\.objects/);
+  assert.match(pipeline, /useTranslation/);
+  assert.match(pipeline, /editorStatusUi\.currentImage/);
+  assert.match(pipeline, /editorStatusUi\.pipelineReady/);
+  assert.match(pipeline, /aria-live="polite"/);
+  assert.doesNotMatch(pipeline, /Final:|Pipeline ready/);
+  assert.match(pipeline, /pipeline event bus is not Project-scoped/);
+});

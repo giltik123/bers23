@@ -298,6 +298,29 @@ export const modules = {
   "refreshError": "Не удалось обновить образы. Загрузите их повторно перед примеркой.",
   "selectionInvalid": "Неверный выбор для примерки."
 },
+  editorStatusUi: {
+    "selectionStatus": "Состояние выделения в редакторе",
+    "objects": "Объектов: {count}",
+    "selected": "Выбрано: {count} · {mode}",
+    "masks": "Маски: {masked}/{total}",
+    "segmentation": "Сегментация: {state}",
+    "cache": "Кэш: {state}",
+    "single": "одиночное", "completed": "завершена", "idle": "не запущена", "empty": "пуст",
+    "pipelineStatus": "Состояние обработки изображения",
+    "pipelineError": "Ошибка последней обработки",
+    "pipelineReady": "Последняя обработка завершена",
+    "pipelineIdle": "Обработка не запущена",
+    "processing": "Обработка",
+    "previewLimit": "Ориентир разрешения предпросмотра",
+    "currentImage": "Размер текущего изображения",
+    "estimatedTier": "Предполагаемый режим обработки",
+    "tierPreview": "предпросмотр", "tierStandard": "стандартный", "tierHd": "HD", "tierOriginal": "оригинал",
+    stages: {
+      "validation": "Проверка", "metadata": "Чтение метаданных", "optimization": "Оптимизация",
+      "resolution": "Выбор разрешения", "masks": "Обработка масок", "crop": "Расчёт обрезки",
+      "preview": "Создание предпросмотра", "restore": "Восстановление результата", "export": "Экспорт"
+    }
+  },
   assetUi: {
     "untitled": "Проект без названия",
     "loadFailed": "Не удалось загрузить материалы проектов.",
