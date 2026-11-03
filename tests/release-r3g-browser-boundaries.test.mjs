@@ -49,7 +49,12 @@ test('R3g attaches Core response waits to the triggering UI action immediately',
   assert.match(harness, /await Promise\.all\(\[action\(\), Promise\.all\(waits\)\]\)/);
   assert.match(harness, /diagnostics\.fashionReads\.slice\(diagnosticsStart\)/);
   assert.match(harness, /R3g Core read barrier failed; expected=/);
-  assert.equal((harness.match(/await waitForCoreResponses\(page,/g) || []).length, 4);
+  assert.equal((harness.match(/await waitForCoreResponses\(page,/g) || []).length, 3);
+  const returnNavigation = harness.indexOf("await page.getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ }).click();");
+  const returnRoute = harness.indexOf("await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId && url.searchParams.get('mode') === 'fashion');", returnNavigation);
+  const returnRegion = harness.indexOf("await page.getByRole('region', { name: 'Примерка одежды', exact: true })", returnRoute);
+  assert.ok(returnNavigation >= 0 && returnRoute > returnNavigation && returnRegion > returnRoute, 'return navigation must restore the same Project and Fashion mode before asserting the panel');
+  assert.doesNotMatch(harness.slice(returnNavigation, returnRegion), /waitForCoreResponses/, 'return navigation must not require a duplicate Core read');
   assert.doesNotMatch(harness, /const (?:fashionMode|wardrobe|returnMode|outfit)Load = waitForCoreResponses/);
 });
 
