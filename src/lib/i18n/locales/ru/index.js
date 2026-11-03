@@ -14,6 +14,7 @@ export const modules = {
   creative: { title: 'Креатив-студия', goal: 'Цель', ideas: 'Идеи', moodBoards: 'Мудборды', strategy: 'Стратегия', generate: 'Сгенерировать идеи', apply: 'Применить стратегию' },
   brand: { title: 'Бренд-студия', profile: 'Профиль бренда', colors: 'Цвета', fonts: 'Шрифты', voice: 'Тон', guidelines: 'Гайдлайны' },
   assets: { title: 'Библиотека ресурсов', collections: 'Коллекции', pinned: 'Закреплённые', smart: 'Умные', searchPlaceholder: 'Поиск ресурсов…', empty: 'Ресурсов пока нет.', details: 'Подробности' },
+  notFoundUi: { title: 'Страница не найдена', hint: 'По этому адресу нет страницы BERS. Ваши проекты и правки не изменились.', backToProjects: 'К проектам' },
   authUi: {
     "brand": "Творческая студия",
     "workspace": "Ваше пространство для творчества",

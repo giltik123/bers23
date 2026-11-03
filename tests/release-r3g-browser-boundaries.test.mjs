@@ -104,6 +104,20 @@ test('R3g proves canonical Fashion and dual Outfit reads without Detect Object M
   assert.doesNotMatch(harness, /financialAccount|financialTrial|credit_grants|credit_wallets/);
 });
 
+test('R3g workflow guard follows the localized Fashion region and panel label', async () => {
+  const [workflow, fashion, harness] = await Promise.all([
+    readFile(WORKFLOW, 'utf8'),
+    readFile('src/components/editor/fashion/FashionPanel.jsx', 'utf8'),
+    readFile(HARNESS, 'utf8'),
+  ]);
+
+  assert.ok(workflow.includes('grep -q "Примерка одежды" "$script"'));
+  assert.ok(workflow.includes('grep -q "fashionUi.panelLabel" src/components/editor/fashion/FashionPanel.jsx'));
+  assert.equal(workflow.includes('grep -q "Canonical fashion wardrobe" "$script"'), false);
+  assert.ok(fashion.includes("aria-label={t('fashionUi.panelLabel')}"));
+  assert.ok(harness.includes("getByRole('region', { name: 'Примерка одежды', exact: true })"));
+});
+
 test('R3 release workflow makes R3g cumulative evidence an exact-head merge gate', async () => {
   const workflow = await readFile(WORKFLOW, 'utf8');
 

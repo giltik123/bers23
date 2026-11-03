@@ -17,6 +17,7 @@ import brand from './brand';
 import assets from './assets';
 
 export const modules = { common, editor, projects, recipes, workspace, automation, fashion, billing, settings, errors, notifications, jobs, creative, brand, assets,
+  notFoundUi: { title: 'Page not found', hint: 'This address does not match a BERS page. Your projects and edits have not been changed.', backToProjects: 'Go to projects' },
   authUi: {
     "brand": "Creative studio",
     "workspace": "Your creative workspace",
