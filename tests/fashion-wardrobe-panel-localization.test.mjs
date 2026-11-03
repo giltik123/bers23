@@ -6,6 +6,7 @@ import { GARMENT_CATEGORIES } from '../src/lib/fashion/garmentCategories.js';
 
 const PANEL = 'src/components/editor/fashion/FashionPanel.jsx';
 const WARDROBE_PAGE = 'src/pages/Wardrobe.jsx';
+const VIRTUAL_TRYON_PANEL = 'src/components/editor/outfits/VirtualTryOnPanel.jsx';
 
 function extractObject(source, property) {
   const marker = source.indexOf(`${property}: {`);
@@ -47,9 +48,10 @@ function leafPaths(value, prefix = '') {
 }
 
 test('canonical Wardrobe panel copy is driven by the selected RU/EN locale', async () => {
-  const [source, page] = await Promise.all([
+  const [source, page, virtualTryOn] = await Promise.all([
     readFile(PANEL, 'utf8'),
     readFile(WARDROBE_PAGE, 'utf8'),
+    readFile(VIRTUAL_TRYON_PANEL, 'utf8'),
   ]);
   assert.doesNotMatch(source, /language\s*===\s*['"]ru['"]/);
   assert.doesNotMatch(page, /language\s*===\s*['"]ru['"]/);
@@ -59,6 +61,10 @@ test('canonical Wardrobe panel copy is driven by the selected RU/EN locale', asy
   assert.match(page, /t\('fashionUi\.wardrobe'\)/);
   assert.match(page, /location\.state\?\.voiceQuery/);
   assert.match(page, /state=\{voiceQuery \? \{ voiceQuery \} : undefined\}/);
+  assert.match(virtualTryOn, /useTranslation/);
+  assert.match(virtualTryOn, /aria-label=\{t\('fashionUi\\.virtualTryOnPanelLabel'\)\}/);
+  for (const key of ['virtualTryOnTitle', 'virtualTryOnIntro', 'virtualTryOnGarmentLabel', 'virtualTryOnConsent', 'virtualTryOnQualityNote', 'virtualTryOnAccountSetup', 'virtualTryOnRun']) assert.ok(virtualTryOn.includes(`fashionUi.${key}`));
+  assert.doesNotMatch(virtualTryOn, /language\\s*===\\s*['\"]ru['\"]/);
   assert.match(page, /encodeURIComponent\(projectId\).*mode=fashion/);
   assert.match(source, /plural\('fashionUi\.views'/);
   assert.match(source, /fashionUi\.categories\.\$\{category\?\.id/);
@@ -72,6 +78,11 @@ test('canonical Wardrobe panel copy is driven by the selected RU/EN locale', asy
     'No managed garments yet.',
     'Голосовой поиск:',
     'Проверьте категорию или цвет.',
+    'Примерить одежду',
+    'Текущее фото — человек для примерки.',
+    'Открыть гардероб',
+    'Разрешаю отправить текущее фото',
+    'Prepare cloud processing',
   ]) {
     assert.equal(source.includes(hardcoded), false, `Wardrobe panel must not hardcode ${hardcoded}`);
   }
