@@ -20,6 +20,7 @@ if (parsedUrl.scheme != 'https' || !parsedUrl.host || parsedUrl.userInfo != null
 }
 def launchOrigin = parsedUrl.scheme + '://' + parsedUrl.authority
 def launchUrl = launchOrigin + '/'
+def normalizedHost = parsedUrl.host.toLowerCase()
 
 def configuredApplicationId = envOrProperty('BERS_ANDROID_APPLICATION_ID', 'app.bers.example')
 if (!(configuredApplicationId ==~ /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/)) {
@@ -36,9 +37,9 @@ if (androidVersionCode < 1 || androidVersionCode > 2100000000) {
 }
 def androidVersionName = envOrProperty('BERS_ANDROID_VERSION_NAME', '0.0.0')
 
-def placeholderConfiguration = parsedUrl.host.endsWith('.example') ||
-        parsedUrl.host.endsWith('.invalid') || parsedUrl.host.endsWith('.test') ||
-        configuredApplicationId.endsWith('.example')
+def placeholderConfiguration = normalizedHost == 'localhost' || normalizedHost.endsWith('.local') ||
+        normalizedHost.endsWith('.example') || normalizedHost.endsWith('.invalid') ||
+        normalizedHost.endsWith('.test') || configuredApplicationId.endsWith('.example')
 def releaseTaskRequested = gradle.startParameter.taskNames.any { taskName ->
     def normalized = taskName.toLowerCase()
     def taskNameOnly = normalized.substring(normalized.lastIndexOf(':') + 1)
