@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, Play, RefreshCw, RotateCcw, Save, Square, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { automationClient } from '@/api/automationClient';
 import { coreClient } from '@/api/coreClient';
 import { createAutomationInvocationRunner } from '@/application/automation/createAutomationInvocationRunner';
+import { acceptAutomationInvocation, canAcceptAutomationInvocation, invocationMatchesSelection } from './automationAcceptance';
 import { ORTHOGONAL_TRANSFORM_MODES } from '@/platform/creative/deterministic/OrthogonalTransformIdentity';
 
 const PLAN_KIND = 'BOUNDED_DETERMINISTIC_IMAGE_V1';
@@ -19,6 +20,7 @@ export default function CanonicalAutomationStudio() {
   const [invocation, setInvocation] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const acceptingRef = useRef(false);
 
   const selected = useMemo(() => definitions.find(item => item.id === selectedAutomationId), [definitions, selectedAutomationId]);
   const dirty = Boolean(selected && (
@@ -28,7 +30,9 @@ export default function CanonicalAutomationStudio() {
     || draft.target_height !== selected.plan.target_height
   ));
   const canRun = Boolean(selected?.status === 'ACTIVE' && selectedProjectId && !dirty && !busy);
-  const isTerminal = Boolean(invocation && TERMINAL_STATES.has(invocation.state));
+  const scopedInvocation = invocationMatchesSelection(invocation, selected, selectedProjectId) ? invocation : null;
+  const isTerminal = Boolean(scopedInvocation && TERMINAL_STATES.has(scopedInvocation.state));
+  const canAccept = canAcceptAutomationInvocation(scopedInvocation, selected, selectedProjectId);
   const resumePointer = selected && selectedProjectId ? recalledInvocation(selected.id, selectedProjectId) : '';
 
   useEffect(() => { void reload(); }, []);
@@ -140,19 +144,29 @@ export default function CanonicalAutomationStudio() {
   }
 
   async function accept() {
-    if (invocation?.state !== 'SUCCESS' || !invocation.terminalArtifactId) return;
+    if (busy || acceptingRef.current || !canAccept) return;
+    acceptingRef.current = true;
+    const accepted = scopedInvocation;
+    const definition = selected;
     setBusy(true); setError('');
     try {
-      await coreClient.projects.acceptFinal(invocation.projectId, invocation.terminalArtifactId, `Automation: ${selected?.name || invocation.automationId}`);
-      if (selected) {
-        forgetInvocation(selected.id, invocation.projectId);
-        clearStartIntent(selected.id, invocation.projectId);
-      }
-      setInvocation(null);
-      const nextProjects = await coreClient.projects.list();
-      setProjects(Array.isArray(nextProjects) ? nextProjects : []);
+      await acceptAutomationInvocation({
+        invocation: accepted,
+        definitionName: definition.name,
+        acceptFinal: (projectId, artifactId, instruction) => coreClient.projects.acceptFinal(projectId, artifactId, instruction),
+        onCommitted: () => {
+          forgetInvocation(definition.id, accepted.projectId);
+          clearStartIntent(definition.id, accepted.projectId);
+          setInvocation(null);
+        },
+        refresh: async () => {
+          const nextProjects = await coreClient.projects.list();
+          setProjects(Array.isArray(nextProjects) ? nextProjects : []);
+        },
+        onRefreshError: () => setError('Result accepted, but the Project list could not be refreshed. Reload to update the list.'),
+      });
     } catch (cause) { setError(message(cause)); }
-    finally { setBusy(false); }
+    finally { acceptingRef.current = false; setBusy(false); }
   }
 
   function replaceDefinition(next) {
@@ -182,7 +196,7 @@ export default function CanonicalAutomationStudio() {
           <p className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Definitions</p>
           {definitions.length === 0 && <p className="px-2 py-4 text-sm text-muted-foreground">No canonical Automations yet.</p>}
           {definitions.map(item => (
-            <button key={item.id} onClick={() => setSelectedAutomationId(item.id)} className={`w-full rounded-xl border p-3 text-left ${item.id === selectedAutomationId ? 'border-primary bg-primary/5' : 'border-border/50 hover:bg-secondary/50'}`}>
+            <button key={item.id} disabled={busy} onClick={() => { setSelectedAutomationId(item.id); setInvocation(null); }} className={`w-full rounded-xl border p-3 text-left ${item.id === selectedAutomationId ? 'border-primary bg-primary/5' : 'border-border/50 hover:bg-secondary/50'}`}>
               <div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-medium">{item.name}</span><span className="text-[10px] text-muted-foreground">r{item.revision}</span></div>
               <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground"><span>{item.plan.orthogonal_mode}</span><span>{item.status}</span></div>
             </button>
@@ -199,26 +213,26 @@ export default function CanonicalAutomationStudio() {
               </div>
             </div>
 
-            <label className="grid gap-1 text-sm">Name<input className="rounded-lg border border-input bg-background p-2" value={draft.name} onChange={event => setDraft(current => ({ ...current, name: event.target.value }))} /></label>
+            <label className="grid gap-1 text-sm">Name<input className="rounded-lg border border-input bg-background p-2" value={draft.name} disabled={busy} onChange={event => setDraft(current => ({ ...current, name: event.target.value }))} /></label>
             <div className="grid gap-3 md:grid-cols-3">
-              <label className="grid gap-1 text-sm">Transform<select className="rounded-lg border border-input bg-background p-2" value={draft.orthogonal_mode} onChange={event => setDraft(current => ({ ...current, orthogonal_mode: event.target.value }))}>{ORTHOGONAL_TRANSFORM_MODES.map(mode => <option key={mode} value={mode}>{mode}</option>)}</select></label>
-              <label className="grid gap-1 text-sm">Target width<input className="rounded-lg border border-input bg-background p-2" type="number" min="1" step="1" value={draft.target_width} onChange={event => setDraft(current => ({ ...current, target_width: Number(event.target.value) }))} /></label>
-              <label className="grid gap-1 text-sm">Target height<input className="rounded-lg border border-input bg-background p-2" type="number" min="1" step="1" value={draft.target_height} onChange={event => setDraft(current => ({ ...current, target_height: Number(event.target.value) }))} /></label>
+              <label className="grid gap-1 text-sm">Transform<select className="rounded-lg border border-input bg-background p-2" value={draft.orthogonal_mode} disabled={busy} onChange={event => setDraft(current => ({ ...current, orthogonal_mode: event.target.value }))}>{ORTHOGONAL_TRANSFORM_MODES.map(mode => <option key={mode} value={mode}>{mode}</option>)}</select></label>
+              <label className="grid gap-1 text-sm">Target width<input className="rounded-lg border border-input bg-background p-2" type="number" min="1" step="1" value={draft.target_width} disabled={busy} onChange={event => setDraft(current => ({ ...current, target_width: Number(event.target.value) }))} /></label>
+              <label className="grid gap-1 text-sm">Target height<input className="rounded-lg border border-input bg-background p-2" type="number" min="1" step="1" value={draft.target_height} disabled={busy} onChange={event => setDraft(current => ({ ...current, target_height: Number(event.target.value) }))} /></label>
             </div>
             {dirty && <p role="status" className="text-xs text-amber-700 dark:text-amber-300">Save this draft to create a new canonical revision before Run.</p>}
           </section>
 
           <section className="space-y-4 rounded-2xl border border-border/60 p-4">
             <div><p className="font-medium">Manual run</p><p className="text-xs text-muted-foreground">Core resolves the current Project source and immutable Automation revision at start.</p></div>
-            <label className="grid gap-1 text-sm">Project<select className="rounded-lg border border-input bg-background p-2" value={selectedProjectId} onChange={event => { setSelectedProjectId(event.target.value); setInvocation(null); }}>{projects.map(project => <option key={project.id} value={project.id}>{project.name || project.id}</option>)}</select></label>
+            <label className="grid gap-1 text-sm">Project<select className="rounded-lg border border-input bg-background p-2" value={selectedProjectId} disabled={busy} onChange={event => { setSelectedProjectId(event.target.value); setInvocation(null); }}>{projects.map(project => <option key={project.id} value={project.id}>{project.name || project.id}</option>)}</select></label>
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => void run()} disabled={!canRun}><Play className="h-4 w-4" />Run</Button>
               <Button variant="outline" onClick={() => void resumeLatest()} disabled={!resumePointer || busy}><Undo2 className="h-4 w-4" />Resume latest</Button>
-              {invocation?.retryAvailable && <Button variant="outline" onClick={() => void retry()} disabled={busy}><RotateCcw className="h-4 w-4" />Retry</Button>}
-              {invocation && !isTerminal && <Button variant="outline" onClick={() => void cancel()} disabled={busy}><Square className="h-4 w-4" />Cancel</Button>}
+              {scopedInvocation?.retryAvailable && <Button variant="outline" onClick={() => void retry()} disabled={busy}><RotateCcw className="h-4 w-4" />Retry</Button>}
+              {scopedInvocation && !isTerminal && <Button variant="outline" onClick={() => void cancel()} disabled={busy}><Square className="h-4 w-4" />Cancel</Button>}
             </div>
 
-            {invocation && <InvocationPanel invocation={invocation} busy={busy} onAccept={accept} />}
+            {scopedInvocation && <InvocationPanel invocation={scopedInvocation} busy={busy} canAccept={canAccept} onAccept={accept} />}
           </section>
         </main>
       </div>
@@ -226,12 +240,12 @@ export default function CanonicalAutomationStudio() {
   );
 }
 
-function InvocationPanel({ invocation, busy, onAccept }) {
+function InvocationPanel({ invocation, busy, canAccept, onAccept }) {
   return <div className="space-y-3 rounded-xl bg-secondary/40 p-3">
     <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-medium">Invocation {invocation.invocationId}</p><p className="text-xs text-muted-foreground">Definition r{invocation.definitionRevision} · state {invocation.state}{invocation.attemptStatus ? ` · attempt ${invocation.attemptStatus}` : ''}</p></div>{invocation.failureCode && <span className="text-xs text-destructive">{invocation.failureCode}</span>}</div>
     {invocation.nextAction && <p className="text-xs text-muted-foreground">Core next action: {invocation.nextAction.operation}</p>}
     {invocation.state === 'SUCCESS' && invocation.terminalImageUrl && <img src={deliveryUrl(invocation.terminalImageUrl)} alt="Automation result preview" className="max-h-[480px] w-full rounded-xl bg-muted object-contain" />}
-    {invocation.state === 'SUCCESS' && invocation.terminalArtifactId && <Button onClick={() => void onAccept()} disabled={busy}>Accept result into Project</Button>}
+    {invocation.state === 'SUCCESS' && invocation.terminalArtifactId && <Button onClick={() => void onAccept()} disabled={busy || !canAccept}>Accept result into Project</Button>}
   </div>;
 }
 
