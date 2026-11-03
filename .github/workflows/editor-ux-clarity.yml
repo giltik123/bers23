@@ -52,6 +52,10 @@ on:
       - 'src/components/editor/VersionsPanel.jsx'
       - 'src/components/editor/InstructionBar.jsx'
       - 'src/components/editor/ResultCompare.jsx'
+      - 'src/components/editor/PlanPreview.jsx'
+      - 'src/components/editor/EditorStatusBar.jsx'
+      - 'src/lib/i18n/locales/en/editor.js'
+      - 'src/lib/i18n/locales/ru/index.js'
       - 'src/components/adaptive/AdaptiveLayout.jsx'
       - 'src/components/adaptive/AdaptiveToolbar.jsx'
       - 'src/components/adaptive/AdaptiveNavigation.jsx'
@@ -63,6 +67,7 @@ on:
       - 'scripts/test-release-r3c-browser-e2e.mjs'
       - 'scripts/test-release-r3e-browser-e2e.mjs'
       - 'tests/editor-ux-progressive-disclosure.test.mjs'
+      - 'tests/editor-status-localization.test.mjs'
       - 'tests/bers-ux-system-redesign.test.mjs'
       - 'tests/mask-photoshop-controls.test.mjs'
       - 'tests/local-adjustments-editor-wiring.test.mjs'
@@ -94,6 +99,7 @@ jobs:
         run: |
           node --test \
             tests/editor-ux-progressive-disclosure.test.mjs \
+            tests/editor-status-localization.test.mjs \
             tests/bers-ux-system-redesign.test.mjs \
             tests/mask-photoshop-controls.test.mjs \
             tests/local-adjustments.test.mjs \
