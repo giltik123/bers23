@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bindGenerativeScope } from '../src/application/editor/ai-first/bindGenerativeScope.js';
+import { createAsyncEditIntentFence } from '../src/application/editor/ai-first/asyncEditIntentFence.js';
 
 const base = {
   instruction: 'Замени небо на закат, не меняй человека',
@@ -141,4 +142,68 @@ test('AI Studio generation and retry preserve exact mask and source across UI wi
   assert.match(compare, /canAcceptReviewedCandidate\(/);
   assert.match(compare, /reviewComplete: scopedGeneration \? scopedReview : allFashionAccepted/);
   assert.match(compare, /const reviewImagesReady = loaded\.before === identity && loaded\.after === identity/);
+});
+
+test('AI Studio blocks synchronous duplicate confirmed starts until the first finishes', () => {
+  const fence = createAsyncEditIntentFence();
+  const ticket = fence.begin();
+  assert.equal(typeof ticket, 'number');
+  assert.equal(fence.begin(), null);
+  assert.equal(fence.isCurrent(ticket), true);
+  assert.equal(fence.finish(ticket), true);
+  assert.equal(fence.isCurrent(ticket), false);
+  assert.notEqual(fence.begin(), ticket);
+});
+
+test('changing Project or source during account preparation suppresses the stale AI dispatch', async () => {
+  const fence = createAsyncEditIntentFence();
+  let resolvePreparation;
+  const preparation = new Promise(resolve => { resolvePreparation = resolve; });
+  const ticket = fence.begin();
+  let dispatched = 0;
+  const operation = (async () => {
+    await preparation;
+    if (!fence.isCurrent(ticket)) return;
+    dispatched += 1;
+  })();
+  fence.invalidate();
+  resolvePreparation();
+  await operation;
+  assert.equal(dispatched, 0);
+  assert.equal(fence.finish(ticket), false);
+});
+
+test('stale AI completion cannot unlock a newer Project intent', () => {
+  const fence = createAsyncEditIntentFence();
+  const old = fence.begin();
+  fence.invalidate();
+  const current = fence.begin();
+  assert.equal(fence.finish(old), false);
+  assert.equal(fence.begin(), null);
+  assert.equal(fence.isCurrent(current), true);
+  assert.equal(fence.finish(current), true);
+});
+
+test('failed account preparation releases the current intent for an explicit retry', async () => {
+  const fence = createAsyncEditIntentFence();
+  const ticket = fence.begin();
+  try { await Promise.reject(new Error('offline')); } catch { /* UI reports failure */ }
+  assert.equal(fence.finish(ticket), true);
+  assert.ok(fence.begin() !== null);
+});
+
+test('AI Studio invalidates context on commit/unmount and checks intent after account setup', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const studio = await readFile('src/components/editor/ai/AICommandStudio.jsx', 'utf8');
+  assert.match(studio, /useLayoutEffect\(\(\)=>\{[\s\S]*?intentFence\.current\.invalidate\(\)/);
+  assert.match(studio, /useEffect\(\(\) => \(\) => intentFence\.current\.invalidate\(\), \[\]\)/);
+  const adjustment = studio.slice(studio.indexOf('const handleSubmit='), studio.indexOf('const handleGenerate='));
+  const generation = studio.slice(studio.indexOf('const handleGenerate='), studio.indexOf('const controls='));
+  for (const handler of [adjustment, generation]) {
+    assert.match(handler, /const ticket = intentFence\.current\.begin\(\)/);
+    assert.match(handler, /if \(ticket === null\) return/);
+    assert.match(handler, /intentFence\.current\.isCurrent\(ticket\)/);
+    assert.match(handler, /intentFence\.current\.finish\(ticket\)/);
+  }
+  assert.match(generation, /await onPrepareFreeAccount\?\.\(\);[\s\S]*?if \(!intentFence\.current\.isCurrent\(ticket\)\) return;[\s\S]*?await onExecuteGenerative\(/);
 });
