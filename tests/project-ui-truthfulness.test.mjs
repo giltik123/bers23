@@ -35,7 +35,7 @@ test('Project upload retry copy matches the in-memory queue lifetime', async () 
     readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
   ]);
 
-  assert.match(queue, /constructor\(\) \{ this\.items = \[\]/);
+  assert.match(queue, /constructor\(\) \{\s*this\.items = \[\]/);
   assert.doesNotMatch(queue, /indexedDB|localStorage|sessionStorage/i);
 
   assert.match(projects, /projectUi\.retryQueued/);
@@ -44,3 +44,6 @@ test('Project upload retry copy matches the in-memory queue lifetime', async () 
   assert.match(english, /If you reload or close it, choose the file again\./);
   assert.doesNotMatch(projects, /This upload will retry when your connection returns\./);
 });
+
+// Run the queue's behavioral regressions in the existing exact-head Project UI gate.
+import './offline-queue-single-flight.test.mjs';
