@@ -815,7 +815,7 @@ export default function Editor() {
     if (aiScope && (!usedInstruction.trim() ||
         interpretPhotoCommand(usedInstruction).kind === 'FASHION' ||
         (aiScope.mode === 'MASKED' && interpretPhotoCommand(usedInstruction).kind !== 'GENERATIVE'))) {
-      throw new Error('AI Studio: выберите допустимый запрос и подтверждённую область обработки.');
+      throw new Error(t('editorAi.errors.invalidScope'));
     }
     const guardedScope = aiScope ? bindGenerativeScope({
       instruction: usedInstruction,
@@ -835,7 +835,7 @@ export default function Editor() {
       ? aiPlanner.plan({ project, instruction: usedInstruction, objects: PRODUCTION_MASK_UI_ENABLED ? objects : [], selectedObject: PRODUCTION_MASK_UI_ENABLED ? selected : null })
       : plan;
     if (!aiScope && (!usedPlan || usedPlan.status !== 'ready')) {
-      if (instructionOverride) throw new Error('Core Creative Edit: команда пока не проходит проверку маршрута генерации. Уточните объект, маску или сам запрос.');
+      if (instructionOverride) throw new Error(t('editorAi.errors.planNotReady'));
       return;
     }
 
@@ -845,7 +845,7 @@ export default function Editor() {
       const report = consistencyEngine.assess({ instruction: usedInstruction, memory });
       if (report.exceedsThreshold) {
         setDriftWarning(report);
-        if (instructionOverride) throw new Error('Смена стиля требует дополнительного подтверждения в редакторе.');
+        if (instructionOverride) throw new Error(t('editorAi.errors.styleConfirmation'));
         return;
       }
     }
@@ -867,19 +867,25 @@ export default function Editor() {
         preserveMode: styleLock.isEnabled(project.id) ? 'locked' : 'standard',
         clientRequestId: globalThis.crypto.randomUUID(),
       });
-      if (result.status === 'UNKNOWN') throw Object.assign(new Error('Provider result is pending reconciliation'), { code: 'PROVIDER_OUTCOME_PENDING', retryable: false });
-      if (result.status !== 'SUCCESS' || !result.imageUrl) throw Object.assign(new Error('Edit failed'), { code: 'provider_failure' });
+      if (result.status === 'UNKNOWN') throw Object.assign(new Error(t('editorAi.errors.providerPending')), { code: 'PROVIDER_OUTCOME_PENDING', retryable: false });
+      if (result.status !== 'SUCCESS' || !result.imageUrl) throw Object.assign(new Error(t('editorAi.errors.editFailed')), { code: 'provider_failure' });
       const editorResult = { ...result, image_url: result.imageUrl, generation_time_ms: result.timing?.durationMs, credits_used: result.creditsUsed };
       setPendingResult((current) => { disposePendingPreview(current); return { kind: guardedScope ? 'AI_SCOPED_GENERATION' : null, scope: guardedScope?.scope ?? null, context: guardedScope ? { aiScope } : null, result: editorResult, instruction: usedInstruction, beforeUrl: project.current_image_url }; });
       recipeEngine.recordOutcome(activeRecipe?.id, { success: true, durationMs: editorResult.generation_time_ms, credits: editorResult.credits_used });
       return editorResult;
     } catch (e) {
+      const safeAiError = e.code === 'PROVIDER_OUTCOME_PENDING'
+        ? t('editorAi.errors.providerPending')
+        : t('editorAi.errors.editFailed');
       if (e.code !== 'cancelled') {
-        setAiError(e.message || 'Edit failed');
+        setAiError(instructionOverride ? safeAiError : e.message || 'Edit failed');
         recipeEngine.recordOutcome(activeRecipe?.id, { success: false, durationMs: 0, credits: 0 });
         workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
       }
-      if (instructionOverride) throw e;
+      if (instructionOverride) {
+        if (e.code === 'cancelled') throw e;
+        throw new Error(safeAiError);
+      }
     } finally {
       setApplying(false);
     }
@@ -894,10 +900,10 @@ export default function Editor() {
   }) => {
     if (editorBusy || committing || pendingResult || selection ||
         cropInteractionActive || resizeInteractionActive || driftWarning) {
-      throw new Error('Закончите предыдущую операцию до нового AI-запроса.');
+      throw new Error(t('editorAi.errors.busy'));
     }
     if (!project?.id || !project?.current_image_artifact_id || !selected?.mask_artifact_id) {
-      throw new Error('Сначала подтвердите выбранную область с Core-маской.');
+      throw new Error(t('editorAi.errors.maskRequired'));
     }
     // Same exact Core source/object/MASK consent binding as AI generative edits:
     // a changed selection may not silently redirect a confirmed tone operation.
@@ -919,7 +925,7 @@ export default function Editor() {
     if (operation === 'MASKED_WHITE_BALANCE') return applyMaskedWhiteBalance(context);
     if (operation === 'MASKED_LEVELS') return applyMaskedLevels(context);
     if (operation === 'BACKGROUND_ISOLATION') return isolateBackground(context);
-    throw new Error('Эта операция ещё не принята BERS Core.');
+    throw new Error(t('editorAi.errors.unsupportedOperation'));
   };
 
   const prepareVirtualTryOnAccount = async () => {

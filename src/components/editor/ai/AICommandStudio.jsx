@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Sparkles, SlidersHorizontal, Scan, Shirt, WandSparkles, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import {
   interpretPhotoCommand,
   sanitizePhotoAdjustmentDraft,
@@ -9,18 +10,25 @@ import {
 const INITIAL_LEVELS = Object.freeze({
   inputBlack:0,inputMidpoint:128,inputWhite:255,outputBlack:3,outputWhite:255,
 });
-const LABELS = Object.freeze({
-  MASKED_EXPOSURE:'Экспозиция · выбранная область',
-  MASKED_WHITE_BALANCE:'Баланс белого · выбранная область',
-  MASKED_LEVELS:'Тоновые уровни · выбранная область',
-  BACKGROUND_ISOLATION:'Изолировать выбранный объект',
+const OPERATION_LABEL_KEYS = Object.freeze({
+  MASKED_EXPOSURE:'editorAi.operation.maskedExposure',
+  MASKED_WHITE_BALANCE:'editorAi.operation.maskedWhiteBalance',
+  MASKED_LEVELS:'editorAi.operation.maskedLevels',
+  BACKGROUND_ISOLATION:'editorAi.operation.backgroundIsolation',
 });
-const EXAMPLES = Object.freeze([
-  'Слегка осветли одежду, сохрани фактуру ткани',
-  'Сделай выбранную область чуть теплее',
-  'Повысь контраст выделенной области',
-  'Замени небо на закат, не меняя человека',
-  'Надень другое платье, сохрани лицо и позу',
+const EXAMPLE_KEYS = Object.freeze([
+  'editorAi.examples.brightenFabric',
+  'editorAi.examples.warmRegion',
+  'editorAi.examples.increaseContrast',
+  'editorAi.examples.sunsetSky',
+  'editorAi.examples.changeDress',
+]);
+const LEVEL_FIELDS = Object.freeze([
+  ['inputBlack','editorAi.labels.inputBlack',0,254],
+  ['inputMidpoint','editorAi.labels.inputMidpoint',1,254],
+  ['inputWhite','editorAi.labels.inputWhite',1,255],
+  ['outputBlack','editorAi.labels.outputBlack',0,254],
+  ['outputWhite','editorAi.labels.outputWhite',1,255],
 ]);
 const field = 'w-full accent-primary disabled:opacity-40';
 
@@ -29,7 +37,14 @@ export default function AICommandStudio({
   disabled=false, selectionActive=false, pending=false, maskToolsEnabled=false,
   onSelectRegion, onExecuteAdjustment, onExecuteGenerative, onPrepareFreeAccount, onOpenFashion,
 }) {
+  const { t, language } = useTranslation();
   const plan=useMemo(()=>interpretPhotoCommand(instruction),[instruction]);
+  const explanation = plan.explanationKey
+    ? t(plan.explanationKey)
+    : t('editorAi.explanations.unknownAdjustment');
+  const warnings = Array.isArray(plan.warningKeys)
+    ? plan.warningKeys.map(key => t(key))
+    : [];
   const [parameters,setParameters]=useState(null);
   const [maskConfirmed,setMaskConfirmed]=useState(false);
   const [generativeConfirmed,setGenerativeConfirmed]=useState(false);
@@ -37,6 +52,12 @@ export default function AICommandStudio({
   const [executionError,setExecutionError]=useState('');
   const [submitting,setSubmitting]=useState(false);
   const maskId=maskToolsEnabled ? (selectedObject?.mask_artifact_id||null) : null;
+  const operationLabel = t(OPERATION_LABEL_KEYS[plan.operation] || 'editorAi.labels.adjustment');
+  const selectedRegionName = selectedObject?.label || t('editorAi.labels.selectedRegion');
+  const formatEv = value => new Intl.NumberFormat(language, {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  }).format(value);
   const canEdit=!disabled&&!selectionActive&&!pending&&!submitting&&Boolean(project?.current_image_artifact_id);
 
   useEffect(()=>{
@@ -64,7 +85,7 @@ export default function AICommandStudio({
         expectedMaskArtifactId: maskId,
       });
     }catch(error){
-      setExecutionError(error?.message||'Не удалось применить выбранную коррекцию.');
+      setExecutionError(t('editorAi.errors.adjustmentFailed'));
     }finally{setSubmitting(false);}
   };
   const handleGenerate=async()=>{
@@ -89,23 +110,23 @@ export default function AICommandStudio({
     });}
     catch(error){
       setExecutionError(error?.code==='insufficient_credits'
-        ? 'Бесплатный лимит облачной обработки исчерпан. Платная подписка не требуется и не предлагается.'
-        : (error?.message||'Генерация недоступна для данного проекта.'));
+        ? t('editorAi.errors.insufficientCredits')
+        : t('editorAi.errors.generationUnavailable'));
     }
     finally{setSubmitting(false);}
   };
 
   const controls=plan.kind==='ADJUSTMENT'&&parameters&&(
     <section className="space-y-4 border border-border/70 rounded-xl p-4"
-      aria-label="Изменяемые параметры команды">
+      aria-label={t('editorAi.sections.adjustableParameters')}>
       <div className="flex items-center gap-2 text-sm font-medium">
         <SlidersHorizontal className="h-4 w-4" />
-        {LABELS[plan.operation]||'Инструмент коррекции'}
+        {operationLabel}
       </div>
       {plan.operation==='MASKED_EXPOSURE'&&(
         <label className="block space-y-2 text-sm">
-          <div className="flex justify-between"><span>Экспозиция</span>
-            <span className="tabular-nums">{(parameters.eighthStops/8).toFixed(3)} EV</span></div>
+          <div className="flex justify-between"><span>{t('editorAi.labels.exposure')}</span>
+            <span className="tabular-nums">{t('editorAi.values.ev', { value: formatEv(parameters.eighthStops/8) })}</span></div>
           <input type="range" className={field} min="-32" max="32" step="1"
             value={parameters.eighthStops} disabled={!canEdit}
             onChange={e=>update('eighthStops',Number(e.target.value))}/>
@@ -114,14 +135,14 @@ export default function AICommandStudio({
       {plan.operation==='MASKED_WHITE_BALANCE'&&(
         <>
           <label className="block space-y-2 text-sm">
-            <div className="flex justify-between"><span>Температура</span>
+            <div className="flex justify-between"><span>{t('editorAi.labels.temperature')}</span>
               <span className="tabular-nums">{parameters.temperatureQ8}</span></div>
             <input type="range" className={field} min="-128" max="128" step="1"
               value={parameters.temperatureQ8} disabled={!canEdit}
               onChange={e=>update('temperatureQ8',Number(e.target.value))}/>
           </label>
           <label className="block space-y-2 text-sm">
-            <div className="flex justify-between"><span>Оттенок</span>
+            <div className="flex justify-between"><span>{t('editorAi.labels.tint')}</span>
               <span className="tabular-nums">{parameters.tintQ8}</span></div>
             <input type="range" className={field} min="-64" max="64" step="1"
               value={parameters.tintQ8} disabled={!canEdit}
@@ -131,15 +152,9 @@ export default function AICommandStudio({
       )}
       {plan.operation==='MASKED_LEVELS'&&(
         <>
-          {[
-            ['inputBlack','Точка чёрного',0,254],
-            ['inputMidpoint','Средние тона',1,254],
-            ['inputWhite','Точка белого',1,255],
-            ['outputBlack','Выходная точка чёрного',0,254],
-            ['outputWhite','Выходная точка белого',1,255],
-          ].map(([key,label,min,max])=>(
+          {LEVEL_FIELDS.map(([key,labelKey,min,max])=>(
             <label key={key} className="block space-y-2 text-sm">
-              <div className="flex justify-between"><span>{label}</span>
+              <div className="flex justify-between"><span>{t(labelKey)}</span>
                 <span className="tabular-nums">{parameters[key]}</span></div>
               <input type="range" className={field} min={min} max={max} step="1"
                 value={parameters[key]} disabled={!canEdit}
@@ -149,8 +164,7 @@ export default function AICommandStudio({
         </>
       )}
       <p className="text-xs text-muted-foreground">
-        Значения — предложенный старт, не гарантированная правильная обработка.
-        Последнее слово за вашим сравнением исходника и результата.
+        {t('editorAi.hints.suggestedValues')}
       </p>
     </section>
   );
@@ -161,39 +175,38 @@ export default function AICommandStudio({
     // internally without presenting mask controls or silently changing scope.
     const wholeImageAdmitted = Boolean(plan.instruction) && plan.kind !== 'FASHION';
     return (
-      <section className="space-y-4 rounded-2xl border border-border/70 bg-card p-4" aria-label="Генеративное редактирование фотографии">
+      <section className="space-y-4 rounded-2xl border border-border/70 bg-card p-4" aria-label={t('editorAi.sections.wholeImage')}>
         <header className="space-y-1">
-          <h2 className="flex items-center gap-2 font-semibold"><Sparkles className="h-5 w-5" />BERS · Редактирование изображения</h2>
-          <p className="text-sm text-muted-foreground">Опишите изменение всего кадра. Перед сохранением проверьте результат.</p>
+          <h2 className="flex items-center gap-2 font-semibold"><Sparkles className="h-5 w-5" />{t('editorAi.headings.wholeImage')}</h2>
+          <p className="text-sm text-muted-foreground">{t('editorAi.descriptions.wholeImage')}</p>
         </header>
         <label className="block space-y-2">
-          <span className="text-sm font-medium">Что изменить на фотографии?</span>
-          <textarea aria-label="Команда редактирования" rows={3} maxLength={850}
+          <span className="text-sm font-medium">{t('editorAi.fields.command')}</span>
+          <textarea aria-label={t('editorAi.fields.command')} rows={3} maxLength={850}
             value={instruction} disabled={disabled||pending||submitting}
-            placeholder="Например: сделай освещение теплее для всей фотографии"
+            placeholder={t('editorAi.placeholders.wholeImage')}
             onChange={e=>onInstructionChange(e.target.value)}
             className="w-full min-h-24 rounded-xl border border-input bg-background px-3 py-2 text-sm resize-y"/>
         </label>
         {wholeImageAdmitted ? (
           <div className="space-y-3">
-            <p className="text-sm">Генеративное редактирование затрагивает весь кадр. Для пользователя оно бесплатно в пределах серверного лимита; подписка не нужна. Перед сохранением сравните результат с оригиналом.</p>
+            <p className="text-sm">{t('editorAi.descriptions.wholeImageScope')}</p>
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" checked={generativeConfirmed} disabled={!canEdit}
                 onChange={e=>setGenerativeConfirmed(e.target.checked)} className="mt-1"/>
-              Подтверждаю отправку фотографии в облачную модель и создание бесплатного аккаунта обработки при первом запуске. Понимаю, что может измениться весь кадр.
+              {t('editorAi.confirmations.wholeImage')}
             </label>
             <Button type="button" disabled={!canEdit||!generativeConfirmed} onClick={handleGenerate} className="w-full">
-              <WandSparkles className="mr-2 h-4 w-4"/>Сгенерировать бесплатно
+              <WandSparkles className="mr-2 h-4 w-4"/>{t('editorAi.actions.generateFree')}
             </Button>
           </div>
         ) : plan.kind === 'FASHION' ? (
           <Button type="button" disabled={!canEdit} onClick={onOpenFashion} className="w-full">
-            <Shirt className="mr-2 h-4 w-4"/>Открыть Fashion
+            <Shirt className="mr-2 h-4 w-4"/>{t('editorAi.actions.openFashion')}
           </Button>
         ) : (
           <p role="status" className="text-sm text-muted-foreground">
-            {plan.kind === 'CLARIFY' ? plan.explanation :
-              'Для этой команды недоступна обработка отдельного участка. Попробуйте изменить весь кадр или используйте локальные инструменты.'}
+            {plan.kind === 'CLARIFY' ? explanation : t('editorAi.status.unsupportedRegion')}
           </p>
         )}
         {executionError&&<p role="alert" className="text-sm text-destructive">{executionError}</p>}
@@ -203,41 +216,40 @@ export default function AICommandStudio({
 
   return (
     <section className="space-y-4 rounded-2xl border border-border/70 bg-card p-4"
-      aria-label="AI-first редактор по текстовой команде">
+      aria-label={t('editorAi.sections.commandEditor')}>
       <header className="space-y-1">
         <div className="flex items-center gap-2">
           <Sparkles className="h-5 w-5" />
-          <h2 className="font-semibold">BERS · Командный редактор</h2>
+          <h2 className="font-semibold">{t('editorAi.headings.commandEditor')}</h2>
         </div>
         <p className="text-sm text-muted-foreground">
-          Скажите, что хотите изменить. Затем уточните область и силу эффекта.
-          Это управляемый маршрут к Core, а не слепая автогенерация.
+          {t('editorAi.descriptions.commandEditor')}
         </p>
       </header>
 
       <label className="block space-y-2">
-        <span className="text-sm font-medium">Что изменить на фотографии?</span>
-        <textarea aria-label="Команда редактирования" rows={3} maxLength={850}
+        <span className="text-sm font-medium">{t('editorAi.fields.command')}</span>
+        <textarea aria-label={t('editorAi.fields.command')} rows={3} maxLength={850}
           value={instruction} disabled={disabled||pending||submitting}
-          placeholder="Например: слегка осветли куртку, сохрани фактуру и не меняй лицо"
+          placeholder={t('editorAi.placeholders.masked')}
           onChange={e=>onInstructionChange(e.target.value)}
           className="w-full min-h-24 rounded-xl border border-input bg-background px-3 py-2 text-sm resize-y"/>
       </label>
-      <div className="flex flex-wrap gap-2" aria-label="Примеры команд">
-        {EXAMPLES.map(value=><button key={value} type="button"
+      <div className="flex flex-wrap gap-2" aria-label={t('editorAi.sections.examples')}>
+        {EXAMPLE_KEYS.map(key=><button key={key} type="button"
           disabled={disabled||pending||submitting}
-          onClick={()=>onInstructionChange(value)}
+          onClick={()=>onInstructionChange(t(key))}
           className="rounded-full border px-2.5 py-1.5 text-xs hover:bg-accent disabled:opacity-50">
-          {value}
+          {t(key)}
         </button>)}
       </div>
 
       {plan.kind==='CLARIFY'?(
-        <p role="status" className="rounded-xl bg-secondary/40 p-3 text-sm">{plan.explanation}</p>
+        <p role="status" className="rounded-xl bg-secondary/40 p-3 text-sm">{explanation}</p>
       ):(
         <div className="space-y-3">
-          <p className="text-sm">{plan.explanation}</p>
-          {plan.warnings.map((warning,i)=>(
+          <p className="text-sm">{explanation}</p>
+          {warnings.map((warning,i)=>(
             <p role="note" key={i} className="flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400">
               <AlertTriangle className="h-4 w-4 shrink-0"/>{warning}
             </p>
@@ -248,34 +260,33 @@ export default function AICommandStudio({
               {controls}
               <div className="rounded-xl border p-3 space-y-3">
                 <div className="flex items-center gap-2 text-sm font-medium">
-                  <Scan className="h-4 w-4"/>Область и маска
+                  <Scan className="h-4 w-4"/>{t('editorAi.sections.regionAndMask')}
                 </div>
                 {maskId?(
                   <>
                     <p className="text-sm">
-                      Core-маска выбрана: <strong>{selectedObject?.label||'Выделенная область'}</strong>.
-                      Обработка не должна затронуть пиксели вне неё.
+                      {t('editorAi.status.coreMaskSelected', { target: selectedRegionName })}
                     </p>
                     <label className="flex items-start gap-2 text-sm">
                       <input type="checkbox" checked={maskConfirmed}
                         disabled={!canEdit} onChange={e=>setMaskConfirmed(e.target.checked)}
                         className="mt-1"/>
-                      Я проверил, что выбранная маска соответствует моему запросу.
+                      {t('editorAi.confirmations.mask')}
                     </label>
                   </>
                 ):(
                   <>
                     <p role="status" className="text-sm text-amber-700 dark:text-amber-400">
-                      Нет подтверждённой Core-маски. Текст не выбирает кожу, лицо или одежду автоматически.
+                      {t('editorAi.status.noConfirmedMask')}
                     </p>
                     <Button type="button" variant="outline" disabled={!canEdit}
-                      onClick={onSelectRegion}><Scan className="w-4 h-4 mr-2"/>Нарисовать / уточнить маску</Button>
+                      onClick={onSelectRegion}><Scan className="w-4 h-4 mr-2"/>{t('editorAi.actions.drawMask')}</Button>
                   </>
                 )}
               </div>
               <Button type="button" disabled={!canEdit||!maskId||!maskConfirmed}
                 onClick={handleSubmit} className="w-full">
-                <SlidersHorizontal className="h-4 w-4 mr-2"/>Показать результат → принять или отклонить
+                <SlidersHorizontal className="h-4 w-4 mr-2"/>{t('editorAi.actions.showResult')}
               </Button>
             </>
           )}
@@ -283,27 +294,25 @@ export default function AICommandStudio({
           {plan.kind==='FASHION'&&(
             <div className="space-y-2 rounded-xl border p-3">
               <p className="text-sm">
-                Надеть одежду реалистично — это не alpha-overlay. Нужны реальная фотография одежды,
-                посадка по телу, контур и передний план (руки/волосы).
+                {t('editorAi.descriptions.fashion')}
               </p>
               <Button type="button" disabled={!canEdit} onClick={onOpenFashion}
-                className="w-full"><Shirt className="w-4 h-4 mr-2"/>Открыть Fashion / Outfit и посадку одежды</Button>
+                className="w-full"><Shirt className="w-4 h-4 mr-2"/>{t('editorAi.actions.openFashionOutfit')}</Button>
             </div>
           )}
 
           {plan.kind==='GENERATIVE'&&(
             <div className="space-y-3 rounded-xl border p-3">
               <p className="text-sm">
-                Для этого нужна настоящая модель генерации, разрешённая Core, а не имитация.
-                Существующий Creative Edit может вернуть ошибку, если провайдер не подключён.
+                {t('editorAi.descriptions.generative')}
               </p>
               <fieldset className="space-y-2 text-sm">
-                <legend className="font-medium">Какие пиксели можно менять?</legend>
+                <legend className="font-medium">{t('editorAi.fields.generationScope')}</legend>
                 <label className="flex items-start gap-2">
                   <input type="radio" name="bers-ai-generation-scope" value="MASKED"
                     checked={generativeScope==='MASKED'} disabled={!canEdit}
                     onChange={()=>{setGenerativeScope('MASKED');setGenerativeConfirmed(false);}} className="mt-1"/>
-                  Только выбранный объект. Нужна сохранённая Core-маска.
+                  {t('editorAi.labels.selectedObjectOnly')}
                 </label>
                 <label className="flex items-start gap-2">
                   <input type="radio" name="bers-ai-generation-scope" value="WHOLE_IMAGE"
@@ -311,7 +320,7 @@ export default function AICommandStudio({
                     disabled={!canEdit||plan.target==='USER_SELECTED_OBJECT'||plan.warnings.length>0}
                     onChange={()=>{setGenerativeScope('WHOLE_IMAGE');setGenerativeConfirmed(false);setMaskConfirmed(false);}}
                     className="mt-1"/>
-                  Весь кадр — только для общей обработки без требования сохранить отдельные объекты.
+                  {t('editorAi.labels.wholeFrame')}
                 </label>
                 {generativeScope==='MASKED'&&(
                   <div className="space-y-2 rounded-lg border p-3">
@@ -319,34 +328,31 @@ export default function AICommandStudio({
                       <label className="flex items-start gap-2">
                         <input type="checkbox" checked={maskConfirmed} disabled={!canEdit}
                           onChange={e=>setMaskConfirmed(e.target.checked)} className="mt-1"/>
-                        Я проверил границы Core-маски: {selectedObject?.label||'выбранный объект'}.
+                        {t('editorAi.confirmations.maskBoundaries', { target: selectedRegionName })}
                       </label>
                     ):(
                       <>
-                        <p role="status">Нет выбранной Core-маски. ИИ не определяет точную область автоматически.</p>
+                        <p role="status">{t('editorAi.status.noMaskSelected')}</p>
                         <Button type="button" variant="outline" disabled={!canEdit}
-                          onClick={onSelectRegion}><Scan className="w-4 h-4 mr-2"/>Создать / выбрать маску</Button>
+                          onClick={onSelectRegion}><Scan className="w-4 h-4 mr-2"/>{t('editorAi.actions.createSelectMask')}</Button>
                       </>
                     )}
                   </div>
                 )}
               </fieldset>
               <p className="text-xs text-muted-foreground">
-                Маска направляется в Core, но генеративную сохранность пикселей вне маски
-                необходимо подтвердить на изображении «до/после»; этот экран не даёт
-                математической гарантии работы провайдера.
+                {t('editorAi.descriptions.maskGuarantee')}
               </p>
               <label className="flex items-start gap-2 text-sm">
                 <input type="checkbox" checked={generativeConfirmed} disabled={!canEdit}
                   onChange={e=>setGenerativeConfirmed(e.target.checked)}
                   className="mt-1"/>
-                Я подтверждаю запуск существующего Core Creative Edit с указанной текстовой командой.
-                Итог всё равно требует просмотра и принятия.
+                {t('editorAi.confirmations.generative')}
               </label>
               <Button type="button" disabled={!canEdit||!generativeConfirmed||
                 (generativeScope==='MASKED'&&(!maskId||!maskConfirmed))}
                 onClick={handleGenerate} className="w-full">
-                <WandSparkles className="w-4 h-4 mr-2"/>Запросить генерацию через Core
+                <WandSparkles className="w-4 h-4 mr-2"/>{t('editorAi.actions.generateViaCore')}
               </Button>
             </div>
           )}
@@ -355,9 +361,7 @@ export default function AICommandStudio({
 
       {executionError&&<p role="alert" className="text-sm text-destructive">{executionError}</p>}
       <p className="text-xs text-muted-foreground">
-        Распознавание доступных простых команд пока ограничено правилами, а не полноценной визуальной AI-моделью.
-        Редактор не утверждает, что понял скрытый смысл или видит предмет без реальной маски.
-        Изменение проекта — только после Core Preview → Accept.
+        {t('editorAi.disclaimers.commandEditor')}
       </p>
     </section>
   );
