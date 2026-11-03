@@ -23,3 +23,14 @@ test('authenticated and authentication layouts provide a localized skip link to 
   assert.match(english, /"skipToMain":\s*"Skip to main content"/);
   assert.match(russian, /"skipToMain":\s*"Перейти к основному содержимому"/);
 });
+
+
+test('client-side page navigation moves focus to the main landmark without overriding history or hash navigation', async () => {
+  const app = await read('src/components/AppLayout.jsx');
+
+  assert.match(app, /useNavigationType/);
+  assert.match(app, /if \(navigationType === ['"]POP['"] \|\| location\.hash\) return/);
+  assert.match(app, /document\.getElementById\(['"]main-content['"]\)\?\.focus\(\{\s*preventScroll:\s*true\s*\}\)/);
+  assert.match(app, /\[location\.pathname, navigationType\]/);
+  assert.match(app, /<main id="main-content" tabIndex=\{-1\}/);
+});
