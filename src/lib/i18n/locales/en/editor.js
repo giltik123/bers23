@@ -16,7 +16,7 @@ export default {
     masks: 'Masks: {count}/{total}',
     segmentation: 'Segmentation: {status}',
     cache: 'Cache: {status}',
-    selectionModes: { single: 'Single' },
+    selectionModes: { single: 'Single object' },
     segmentationStates: { completed: 'Completed', idle: 'Idle' },
     cacheStates: { empty: 'Empty' },
   },
