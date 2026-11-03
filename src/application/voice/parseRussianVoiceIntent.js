@@ -87,6 +87,9 @@ export function parseRussianVoiceIntent(transcript){
     const hints=normalizeRussianFashionVoice(query);
     if(hints.categories.length||hints.colors.length||hints.styles.length)
       return action('WARDROBE_QUERY',{query,hints},'WARDROBE','NO_CONFIRMATION');
+    // Keep brands and proper nouns as literal read-only search tokens. Do not
+    // translate an unknown name into a guessed category or garment identity.
+    return action('WARDROBE_QUERY',{query,hints:null},'WARDROBE','NO_CONFIRMATION');
   }
   if(/^примерь\s+.+$/u.test(text)){
     const query=format(text.replace(/^примерь\s+/u,''));

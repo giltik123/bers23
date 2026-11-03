@@ -86,3 +86,48 @@ test('VI-5 fixed RU semantic command corpus catches class and parameter drift',(
 // ASR WER, real microphone/noise and model-pack signatures require a licensed
 // recording corpus and device results; these deterministic cases do not claim
 // ASR or real-device acceptance.
+
+test('VI-3 brand and proper-noun searches stay literal read-only Wardrobe queries',()=>{
+  const garments=[
+    {id:'nike-1',name:'Nike Air Max 90',category:'sneakers',tags:[],favorite:false},
+    {id:'apc-1',name:'A.P.C. wool coat',category:'jackets',tags:[],favorite:false},
+    {id:'other-1',name:'Blue denim jeans',category:'jeans',tags:[],favorite:false},
+  ];
+  for(const [spoken,query,expectedId] of [
+    ['найди Nike','nike','nike-1'],
+    ['покажи A.P.C.','a.p.c','apc-1'],
+  ]){
+    const draft=buildVoiceIntentDraft(spoken);
+    assert.equal(draft.kind,'WARDROBE_QUERY',spoken);
+    assert.equal(draft.privacy,'LOCAL_ONLY');
+    assert.equal(draft.confirmation,'NO_CONFIRMATION');
+    assert.deepEqual(draft.params,{query,hints:null});
+    assert.deepEqual(
+      filterCanonicalWardrobeVoice(garments,draft.params).map(item=>item.id),
+      [expectedId],
+    );
+  }
+});
+
+test('VI-3 Russian footwear phrases resolve to their distinct canonical Wardrobe categories',()=>{
+  const footwear=[
+    {id:'boots-1',name:'Кожаные сапоги',category:'boots',tags:[],favorite:false},
+    {id:'sneakers-1',name:'Кроссовки',category:'sneakers',tags:[],favorite:false},
+    {id:'shoes-1',name:'Лоферы',category:'shoes',tags:[],favorite:false},
+    {id:'sandals-1',name:'Босоножки',category:'sandals',tags:[],favorite:false},
+  ];
+  for(const [spoken,category,id] of [
+    ['сапоги','boots','boots-1'],
+    ['кроссовки','sneakers','sneakers-1'],
+    ['лоферы','shoes','shoes-1'],
+    ['босоножки','sandals','sandals-1'],
+  ]){
+    const hints=normalizeRussianFashionVoice(spoken);
+    assert.deepEqual(hints.categories,[category],spoken);
+    assert.deepEqual(
+      filterCanonicalWardrobeVoice(footwear,{query:spoken,hints}).map(item=>item.id),
+      [id],
+      spoken,
+    );
+  }
+});
