@@ -50,6 +50,8 @@ jobs:
       run: npm run test:creative-planning-v2
     - name: Sprint 6.40C verification fallback explainability and telemetry
       run: npm run test:creative-planning-6.40c
+    - name: Session recovery storage resilience
+      run: node --test tests/session-recovery-storage-resilience.test.mjs
 
   postgres-transactions:
     runs-on: ubuntu-latest
