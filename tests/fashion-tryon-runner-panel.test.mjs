@@ -111,7 +111,7 @@ test('Fashion Editor Try-On disclosure is localized and keeps the geometric qual
     assert.equal(typeof russian[key], 'string', `Russian fashionUi.${key}`);
     assert.ok(english[key].trim());
     assert.ok(russian[key].trim());
-    assert.match(editor, new RegExp(`t\\('fashionUi\\.${key}'\\)`));
+    assert.ok(editor.includes(`t('fashionUi.${key}')`), `Editor uses fashionUi.${key}`);
   }
   assert.doesNotMatch(editor, /Ручной перенос текстуры и комплекты \(дополнительно\)|Геометрический перенос пикселей не моделирует посадку ткани и перекрытие руками/);
 });
