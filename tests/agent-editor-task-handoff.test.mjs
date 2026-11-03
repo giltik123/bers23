@@ -120,3 +120,16 @@ test('reviewed single-step Agent controls never execute without a user click', a
   assert.match(editor, /onPreviewTransform=\{\(mode\) => \{/);
   assert.match(editor, /void applyOrthogonalTransform\(mode\)/);
 });
+
+
+test('Agent task proposals carry presentation keys so RU/EN copy stays outside routing semantics', () => {
+  const cases = [
+    ['Поверни фото вправо и затем сделай 1024 на 1024', 'localWorkflowDraft'],
+    ['Сделай 1600 на 900', 'resizeDraft'],
+    ['Поверни фото на 90 градусов вправо', 'transformDraft'],
+    ['Покажи гардероб', 'fashionVoiceDraft'],
+    ['Замени фон на закат', 'aiStudioDraft'],
+    ['', 'invalidText'],
+  ];
+  for (const [input, key] of cases) assert.equal(routeEditorAgentTask(input).messageKey, key, input);
+});

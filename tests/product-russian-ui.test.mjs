@@ -15,11 +15,12 @@ const critical = [
   'src/components/projects/ProjectCard.jsx',
   'src/components/projects/ProjectActionsMenu.jsx',
   'src/pages/AssetLibrary.jsx',
+  'src/components/editor/agent/AgentPanel.jsx',
 ];
 
 test('Russian locale covers auth, projects and navigation with English counterparts', async () => {
   const english = await readFile('src/lib/i18n/locales/en/index.js', 'utf8');
-  for (const namespace of ['authUi', 'projectUi', 'navUi', 'assetUi']) {
+  for (const namespace of ['authUi', 'projectUi', 'navUi', 'assetUi', 'agentUi']) {
     const values = russian[namespace];
     assert.ok(values && Object.keys(values).length >= 10, namespace + ' must be translated');
     assert.ok(english.includes(namespace + ': {'), namespace + ' needs an English module');
@@ -32,13 +33,15 @@ test('Russian locale covers auth, projects and navigation with English counterpa
   assert.match(russian.projectUi.newProject, /Новый проект/);
   assert.match(russian.authUi.login, /Войти/);
   assert.match(russian.navUi.projects, /Проекты/);
+  assert.match(russian.agentUi.title, /ИИ-агент/);
+  assert.match(english, /"title": "AI Agent · Bounded deterministic v1"/);
 });
 
 test('key user journeys use live translation without bypassing canonical Project API', async () => {
   for (const path of critical) {
     const source = await readFile(path, 'utf8');
     assert.match(source, /useTranslation/, path + ' must use the locale context');
-    for (const match of source.matchAll(/\bt\(['"]((?:authUi|projectUi|navUi|assetUi)\.\w+)['"]/gu)) {
+    for (const match of source.matchAll(/\bt\(['"]((?:authUi|projectUi|navUi|assetUi|agentUi)\.\w+)['"]/gu)) {
       const [namespace, key] = match[1].split('.');
       assert.ok(russian[namespace]?.[key], path + ' references missing Russian key ' + match[1]);
     }
@@ -65,13 +68,14 @@ test('Russian editor, preview and Try-On keep explicit review and controlled act
   assert.equal(russian.editorUi.tabs.outfits.label, 'Образы и примерка');
   assert.equal(russian.editControls.accept, 'Принять');
   assert.equal(russian.editControls.discard, 'Отклонить');
-  const [editor, navigation, history, compare, wardrobe, runner] = await Promise.all([
+  const [editor, navigation, history, compare, wardrobe, runner, agent] = await Promise.all([
     readFile('src/pages/Editor.jsx', 'utf8'),
     readFile('src/components/adaptive/AdaptiveNavigation.jsx', 'utf8'),
     readFile('src/components/editor/HistoryControls.jsx', 'utf8'),
     readFile('src/components/editor/ResultCompare.jsx', 'utf8'),
     readFile('src/components/editor/fashion/FashionPanel.jsx', 'utf8'),
     readFile('src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx', 'utf8'),
+    readFile('src/components/editor/agent/AgentPanel.jsx', 'utf8'),
   ]);
   assert.match(navigation, /editorUi\.tabs\./);
   assert.match(editor, /<AdaptiveNavigation items=\{EDITOR_TABS\}/);
@@ -81,6 +85,13 @@ test('Russian editor, preview and Try-On keep explicit review and controlled act
   assert.match(compare, /editControls\.discard/);
   assert.match(wardrobe, /fashionUi\.addGarment/);
   assert.match(runner, /fashionUi\.refreshError/);
+  assert.match(agent, /t\('agentUi\.title'\)/);
+  assert.match(agent, /t\('agentUi\.runWorkflow'\)/);
+  const englishPackSource = await readFile('src/lib/i18n/locales/en/index.js', 'utf8');
+  for (const key of ['invalidText', 'localWorkflowDraft', 'resizeDraft', 'transformDraft', 'aiStudioDraft', 'waitingForLocalResult', 'retryExactStep']) {
+    assert.equal(typeof russian.agentUi[key], 'string', `Missing Russian Agent label: ${key}`);
+    assert.ok(englishPackSource.includes('"' + key + '":'), 'Missing English Agent label: ' + key);
+  }
   assert.match(runner, /setSelectedEntryId\(''\)/, 'failed or changed outfit must invalidate a stale item');
   assert.doesNotMatch(navigation, /coreClient\./, 'translation must never start creative execution');
 });

@@ -30,10 +30,10 @@ function compoundLocalDraft(instruction) {
   if (!mode) return null;
   const width = Number(match[2]), height = Number(match[3]);
   if (!admissibleTextTarget(width, height)) {
-    return Object.freeze({ kind: 'CLARIFY', message: 'Размеры выходят за ограничения BERS: до 16384 пикселей по стороне и 24 Мп.' });
+    return Object.freeze({ kind: 'CLARIFY', messageKey: 'oversized', message: 'Размеры выходят за ограничения BERS: до 16384 пикселей по стороне и 24 Мп.' });
   }
   return Object.freeze({
-    kind: 'LOCAL_WORKFLOW_DRAFT', mode, width, height,
+    kind: 'LOCAL_WORKFLOW_DRAFT', mode, width, height, messageKey: 'localWorkflowDraft',
     message: 'Подготовлен двухшаговый локальный сценарий. Проверьте параметры поворота и размера, затем отдельно подтвердите запуск.',
   });
 }
@@ -46,7 +46,7 @@ function compoundLocalDraft(instruction) {
 export function routeEditorAgentTask(rawText) {
   if (typeof rawText !== 'string' || !rawText.trim() ||
       rawText.length > MAX_TEXT || FORBIDDEN_CONTROL.test(rawText)) {
-    return Object.freeze({ kind: 'CLARIFY', message: INVALID_TEXT });
+    return Object.freeze({ kind: 'CLARIFY', messageKey: 'invalidText', message: INVALID_TEXT });
   }
   const instruction = rawText.trim();
   const compound = compoundLocalDraft(instruction);
@@ -55,7 +55,7 @@ export function routeEditorAgentTask(rawText) {
   try {
     voiceIntent = parseRussianVoiceIntent(instruction);
   } catch {
-    return Object.freeze({ kind: 'CLARIFY', message: INVALID_TEXT });
+    return Object.freeze({ kind: 'CLARIFY', messageKey: 'invalidText', message: INVALID_TEXT });
   }
 
   if (voiceIntent?.kind === 'AGENT_PROPOSAL') {
@@ -63,26 +63,26 @@ export function routeEditorAgentTask(rawText) {
     if (typeof mode === 'string' && Number.isSafeInteger(width) && Number.isSafeInteger(height)) {
       return Object.freeze({
         kind: 'LOCAL_WORKFLOW_DRAFT',
-        mode, width, height,
+        mode, width, height, messageKey: 'localWorkflowVoiceDraft',
         message: 'Подготовлен локальный сценарий «поворот → размер → Core verify». Проверьте параметры и отдельно подтвердите запуск.',
       });
     }
-    return Object.freeze({ kind: 'CLARIFY', message: LOCAL_HINT });
+    return Object.freeze({ kind: 'CLARIFY', messageKey: 'localHint', message: LOCAL_HINT });
   }
 
   if (voiceIntent?.kind === 'RESIZE') {
     const { width, height } = voiceIntent.params;
     if (!admissibleTextTarget(width, height)) {
-      return Object.freeze({ kind: 'CLARIFY', message: 'Некорректный размер для редактора BERS.' });
+      return Object.freeze({ kind: 'CLARIFY', messageKey: 'invalidTargetDraft', message: 'Некорректный размер для редактора BERS.' });
     }
     return Object.freeze({
-      kind: 'RESIZE_DRAFT', width, height,
+      kind: 'RESIZE_DRAFT', width, height, messageKey: 'resizeDraft',
       message: 'Подготовлен размер для штатного инструмента Resize. Откройте параметры, проверьте размер и отдельно запустите предпросмотр.',
     });
   }
   if (voiceIntent?.kind === 'TRANSFORM') {
     return Object.freeze({
-      kind: 'TRANSFORM_DRAFT', mode: voiceIntent.params.mode,
+      kind: 'TRANSFORM_DRAFT', mode: voiceIntent.params.mode, messageKey: 'transformDraft',
       message: 'Подготовлен одиночный локальный поворот/отражение. Только по отдельному нажатию создаётся предпросмотр; сохранение требует Accept.',
     });
   }
@@ -90,31 +90,31 @@ export function routeEditorAgentTask(rawText) {
   if (voiceIntent?.kind === 'TRYON_SELECT_PROPOSAL' || voiceIntent?.kind === 'WARDROBE_QUERY' ||
       (voiceIntent?.kind === 'NAVIGATE' && voiceIntent.params.tab === 'fashion')) {
     return Object.freeze({
-      kind: 'FASHION_DRAFT',
+      kind: 'FASHION_DRAFT', messageKey: 'fashionVoiceDraft',
       message: 'Откройте Fashion и выберите реальную вещь из гардероба. Примерка запускается только после подтверждения.',
     });
   }
   if (voiceIntent?.kind === 'AMBIGUOUS') {
-    return Object.freeze({ kind: 'CLARIFY', message: voiceIntent.params.reason || LOCAL_HINT });
+    return Object.freeze({ kind: 'CLARIFY', messageKey: 'ambiguous', message: voiceIntent.params.reason || LOCAL_HINT });
   }
   if (voiceIntent) {
-    return Object.freeze({ kind: 'CLARIFY', message: DIRECT_HINT });
+    return Object.freeze({ kind: 'CLARIFY', messageKey: 'directHint', message: DIRECT_HINT });
   }
 
   const interpreted = interpretPhotoCommand(instruction);
   if (interpreted.kind === 'FASHION') {
     return Object.freeze({
-      kind: 'FASHION_DRAFT',
+      kind: 'FASHION_DRAFT', messageKey: 'fashionDraft',
       message: 'Для примерки нужна выбранная вещь и подтверждение в Fashion.',
     });
   }
   if (interpreted.kind === 'CLARIFY' &&
       (instruction.length < 3 || /^(?:поверни|отрази|отзеркаль|измени размер|обрежь|сделай\s+\d|rotate|resize|flip|crop)(?=\s|$|[.!?])/iu.test(instruction))) {
-    return Object.freeze({ kind: 'CLARIFY', message: LOCAL_HINT });
+    return Object.freeze({ kind: 'CLARIFY', messageKey: 'localHint', message: LOCAL_HINT });
   }
   return Object.freeze({
     kind: 'AI_STUDIO_DRAFT',
-    instruction,
+    instruction, messageKey: 'aiStudioDraft',
     message: 'Запрос перенесётся в AI Studio для выбора области и явного подтверждения облачной генерации. Ничего не отправляется автоматически.',
   });
 }

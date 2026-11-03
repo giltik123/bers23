@@ -75,9 +75,9 @@ test('reachable Fashion, Outfit and bounded Agent surfaces preserve narrow canon
 
   assert.doesNotMatch(editor, /<OutfitPanel[\s\S]{0,500}onCommit=/);
   assert.doesNotMatch(editor, /<AgentPanel[\s\S]{0,700}(onCommit|onRollback)=/);
-  assert.match(agent, /AI Agent · Bounded deterministic v1/);
-  assert.match(agent, /Core owns sequencing, tickets, lineage and recovery/);
-  assert.match(agent, /No provider selection, paid cloud calls, generic tools or browser-owned step reordering/);
+  assert.match(agent, /t\('agentUi\.title'\)/);
+  assert.match(agent, /t\('agentUi\.subtitle'\)/);
+  assert.match(agent, /t\('agentUi\.noProviderSelection'\)/);
   for (const forbidden of ['aiAgent', 'executionQueue', 'taskHistory', 'onCommit', 'onRollback']) assert.equal(agent.includes(forbidden), false, forbidden);
   assert.match(tryOn, /Canonical Try-On execution is not enabled yet\./);
   assert.match(tryOn, /legacy browser FASHN execution path is disabled/);

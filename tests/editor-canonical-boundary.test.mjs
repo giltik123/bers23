@@ -457,9 +457,9 @@ test('bounded deterministic Agent uses canonical Core actions while arbitrary le
     readFile('src/application/agent/createBoundedAgentRunner.ts', 'utf8'),
     readFile('src/lib/agent/executionQueue.js', 'utf8'),
   ]);
-  assert.match(panel, /AI Agent · Bounded deterministic v1/);
-  assert.match(panel, /Core owns sequencing, tickets, lineage and recovery/);
-  assert.match(panel, /No provider selection, paid cloud calls, generic tools or browser-owned step reordering/);
+  assert.match(panel, /t\('agentUi\.title'\)/);
+  assert.match(panel, /t\('agentUi\.subtitle'\)/);
+  assert.match(panel, /t\('agentUi\.noProviderSelection'\)/);
   for (const forbidden of ['aiAgent', 'executionQueue', 'taskHistory', 'onCommit', 'onRollback']) assert.equal(panel.includes(forbidden), false, forbidden);
 
   assert.match(editor, /useBoundedAgentEditor\(/);
