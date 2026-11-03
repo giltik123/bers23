@@ -38,6 +38,7 @@ test('execution run labels map known authority states and fail back to localized
 test('CanonicalExecutionRunRow localizes copy without changing owner controls or result links', async () => {
   const source = await readFile(new URL('../src/components/editor/jobs/CanonicalExecutionRunRow.jsx', import.meta.url), 'utf8');
   assert.match(source, /useTranslation/);
+  assert.match(source, /aria-hidden=\"true\"/);
   assert.match(source, /executionRunLabel\(t, 'capabilities', run\.capability\)/);
   assert.match(source, /executionRunLabel\(t, 'statuses', run\.status\)/);
   assert.match(source, /executionRunLabel\(t, 'localStates', localAuthority\.state\)/);
