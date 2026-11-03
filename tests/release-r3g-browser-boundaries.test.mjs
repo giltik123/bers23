@@ -47,14 +47,19 @@ test('R3g attaches Core response waits to the triggering UI action immediately',
 
   assert.match(harness, /async function waitForCoreResponses\(page, paths, action\)/);
   assert.match(harness, /await Promise\.all\(\[action\(\), Promise\.all\(waits\)\]\)/);
+  assert.match(harness, /page\.on\('response'/);
+  assert.match(harness, /diagnostics\.fashionResponses\.push/);
+  assert.match(harness, /diagnostics\.fashionResponses\.filter\(entry => entry\.ok\)/);
+  assert.match(harness, /const missing = paths\.filter/);
+  assert.match(harness, /successful real-Core response during this journey/);
   assert.match(harness, /diagnostics\.fashionReads\.slice\(diagnosticsStart\)/);
   assert.match(harness, /R3g Core read barrier failed; expected=/);
-  assert.equal((harness.match(/await waitForCoreResponses\(page,/g) || []).length, 3);
+  assert.equal((harness.match(/await waitForCoreResponses\(page,/g) || []).length, 4);
   const returnNavigation = harness.indexOf("await page.getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ }).click();");
+  const returnBarrier = harness.lastIndexOf("await waitForCoreResponses(page,", returnNavigation);
   const returnRoute = harness.indexOf("await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId && url.searchParams.get('mode') === 'fashion');", returnNavigation);
   const returnRegion = harness.indexOf("await page.getByRole('region', { name: 'Примерка одежды', exact: true })", returnRoute);
-  assert.ok(returnNavigation >= 0 && returnRoute > returnNavigation && returnRegion > returnRoute, 'return navigation must restore the same Project and Fashion mode before asserting the panel');
-  assert.doesNotMatch(harness.slice(returnNavigation, returnRegion), /waitForCoreResponses/, 'return navigation must not require a duplicate Core read');
+  assert.ok(returnBarrier >= 0 && returnNavigation > returnBarrier && returnRoute > returnNavigation && returnRegion > returnRoute, 'return navigation must restore the same Project and Fashion mode through the response barrier');
   assert.doesNotMatch(harness, /const (?:fashionMode|wardrobe|returnMode|outfit)Load = waitForCoreResponses/);
 });
 
