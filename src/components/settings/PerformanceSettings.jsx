@@ -4,11 +4,63 @@ import { deviceProfiler } from '@/lib/performance/deviceProfiler';
 import { memoryManager } from '@/lib/performance/memoryManager';
 import { previewCache } from '@/lib/performance/previewCache';
 import { diskCache } from '@/lib/performance/diskCache';
-import { performanceMonitor } from '@/lib/performance/performanceMonitor';
 import { resourceScheduler } from '@/lib/performance/resourceScheduler';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
+import { readPerformanceSnapshot, displayMetric, performancePolicyKey, pauseReasonKey } from './performanceSnapshot';
+
+const sources = { deviceProfiler, memoryManager, previewCache, diskCache, resourceScheduler };
 
 export default function PerformanceSettings() {
-  const [state, setState] = useState({}); const previous = useRef('');
-  useEffect(() => { let active = true; const load = async () => { if (document.visibilityState !== 'visible') return; const next = { profile: deviceProfiler.snapshot(), memory: memoryManager.snapshot(), cache: previewCache.snapshot(), diskMb: await diskCache.usage(), performance: performanceMonitor.snapshot(), scheduler: resourceScheduler.snapshot() }; const serialized = JSON.stringify(next); if (active && serialized !== previous.current) { previous.current = serialized; setState(next); } }; load(); const timer = window.setInterval(load, 5000); return () => { active = false; window.clearInterval(timer); }; }, []);
-  return <div className="p-4 space-y-3"><div className="flex items-center gap-2"><Gauge className="w-4 h-4" /><p className="font-medium text-sm">Performance</p></div><div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground"><p>Memory: {state.memory?.usageMb ?? '—'} MB</p><p>Cache: {state.diskMb ?? '—'} MB</p><p>Queue cache: {state.cache?.entries ?? 0}</p><p>Render: {state.performance?.averageRenderMs ?? 0} ms</p><p>Device: {state.profile?.ramGb ?? '—'} GB RAM</p><p>Mode: {state.profile?.tier || 'balanced'}</p></div>{state.scheduler?.paused && <p className="text-xs text-muted-foreground">Heavy work is paused to protect {state.scheduler.reason === 'battery' ? 'battery' : 'memory'}.</p>}</div>;
+  const { t } = useTranslation();
+  const [state, setState] = useState(null);
+  const [error, setError] = useState(false);
+  const previous = useRef('');
+
+  useEffect(() => {
+    let active = true;
+    let inFlight = false;
+    const load = async () => {
+      if (!active || inFlight || document.visibilityState !== 'visible') return;
+      inFlight = true;
+      try {
+        const next = await readPerformanceSnapshot(sources);
+        if (!active) return;
+        const serialized = JSON.stringify(next);
+        if (serialized !== previous.current) {
+          previous.current = serialized;
+          setState(next);
+        }
+        setError(false);
+      } catch {
+        if (active) setError(true);
+      } finally {
+        inFlight = false;
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => { void load(); }, 5000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  return (
+    <section className="p-4 space-y-3" aria-label={t('settings.performance')}>
+      <div className="flex items-center gap-2">
+        <Gauge aria-hidden="true" className="w-4 h-4" />
+        <h2 className="font-medium text-sm">{t('settings.performance')}</h2>
+      </div>
+      {error && <p role="status" className="text-xs text-muted-foreground">{t('settings.performanceUnavailable')}</p>}
+      {!state && !error && <p role="status" className="text-xs text-muted-foreground">{t('settings.loadingPerformance')}</p>}
+      {state && (
+        <dl className="grid grid-cols-2 gap-3 text-xs">
+          <div><dt className="text-muted-foreground">{t('settings.performanceHeap')}</dt><dd className="font-medium">{displayMetric(state.memory?.usageMb)} MB</dd></div>
+          <div><dt className="text-muted-foreground">{t('settings.performanceStorage')}</dt><dd className="font-medium">{displayMetric(state.diskMb)} MB</dd></div>
+          <div><dt className="text-muted-foreground">{t('settings.performancePreviews')}</dt><dd className="font-medium">{displayMetric(state.cache?.entries)}</dd></div>
+          <div><dt className="text-muted-foreground">{t('settings.performancePolicy')}</dt><dd className="font-medium">{t(performancePolicyKey(state.profile?.tier))}</dd></div>
+        </dl>
+      )}
+      {state?.scheduler?.paused && (
+        <p role="status" className="text-xs text-muted-foreground">{t(pauseReasonKey(state.scheduler.reason))}</p>
+      )}
+    </section>
+  );
 }
