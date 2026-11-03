@@ -54,6 +54,7 @@ on:
       - 'src/components/editor/ResultCompare.jsx'
       - 'src/components/editor/PlanPreview.jsx'
       - 'src/components/editor/EditorStatusBar.jsx'
+      - 'src/components/editor/PipelineStatusBar.jsx'
       - 'src/lib/i18n/locales/en/editor.js'
       - 'src/lib/i18n/locales/ru/index.js'
       - 'src/components/adaptive/AdaptiveLayout.jsx'
