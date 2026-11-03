@@ -14,6 +14,11 @@ export const modules = {
     title: 'Центр задач', queued: 'В очереди', running: 'Выполняется', waiting: 'Ожидание',
     completed: 'Завершено', failed: 'Ошибка', cancelled: 'Отменено', retrying: 'Повтор',
     cancel: 'Отменить', pause: 'Пауза', resume: 'Продолжить', empty: 'Нет активных задач.',
+    preparing: 'Подготовка', succeeded: 'Успешно', unknown: 'Неизвестно', unavailable: 'Недоступно',
+    runAgain: 'Запустить снова', duplicate: 'Дублировать', moveUp: 'Переместить выше',
+    estimatedSeconds: 'Оценка: {seconds} с', stage: 'Этап: {stage}',
+    stages: { preparing: 'Подготовка', running: 'Выполнение' },
+    priority: { high: 'Высокий', normal: 'Обычный', low: 'Низкий', unknown: 'Неизвестный приоритет' },
     canonical: {
       server: 'Сервер',
       statuses: {
