@@ -58,6 +58,36 @@ test('signed Core export filenames remain safe and preserve real response encodi
   assert.equal(canonicalDownloadName('..','image/png'),'BERS-image.png');
   assert.throws(()=>canonicalDownloadName('a','text/html'),/not supported/);
 });
+test('Core download filenames neutralize deceptive controls and reserved device names',()=>{
+  assert.equal(canonicalDownloadName('Фото\u202Egpj','image/png'),'Фото_gpj.png');
+  assert.equal(canonicalDownloadName('report. ','image/jpeg'),'report.jpg');
+  assert.equal(canonicalDownloadName('CON','image/png'),'BERS-CON.png');
+  assert.equal(canonicalDownloadName('lpt9','image/webp'),'BERS-lpt9.webp');
+  assert.equal(canonicalDownloadName('снимок 2026','image/png'),'снимок 2026.png');
+});
+
+test('failed download setup or click immediately releases the temporary Blob URL',async()=>{
+  const f=fixture();
+  let revoked=0,scheduled=0;
+  const urlApi={
+    createObjectURL:()=> 'blob:temporary',
+    revokeObjectURL:objectUrl=>{assert.equal(objectUrl,'blob:temporary');revoked++;},
+  };
+  const failures=[
+    {createElement(){throw new Error('anchor unavailable');}},
+    {createElement:()=>({style:{},remove(){}}),body:{appendChild(){throw new Error('append denied');}}},
+    {createElement:()=>({style:{},remove(){},click(){throw new Error('click denied');}}),
+      body:{appendChild(){}}},
+  ];
+  for(const documentApi of failures){
+    await assert.rejects(()=>downloadCanonicalImage({
+      ...f.options,documentApi,urlApi,scheduleRevoke:()=>{scheduled++;},
+    }),/unavailable|denied/);
+  }
+  assert.equal(revoked,failures.length);
+  assert.equal(scheduled,0,'no delayed cleanup for downloads that never dispatched');
+});
+
 test('reject spoofed / arbitrary delivery URLs before any request',async()=>{
   for(const invalid of [
     'https://evil.test/steal', '//evil.test/api/core/artifacts/results/foo',
