@@ -20,6 +20,10 @@ export default {
   moveUp: 'Move up',
   estimatedSeconds: 'Estimated {seconds}s',
   stage: 'Stage: {stage}',
+  stages: {
+    preparing: 'Preparing',
+    running: 'Running',
+  },
   priority: {
     high: 'High',
     normal: 'Normal',
