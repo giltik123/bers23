@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { readHint, writeHint, clearHint } from '../src/components/editor/agent/sessionHintStorage.js';
 import { getSafeSessionStorage } from '../src/lib/performance/safeSessionStorage.js';
@@ -120,4 +121,14 @@ test('Editor and bounded Agent recovery degrade safely and resume session persis
     if (original) Object.defineProperty(globalThis, 'sessionStorage', original);
     else delete globalThis.sessionStorage;
   }
+});
+
+
+test('initial Auth bootstrap loading is announced with the shared localized status', async () => {
+  const app = await readFile('src/App.jsx', 'utf8');
+
+  assert.match(app, /const \\{ isLoadingAuth, isLoadingPublicSettings \\} = useAuth\\(\\);\\s*const \\{ t \\} = useTranslation\\(\\);/);
+  assert.match(app, /if \\(isLoadingPublicSettings \\|\\| isLoadingAuth\\) \\{\\s*return \\(\\s*<div role="status" className="fixed inset-0 flex items-center justify-center">\\s*<span className="sr-only">\\{t\\('common\\.loading'\\)\\}<\\/span>\\s*<div aria-hidden="true" className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"><\\/div>\\s*<\\/div>/);
+  assert.match(app, /<Suspense fallback=\\{<RouteLoading \\/>\\}>/);
+  assert.match(app, /function RouteLoading\\(\\) \\{[\\s\\S]*?role="status"[\\s\\S]*?t\\('common\\.loading'\\)/);
 });
