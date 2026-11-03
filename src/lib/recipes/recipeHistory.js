@@ -1,9 +1,16 @@
-// RecipeHistory — most used, recently used, and success rate per recipe (localStorage).
+import { readRecipeStorage, writeRecipeStorage } from '@/lib/recipes/recipeStorage';
+
+// RecipeHistory — most used, recently used, and success rate per recipe.
+// Browser persistence is optional; the current page keeps a memory-only fallback.
 const KEY = 'recipe_history';
 
 class RecipeHistory {
-  _load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } }
-  _save(data) { localStorage.setItem(KEY, JSON.stringify(data)); }
+  _load() {
+    const value = readRecipeStorage(KEY, {});
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  }
+
+  _save(data) { writeRecipeStorage(KEY, data); }
 
   record(recipeId, { success }) {
     const data = this._load();
@@ -16,8 +23,8 @@ class RecipeHistory {
   }
 
   successRate(recipeId) {
-    const e = this._load()[recipeId];
-    return e && e.uses ? e.successes / e.uses : null;
+    const entry = this._load()[recipeId];
+    return entry && entry.uses ? entry.successes / entry.uses : null;
   }
 
   mostUsed(limit = 8) {
