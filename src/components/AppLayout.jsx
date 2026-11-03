@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigationType } from 'react-router-dom';
 import { Sparkles, FolderOpen, Images, Workflow, Settings2, Menu, X } from 'lucide-react';
 import ThemeToggle from '@/components/ThemeToggle';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
@@ -39,6 +39,7 @@ function NavLink({ path, label, icon: Icon, active, onNavigate, compact = false 
 
 export default function AppLayout() {
   const location = useLocation();
+  const navigationType = useNavigationType();
   const platform = usePlatformProfile();
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -53,6 +54,13 @@ export default function AppLayout() {
   }, []);
   useEffect(() => { memoryManager.configure({ cacheMb: adaptiveCachePolicy(platform).cacheMb }); }, [platform.formFactor]);
   useEffect(() => { sessionRecovery.saveRoute([location.pathname, location.search].join('')); offlineQueue.snapshot(); setMenuOpen(false); }, [location.pathname, location.search]);
+  useEffect(() => {
+    // Move focus after client-side navigation so keyboard and screen-reader
+    // users start at the new page content. Preserve browser-restored focus and
+    // native in-page anchor navigation.
+    if (navigationType === 'POP' || location.hash) return;
+    document.getElementById('main-content')?.focus({ preventScroll: true });
+  }, [location.pathname, navigationType]);
 
   const navigation = [
     { path: '/', label: t('navUi.projects'), icon: FolderOpen },
