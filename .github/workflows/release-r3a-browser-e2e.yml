@@ -222,6 +222,19 @@ jobs:
         run: |
           npm run build
           test -f dist/index.html
+      - name: Bundle R3a cold route performance harness
+        run: |
+          mkdir -p .test-cache/release-r3
+          npx esbuild scripts/test-release-r3a-browser-e2e.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/release-r3/test-release-r3a-browser-e2e.mjs \
+            --external:node:* --external:pg --external:sharp --external:playwright
+      - name: Measure protected Projects -> Editor -> Recipes browser readiness
+        run: |
+          set -euo pipefail
+          node .test-cache/release-r3/test-release-r3a-browser-e2e.mjs | tee .test-cache/release-r3/r3a-runtime.log
+          grep -q 'R3A_BROWSER_RELEASE_E2E_ACCEPTED' .test-cache/release-r3/r3a-runtime.log
+          grep -q 'R3A_BROWSER_ROUTE_PERFORMANCE' .test-cache/release-r3/r3a-runtime.log
       - name: Bundle accepted R3b browser baseline without replacing production stores
         run: |
           mkdir -p .test-cache/release-r3

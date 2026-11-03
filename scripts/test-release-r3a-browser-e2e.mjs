@@ -103,6 +103,7 @@ const diagnostics = {
   lastUrl: undefined,
   projectId: undefined,
   projectImage: undefined,
+  browserPerformance: undefined,
 };
 
 try {
@@ -195,6 +196,36 @@ try {
     naturalHeight: image.naturalHeight,
   }));
   diagnostics.projectImage = imageEvidence;
+  // Measure the actual protected Project -> Editor -> Recipe route chain on the built SPA.
+  // A fresh document resets React.lazy module state; disabling Chrome's HTTP cache makes
+  // route-chunk transfer measurements represent a cold browser navigation rather than bundle-size estimates.
+  const performanceSession = await page.context().newCDPSession(page);
+  await performanceSession.send('Network.enable');
+  await performanceSession.send('Network.setCacheDisabled', { cacheDisabled: true });
+  await page.goto(frontendOrigin + '/', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
+  const projectLink = page.locator('a[href="/editor?id=' + projectId + '"]').first();
+  await projectLink.waitFor({ state: 'visible', timeout: 15_000 });
+  const editorStart = await page.evaluate(() => { performance.clearResourceTimings(); performance.setResourceTimingBufferSize(1000); return performance.now(); });
+  await projectLink.click();
+  await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/editor' && url.searchParams.get('id') === projectId, { timeout: 20_000 });
+  await page.getByRole('img', { name: 'Project' }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.waitForFunction(() => {
+    const image = document.querySelector('img[alt="Project"]');
+    return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0;
+  }, { timeout: 15_000 });
+  await page.getByRole('button', { name: /^(More|Ещё)$/ }).waitFor({ state: 'visible', timeout: 10_000 });
+  const editorRouteTiming = await collectBrowserRouteTiming(page, editorStart, 'projects-to-editor');
+
+  await page.getByRole('button', { name: /^(More|Ещё)$/ }).click();
+  const recipeStart = await page.evaluate(() => { performance.clearResourceTimings(); return performance.now(); });
+  await page.getByRole('button', { name: /^(Recipes|Рецепты)$/ }).click();
+  await page.locator('input[placeholder*="recipes"], input[placeholder*="рецептов"]').first().waitFor({ state: 'visible', timeout: 15_000 });
+  const recipePanelTiming = await collectBrowserRouteTiming(page, recipeStart, 'editor-to-recipes-first-open');
+  diagnostics.browserPerformance = { editor: editorRouteTiming, recipes: recipePanelTiming };
+  await performanceSession.send('Network.setCacheDisabled', { cacheDisabled: false });
+  await performanceSession.detach();
+
   const imageUrl = new URL(imageEvidence.src);
   assert.equal(imageUrl.origin, coreOrigin, 'canonical signed Project image must resolve against split-origin Core, not the SPA origin');
   assert.match(imageUrl.pathname, /^\/api\/core\/artifacts\/results\//, 'Project image must use signed Core artifact delivery');
@@ -246,6 +277,8 @@ try {
     projectImage: imageEvidence,
     protectedRouteRedirect: '/login',
     zeroObjectPromptVisible: true,
+    performanceEvidence: 'R3A_BROWSER_ROUTE_PERFORMANCE',
+    browserPerformance: diagnostics.browserPerformance,
   }, null, 2));
 } catch (error) {
   throw new Error(
@@ -258,6 +291,34 @@ try {
   await waitForExit(core, 5_000).catch(() => core.kill('SIGKILL'));
   await closeServer(providerTrap).catch(() => undefined);
   await pool.end();
+}
+
+async function collectBrowserRouteTiming(page, startedAt, journey) {
+  const timing = await page.evaluate(({ startedAt, journey }) => {
+    const scripts = performance.getEntriesByType('resource')
+      .filter(entry => {
+        const url = new URL(entry.name, location.href);
+        return url.origin === location.origin && url.pathname.endsWith('.js') && entry.startTime >= startedAt;
+      })
+      .map(entry => ({
+        path: new URL(entry.name, location.href).pathname,
+        durationMs: Math.round(entry.duration * 100) / 100,
+        transferBytes: entry.transferSize || 0,
+        encodedBytes: entry.encodedBodySize || 0,
+      }));
+    return {
+      journey,
+      durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
+      scriptResourceCount: scripts.length,
+      scriptTransferBytes: scripts.reduce((sum, entry) => sum + entry.transferBytes, 0),
+      scriptEncodedBytes: scripts.reduce((sum, entry) => sum + entry.encodedBytes, 0),
+      scripts,
+    };
+  }, { startedAt, journey });
+  assert.ok(Number.isFinite(timing.durationMs) && timing.durationMs > 0, `${journey} must produce a positive browser-ready duration`);
+  assert.ok(timing.scriptResourceCount > 0, `${journey} must load at least one same-origin JavaScript route chunk`);
+  assert.ok(timing.scriptTransferBytes > 0, `${journey} must measure transferred JavaScript bytes with the browser cache disabled`);
+  return timing;
 }
 
 function safeUrl(value) {
