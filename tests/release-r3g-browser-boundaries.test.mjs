@@ -6,13 +6,14 @@ const HARNESS = 'scripts/test-release-r3g-browser-e2e.mjs';
 const WORKFLOW = '.github/workflows/release-r3a-browser-e2e.yml';
 
 test('R3g drives visible zero-object navigation into canonical Fashion and Outfits', async () => {
-  const [harness, editor, fashion, outfits, tryOnRunner, navigation] = await Promise.all([
+  const [harness, editor, fashion, outfits, tryOnRunner, navigation, english] = await Promise.all([
     readFile(HARNESS, 'utf8'),
     readFile('src/pages/Editor.jsx', 'utf8'),
     readFile('src/components/editor/fashion/FashionPanel.jsx', 'utf8'),
     readFile('src/components/editor/outfits/OutfitPanel.jsx', 'utf8'),
     readFile('src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx', 'utf8'),
     readFile('src/components/adaptive/AdaptiveNavigation.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
   ]);
 
   assert.match(editor, /<AdaptiveNavigation items=\{EDITOR_TABS\} active=\{editTab\}/);
@@ -23,7 +24,8 @@ test('R3g drives visible zero-object navigation into canonical Fashion and Outfi
   assert.match(navigation, /type="button"/);
   assert.match(fashion, /aria-label=\{t\('fashionUi\.panelLabel'\)\}/);
   assert.match(outfits, /aria-label="Canonical Outfit builder"/);
-  assert.match(tryOnRunner, /aria-label="Canonical deterministic Try-On runner"/);
+  assert.match(tryOnRunner, /aria-label=\{t\('fashionUi\.runnerLabel'\)\}/);
+  assert.match(english, /"runnerLabel": "Canonical deterministic Try-On runner"/);
   assert.ok(harness.includes("getByRole('button', { name: 'Открыть гардероб', exact: true })"));
   assert.ok(harness.includes("url.pathname === '/wardrobe'"));
   assert.ok(harness.includes("getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ })"), 'R3g must accept the canonical RU/EN Wardrobe return label');
