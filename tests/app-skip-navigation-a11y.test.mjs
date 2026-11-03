@@ -34,3 +34,14 @@ test('client-side page navigation moves focus to the main landmark without overr
   assert.match(app, /\[location\.pathname, navigationType\]/);
   assert.match(app, /<main id="main-content" tabIndex=\{-1\}/);
 });
+
+
+test('real Chrome release journey exercises skip links and authenticated route focus', async () => {
+  const harness = await read('scripts/test-release-r3e-browser-e2e.mjs');
+
+  assert.match(harness, /const authSkipLink = page\.getByRole\('link', \{ name: \/Skip to main content\|Перейти к основному содержимому\/ \}\)/);
+  assert.match(harness, /const appSkipLink = page\.getByRole\('link', \{ name: \/Skip to main content\|Перейти к основному содержимому\/ \}\)/);
+  assert.match(harness, /the first keyboard Tab in the authenticated shell must reach the skip link/);
+  assert.match(harness, /nav\[aria-label\] a\[href="\/assets"\]/);
+  assert.match(harness, /document\.activeElement\?\.id === 'main-content'/);
+});
