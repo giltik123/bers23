@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { readHint, writeHint, clearHint } from '../src/components/editor/agent/sessionHintStorage.js';
 import { getSafeSessionStorage } from '../src/lib/performance/safeSessionStorage.js';
@@ -120,4 +121,22 @@ test('Editor and bounded Agent recovery degrade safely and resume session persis
     if (original) Object.defineProperty(globalThis, 'sessionStorage', original);
     else delete globalThis.sessionStorage;
   }
+});
+
+
+test('initial Auth bootstrap loading is announced with the shared localized status', async () => {
+  const app = await readFile('src/App.jsx', 'utf8');
+
+  assert.ok(app.includes('const { isLoadingAuth, isLoadingPublicSettings } = useAuth();\n  const { t } = useTranslation();'));
+  assert.ok(app.includes('<AuthProvider>\n      <TranslationProvider>'));
+
+  const loadingStart = app.indexOf('if (isLoadingPublicSettings || isLoadingAuth)');
+  const routesStart = app.indexOf('\n  return (\n    <Suspense', loadingStart);
+  assert.ok(loadingStart >= 0 && routesStart > loadingStart, 'the bootstrap gate must precede route rendering');
+
+  const bootstrap = app.slice(loadingStart, routesStart);
+  assert.ok(bootstrap.includes('<div role="status"'), 'the initial wait must be announced as a status');
+  assert.ok(bootstrap.includes("<span className=\"sr-only\">{t('common.loading')}</span>"), 'the status must use the shared localized loading label');
+  assert.ok(bootstrap.includes('<div aria-hidden="true"'), 'the decorative spinner must be hidden from assistive technology');
+  assert.ok(bootstrap.includes('fixed inset-0'), 'the existing full-screen loading layout must remain intact');
 });

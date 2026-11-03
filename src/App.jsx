@@ -41,6 +41,7 @@ function RouteLoading() {
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings } = useAuth();
+  const { t } = useTranslation();
 
   // Resolve the initial session check before choosing public or protected routes.
   // Auth denial itself is handled only by ProtectedRoute. Keeping that decision
@@ -48,8 +49,9 @@ const AuthenticatedApp = () => {
   // render when the canonical session endpoint correctly returns 401.
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
+      <div role="status" className="fixed inset-0 flex items-center justify-center">
+        <span className="sr-only">{t('common.loading')}</span>
+        <div aria-hidden="true" className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
       </div>
     );
   }
