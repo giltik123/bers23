@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Loader2, Layers, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { pipelineEvents } from '@/lib/pipeline/pipelineEvents';
-import { resolutionManager, RESOLUTION_TIERS } from '@/lib/pipeline/resolutionManager';
+import { resolutionManager } from '@/lib/pipeline/resolutionManager';
 import { PREVIEW_LEVELS } from '@/lib/pipeline/previewGenerator';
 
 const STAGE_KEYS = {
