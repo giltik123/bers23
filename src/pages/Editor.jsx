@@ -1521,7 +1521,7 @@ export default function Editor() {
               </details>
               {!tryOn.state.host.active && <details className="rounded-xl border border-border/70 bg-card p-3"
                 open={outfitsExpanded} onToggle={(event) => setOutfitsExpanded(event.currentTarget.open)}>
-                <summary className="cursor-pointer text-sm font-medium">Комплекты одежды · дополнительно</summary>
+                <summary className="cursor-pointer text-sm font-medium">{t('fashionUi.outfitsDetailsTitle')}</summary>
                 {outfitsExpanded && <div className="mt-3"><OutfitPanel onCanonicalChange={notifyOutfitChange} /></div>}
               </details>}
             </div>
