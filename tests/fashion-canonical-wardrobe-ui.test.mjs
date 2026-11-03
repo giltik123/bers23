@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { eligibleTryOnGarments, canSubmitTryOn } from '../src/components/editor/outfits/virtualTryOnWardrobe.js';
 
 const FASHION = 'src/components/editor/fashion/FashionPanel.jsx';
 const ADD = 'src/components/editor/fashion/AddGarmentDialog.jsx';
@@ -58,4 +59,45 @@ test('view model reconciles F1/F2 snapshots fail-closed and never rolls back an 
   assert.doesNotMatch(source, /garments\.remove\(/);
   assert.doesNotMatch(source, /wardrobe\.remove\(/);
   assert.doesNotMatch(source, /coreClient|fetch\(|\/assets|provider|billing/i);
+});
+
+test('Virtual Try-On only admits active Core-owned wearable garment snapshot entries', () => {
+  const garment = { garmentId: 'g1', name: 'Coat', status: 'ACTIVE', categoryGroup: 'tops' };
+  const snapshot = [
+    garment, { ...garment, garmentId: 'g2', status: 'ARCHIVED' },
+    { ...garment, garmentId: 'g3', categoryGroup: 'shoes' },
+    { ...garment, garmentId: '' }, null,
+  ];
+  assert.deepEqual(eligibleTryOnGarments(snapshot), [garment]);
+  assert.equal(snapshot.length, 5, 'the Core snapshot must not be mutated');
+  assert.throws(() => eligibleTryOnGarments(null), /Некорректный/);
+  assert.throws(() => eligibleTryOnGarments({ garments: snapshot }), /Некорректный/);
+});
+
+test('Virtual Try-On requires a fresh selected garment and explicit consent for every request', () => {
+  const garment = { garmentId: 'g1', status: 'ACTIVE', categoryGroup: 'tops' };
+  const ready = { disabled: false, needsAccountSetup: false, loading: false,
+    running: false, error: '', garments: [garment], garmentId: 'g1', consent: true };
+  assert.equal(canSubmitTryOn(ready), true);
+  for (const change of [
+    { loading: true }, { running: true }, { consent: 'true' },
+    { garments: [{ ...garment, status: 'ARCHIVED' }] }, { error: 'Network unavailable' },
+    { consent: false }, { disabled: true }, { needsAccountSetup: true },
+    { garmentId: 'foreign' }, { garmentId: '' }, { garments: [] }, { garments: null },
+  ]) {
+    assert.equal(canSubmitTryOn({ ...ready, ...change }), false, JSON.stringify(change));
+  }
+});
+
+test('Virtual Try-On UI resets consent on reload and rejects stale/duplicate execution', async () => {
+  const source = await readFile('src/components/editor/outfits/VirtualTryOnPanel.jsx', 'utf8');
+  assert.match(source, /const request = \+\+requestRef\.current/);
+  assert.match(source, /request === requestRef\.current/);
+  assert.match(source, /return \(\) => \{ requestRef\.current \+= 1; \}/);
+  assert.match(source, /setGarmentId\(''\);\s*setConsent\(false\)/);
+  assert.match(source, /if \(!canRun \|\| runningRef\.current\) return/);
+  assert.match(source, /await onRun\(\{ garmentId, tryOnConsent: true \}\)/);
+  assert.match(source, /error \? 'Повторить загрузку' : 'Обновить список вещей'/);
+  assert.match(source, /!loading && !error && garments\.length === 0/);
+  assert.doesNotMatch(source, /coreClient\.entities|fetch\(|fal\.ai|FASHN\.execute/);
 });
