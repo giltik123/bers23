@@ -4,6 +4,8 @@ import test from 'node:test';
 import english from '../src/lib/i18n/locales/en/editor.js';
 import russian from '../src/lib/i18n/locales/ru/index.js';
 
+const localeInvariantLabels = new Set(['statusBar.pipeline.tiers.hd']);
+
 const translationPairs = [
   'planStatus.ready',
   'planStatus.needsClarification',
@@ -59,7 +61,7 @@ test('Editor plan and diagnostics labels have complete RU/EN parity', () => {
     assert.equal(typeof ru, 'string', 'Russian editor.' + path + ' is missing');
     assert.ok(en.trim(), 'English editor.' + path + ' must not be empty');
     assert.ok(ru.trim(), 'Russian editor.' + path + ' must not be empty');
-    assert.notEqual(en, ru, 'editor.' + path + ' must be translated, not copied');
+    if (!localeInvariantLabels.has(path)) assert.notEqual(en, ru, 'editor.' + path + ' must be translated, not copied');
     assert.deepEqual(placeholders(ru), placeholders(en), 'editor.' + path + ' interpolation must match');
   }
 });
