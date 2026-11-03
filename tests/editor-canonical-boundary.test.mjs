@@ -582,9 +582,10 @@ test('canonical Scene Mask Editor integrates with accessible UX and Core-owned r
 });
 
 test('production Editor does not expose mask controls or pass stale masks into whole-frame fal.ai edits', async () => {
-  const [editor, studio] = await Promise.all([
+  const [editor, studio, russianLocale] = await Promise.all([
     readFile('src/pages/Editor.jsx', 'utf8'),
     readFile('src/components/editor/ai/AICommandStudio.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
   ]);
   assert.ok(editor.includes('const [maskToolsOpen, setMaskToolsOpen] = useState(false)'));
   assert.ok(editor.includes('const PRODUCTION_MASK_UI_ENABLED = maskToolsOpen'));
@@ -598,5 +599,6 @@ test('production Editor does not expose mask controls or pass stale masks into w
   assert.ok(studio.includes("const scope = maskToolsEnabled ? generativeScope : 'WHOLE_IMAGE'"));
   assert.ok(studio.includes("const wholeImageAdmitted = Boolean(plan.instruction) && plan.kind !== 'FASHION'"));
   assert.ok(studio.includes("await onPrepareFreeAccount?.()"));
-  assert.ok(studio.includes("Понимаю, что может измениться весь кадр"));
+  assert.ok(studio.includes("t('editorAi.confirmations.wholeImage')"));
+  assert.ok(russianLocale.includes('"wholeImage": "Подтверждаю отправку фотографии'));
 });

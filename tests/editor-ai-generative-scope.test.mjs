@@ -1,9 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { runInNewContext } from 'node:vm';
 import { bindGenerativeScope } from '../src/application/editor/ai-first/bindGenerativeScope.js';
 import { interpretPhotoCommand } from '../src/application/editor/ai-first/interpretPhotoCommand.js';
-import english from '../src/lib/i18n/locales/en/index.js';
-import russian from '../src/lib/i18n/locales/ru/index.js';
+
+function extractLocaleObject(source, name) {
+  const declaration = new RegExp('(?:^|\\n)\\s*' + name + ':\\s*\\{', 'u').exec(source);
+  assert.ok(declaration, 'missing locale block: ' + name);
+  const open = source.indexOf('{', declaration.index);
+  let depth = 0;
+  let quote = null;
+  let escaped = false;
+  for (let index = open; index < source.length; index += 1) {
+    const character = source[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === '\\\\') escaped = true;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === '{') depth += 1;
+    else if (character === '}') {
+      depth -= 1;
+      if (depth === 0) return runInNewContext('(' + source.slice(open, index + 1) + ')');
+    }
+  }
+  throw new Error('unterminated locale block: ' + name);
+}
+
+const [englishSource, russianSource] = await Promise.all([
+  readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+  readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+]);
+const english = { editorAi: extractLocaleObject(englishSource, 'editorAi') };
+const russian = { editorAi: extractLocaleObject(russianSource, 'editorAi') };
 
 const resolveTranslation = (pack, key) =>
   key.split('.').reduce((value, part) => value?.[part], pack);
