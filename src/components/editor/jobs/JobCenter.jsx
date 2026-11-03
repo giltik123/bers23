@@ -36,10 +36,12 @@ export default function JobCenter({ projectId = null }) {
   const canonicalScopeMatches = Boolean(normalizedProjectId) && canonical.projectId === normalizedProjectId;
   const canonicalRuns = canonicalScopeMatches ? canonical.runs : [];
   const canonicalVisible = canonicalScopeMatches && (canonical.loading || canonical.authoritative || canonical.error);
+  // A failed refresh leaves the last snapshot visible, but must not leave mutation controls live.
+  const canonicalControlsReady = canonicalScopeMatches && canonical.authoritative && !canonical.stale;
 
   useEffect(() => {
     let active = true;
-    if (!canonicalScopeMatches || !canonical.authoritative) {
+    if (!canonicalControlsReady) {
       setCanonicalControls(Object.freeze({}));
       return () => { active = false; };
     }
@@ -51,17 +53,17 @@ export default function JobCenter({ projectId = null }) {
       setCanonicalControls(Object.freeze(Object.fromEntries(entries)));
     });
     return () => { active = false; };
-  }, [creativeControl, canonicalScopeMatches, canonical.authoritative, canonical.runs]);
+  }, [creativeControl, canonicalControlsReady, canonical.runs]);
 
   useEffect(() => {
-    if (!canonicalScopeMatches || !canonical.authoritative) {
+    if (!canonicalControlsReady) {
       setWorkflowRetryControls(Object.freeze({}));
       return;
     }
     setWorkflowRetryControls(Object.freeze(Object.fromEntries(
       canonical.runs.map((run) => [run.runId, workflowRetryControl.inspect(run)]),
     )));
-  }, [workflowRetryControl, canonicalScopeMatches, canonical.authoritative, canonical.runs]);
+  }, [workflowRetryControl, canonicalControlsReady, canonical.runs]);
 
   async function cancelCanonicalRun(run) {
     setCanonicalControls((current) => Object.freeze({
@@ -124,7 +126,7 @@ export default function JobCenter({ projectId = null }) {
       {canonical.error && !canonical.stale && <p className="text-[11px] text-destructive">Server execution recovery is unavailable.</p>}
       {canonical.error && canonical.stale && <p className="text-[11px] text-amber-600">Server refresh failed. Showing the last confirmed state.</p>}
       {!canonical.loading && canonical.authoritative && canonicalRuns.length === 0 && <p className="text-[11px] text-muted-foreground">No canonical server executions for this project.</p>}
-      {canonicalRuns.map((run) => <CanonicalExecutionRunRow key={run.runId} run={run} control={canonicalControls[run.runId]} retryControl={workflowRetryControls[run.runId]} onCancel={cancelCanonicalRun} onRetry={retryCanonicalWorkflow} />)}
+      {canonicalRuns.map((run) => <CanonicalExecutionRunRow key={run.runId} run={run} control={canonicalControlsReady ? canonicalControls[run.runId] : undefined} retryControl={canonicalControlsReady ? workflowRetryControls[run.runId] : undefined} onCancel={cancelCanonicalRun} onRetry={retryCanonicalWorkflow} />)}
     </div>}
 
     {jobs.length > 0 && <div className="space-y-2" data-job-center-session-jobs data-execution-class={JOB_EXECUTION_CLASSES.EPHEMERAL_CLIENT_TASK}>
