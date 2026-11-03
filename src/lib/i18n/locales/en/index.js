@@ -305,7 +305,15 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
     "errors": {
       "adjustmentFailed": "Could not apply the selected adjustment.",
       "insufficientCredits": "The free cloud-processing allowance is exhausted. A paid subscription is not required and will not be offered.",
-      "generationUnavailable": "Generation is unavailable for this Project."
+      "generationUnavailable": "Generation is unavailable for this Project.",
+      "invalidScope": "Choose a valid request and confirm the processing scope.",
+      "planNotReady": "Core Creative Edit cannot admit this command yet. Clarify the object, mask or request.",
+      "styleConfirmation": "A style change needs additional confirmation in Editor.",
+      "busy": "Finish the current operation before starting another AI request.",
+      "maskRequired": "Confirm the selected region with a Core mask first.",
+      "unsupportedOperation": "This operation is not yet admitted by BERS Core.",
+      "editFailed": "The edit could not be completed. The original Project image remains unchanged.",
+      "providerPending": "The provider result is still being reconciled. Do not submit again; wait for status reconciliation."
     },
     "values": {
       "ev": "{value} EV"
