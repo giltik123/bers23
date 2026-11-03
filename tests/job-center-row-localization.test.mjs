@@ -10,7 +10,7 @@ test('session Job Center rows use shared translations for statuses, priorities a
   for (const key of ['queued', 'preparing', 'running', 'waiting', 'completed', 'cancelled', 'failed', 'retrying']) {
     assert.ok(source.includes(`jobs.${key}`), `missing localized job status ${key}`);
   }
-  for (const key of ['priority.high', 'priority.normal', 'priority.low', 'priority.unknown', 'moveUp', 'runAgain', 'cancel', 'duplicate', 'estimatedSeconds']) {
+  for (const key of ['priority.high', 'priority.normal', 'priority.low', 'priority.unknown', 'stages.preparing', 'stages.running', 'moveUp', 'runAgain', 'cancel', 'duplicate', 'estimatedSeconds']) {
     assert.ok(source.includes(`jobs.${key}`), `missing localized job label ${key}`);
   }
   assert.doesNotMatch(source, />Run again<|>Duplicate<|>Cancel</);
@@ -46,7 +46,7 @@ test('English and Russian Job Center catalogs contain the same detailed row voca
 
   const required = [
     'preparing:', 'succeeded:', 'unknown:', 'unavailable:', 'runAgain:', 'duplicate:',
-    'moveUp:', 'estimatedSeconds:', 'stage:', 'priority:', 'server:', 'revision:',
+    'moveUp:', 'estimatedSeconds:', 'stage:', 'stages:', 'priority:', 'server:', 'revision:',
     'reasonCode:', 'capabilities:', 'localAuthority:', 'ticketAuthorityUnavailable:',
     'expiresAt:', 'cancellationUnsupported:', 'final:', 'openResult:', 'cancelling:',
     'cancellationUnavailable:', 'retryWorkflow:', 'retryingThroughWorkflow:',
