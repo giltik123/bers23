@@ -1502,8 +1502,8 @@ export default function Editor() {
                 onOpenWardrobe={() => openWardrobe(voiceTryOnQuery)}
               />}
               <details open={tryOn.state.host.active || manualTryOnExpanded} onToggle={event => setManualTryOnExpanded(event.currentTarget.open)}>
-                <summary className="text-sm cursor-pointer">Ручной перенос текстуры и комплекты (дополнительно)</summary>
-                <p className="text-xs text-muted-foreground my-2">Геометрический перенос пикселей не моделирует посадку ткани и перекрытие руками.</p>
+                <summary className="text-sm cursor-pointer">{t('fashionUi.manualTryOnDetailsTitle')}</summary>
+                <p className="text-xs text-muted-foreground my-2">{t('fashionUi.manualTryOnGeometryLimit')}</p>
               <CanonicalTryOnRunnerPanel
                 project={project}
                 outfitRevision={outfitRevision}
