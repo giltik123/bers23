@@ -106,12 +106,12 @@ test('Fashion Editor Try-On disclosure is localized and keeps the geometric qual
   };
   const english = extractFashionUi(englishSource);
   const russian = extractFashionUi(russianSource);
-  for (const key of ['manualTryOnDetailsTitle', 'manualTryOnGeometryLimit']) {
+  for (const key of ['manualTryOnDetailsTitle', 'manualTryOnGeometryLimit', 'outfitsDetailsTitle']) {
     assert.equal(typeof english[key], 'string', `English fashionUi.${key}`);
     assert.equal(typeof russian[key], 'string', `Russian fashionUi.${key}`);
     assert.ok(english[key].trim());
     assert.ok(russian[key].trim());
     assert.ok(editor.includes(`t('fashionUi.${key}')`), `Editor uses fashionUi.${key}`);
   }
-  assert.doesNotMatch(editor, /Ручной перенос текстуры и комплекты \(дополнительно\)|Геометрический перенос пикселей не моделирует посадку ткани и перекрытие руками/);
+  assert.doesNotMatch(editor, /Ручной перенос текстуры и комплекты \\(дополнительно\\)|Геометрический перенос пикселей не моделирует посадку ткани и перекрытие руками|Комплекты одежды · дополнительно/);
 });
