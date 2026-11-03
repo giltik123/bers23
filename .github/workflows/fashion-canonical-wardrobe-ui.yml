@@ -6,6 +6,7 @@ on:
       - 'src/application/fashion/canonicalWardrobeViewModel.js'
       - 'src/components/editor/fashion/AddGarmentDialog.jsx'
       - 'src/components/editor/fashion/FashionPanel.jsx'
+      - 'src/components/editor/outfits/VirtualTryOnPanel.jsx'
       - 'src/pages/Wardrobe.jsx'
       - 'src/api/managedGarmentClient.js'
       - 'src/api/managedWardrobeClient.js'
