@@ -80,7 +80,7 @@ test('canonical UI exposes owning Creative cancel, owning workflow Retry, read-o
   assert.match(row, /run\.capability === 'LOCAL_EXECUTION'/);
   assert.match(row, /run\.authorityKind === 'LOCAL_EXECUTION_TICKET'/);
   assert.match(row, /data-local-execution-authority/);
-  assert.match(row, /localExecutionAuthorityStateLabel\(localAuthority\.state\)/);
+  assert.match(row, /executionRunLabel\(t, 'localStates', localAuthority\.state\)/);
   assert.match(row, /t\('jobs\.canonical\.cancellationUnsupported'\)/);
   assert.match(row, /run\.capability === 'WORKFLOW_CONTINUATION'/);
   assert.match(row, /run\.authorityKind === 'WORKFLOW_CONTINUATION'/);
