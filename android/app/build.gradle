@@ -48,13 +48,13 @@ def releaseTaskRequested = gradle.startParameter.taskNames.any { taskName ->
 
 def keystorePath = System.getenv('BERS_ANDROID_KEYSTORE_PATH')
 def keystorePassword = System.getenv('BERS_ANDROID_KEYSTORE_PASSWORD')
-def keyAlias = System.getenv('BERS_ANDROID_KEY_ALIAS')
-def keyPassword = System.getenv('BERS_ANDROID_KEY_PASSWORD')
+def uploadKeyAlias = System.getenv('BERS_ANDROID_KEY_ALIAS')
+def uploadKeyPassword = System.getenv('BERS_ANDROID_KEY_PASSWORD')
 if (releaseTaskRequested) {
     if (placeholderConfiguration || androidVersionName == '0.0.0') {
         throw new GradleException('Release builds require a real BERS_ANDROID_URL, application id and version name')
     }
-    if (!keystorePath || !keystorePassword || !keyAlias || !keyPassword) {
+    if (!keystorePath || !keystorePassword || !uploadKeyAlias || !uploadKeyPassword) {
         throw new GradleException('Release builds require all four BERS Android signing environment variables')
     }
     if (!file(keystorePath).isFile()) {
@@ -86,8 +86,8 @@ android {
             release {
                 storeFile file(keystorePath)
                 storePassword keystorePassword
-                keyAlias keyAlias
-                keyPassword keyPassword
+                keyAlias uploadKeyAlias
+                keyPassword uploadKeyPassword
             }
         }
     }
