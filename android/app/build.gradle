@@ -41,7 +41,9 @@ def placeholderConfiguration = parsedUrl.host.endsWith('.example') ||
         configuredApplicationId.endsWith('.example')
 def releaseTaskRequested = gradle.startParameter.taskNames.any { taskName ->
     def normalized = taskName.toLowerCase()
-    normalized.contains('release') && (normalized.contains('bundle') || normalized.contains('assemble'))
+    def taskNameOnly = normalized.substring(normalized.lastIndexOf(':') + 1)
+    taskNameOnly in ['assemble', 'bundle', 'build'] ||
+            (normalized.contains('release') && (normalized.contains('bundle') || normalized.contains('assemble')))
 }
 
 def keystorePath = System.getenv('BERS_ANDROID_KEYSTORE_PATH')
