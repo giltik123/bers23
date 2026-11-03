@@ -20,6 +20,11 @@ const PRIORITY_KEYS = Object.freeze({
   low: 'jobs.priority.low',
 });
 
+const STAGE_KEYS = Object.freeze({
+  preparing: 'jobs.stages.preparing',
+  running: 'jobs.stages.running',
+});
+
 function translatedValue(t, keys, value, fallbackKey) {
   return keys[value] ? t(keys[value]) : t(fallbackKey);
 }
@@ -29,9 +34,9 @@ export default function JobRow({ job, onCancel, onRunAgain, onDuplicate, onMoveU
   const active = ['preparing', 'running', 'retrying'].includes(job.status);
   const status = translatedValue(t, STATUS_KEYS, job.status, 'jobs.unavailable');
   const priority = translatedValue(t, PRIORITY_KEYS, job.priority, 'jobs.priority.unknown');
-  const progress = job.metadata?.currentStage
-    ? t('jobs.stage', { stage: String(job.metadata.currentStage) })
-    : `${job.progress || 0}%`;
+  const currentStage = job.metadata?.currentStage;
+  const stage = STAGE_KEYS[currentStage] ? t(STAGE_KEYS[currentStage]) : String(currentStage ?? '');
+  const progress = currentStage ? t('jobs.stage', { stage }) : `${job.progress || 0}%`;
 
   return (
     <div className="rounded-xl border border-border/60 p-3 text-xs space-y-1">
