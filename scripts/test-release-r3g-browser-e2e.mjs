@@ -165,7 +165,7 @@ try {
     '/api/core/garments',
     '/api/core/wardrobe/garments',
   ], async () => {
-    await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
+    await page.getByRole('button', { name: 'Open wardrobe', exact: true }).click();
     await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
   });
   await page.getByRole('region', { name: 'Canonical wardrobe and collections', exact: true })
