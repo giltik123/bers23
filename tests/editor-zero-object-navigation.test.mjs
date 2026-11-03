@@ -67,11 +67,30 @@ test('reachable Fashion, Outfit and bounded Agent surfaces preserve narrow canon
     assert.equal(outfits.includes(forbidden), false, `Outfits must not mount legacy or execution authority ${forbidden}`);
   }
 
-  assert.match(creative, /Canonical Outfit authority is available, but Creative Studio integration is not wired yet\./);
-  for (const forbidden of ['coreClient', 'outfitManager']) {
-    assert.equal(creative.includes(forbidden), false, `Creative Studio must not mount ${forbidden}`);
+  assert.match(creative, /coreClient\.fashion\.outfits\.list\(\)/);
+  assert.match(creative, /projectReadyCreativeOutfits/);
+  assert.match(creative, /outfits: strategyOutfits/);
+  for (const forbidden of [
+    'outfitManager',
+    'coreClient.entities',
+    'coreClient.fashion.wardrobe',
+    'coreClient.fashion.outfits.create',
+    'coreClient.fashion.outfits.updateMetadata',
+    'coreClient.fashion.outfits.archive',
+    'coreClient.fashion.outfits.restore',
+    'coreClient.fashion.outfits.addEntry',
+    'coreClient.fashion.outfits.removeEntry',
+    'coreClient.fashion.outfits.setEntryRole',
+    'coreClient.fashion.outfits.reorderEntries',
+    'FASHN',
+    'billing',
+    'credits',
+    'onCommit',
+    'onRollback',
+    'fetch(',
+  ]) {
+    assert.equal(creative.includes(forbidden), false, 'Creative Studio must not use ' + forbidden);
   }
-  assert.match(creative, /outfits: \[\]/, 'Creative Studio must explicitly remain disconnected from canonical Outfit data');
 
   assert.doesNotMatch(editor, /<OutfitPanel[\s\S]{0,500}onCommit=/);
   assert.doesNotMatch(editor, /<AgentPanel[\s\S]{0,700}(onCommit|onRollback)=/);

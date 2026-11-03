@@ -25,6 +25,17 @@ on:
       - 'tests/fashion-canonical-outfit-ui.test.mjs'
       - 'tests/editor-zero-object-navigation.test.mjs'
       - 'src/components/editor/creative/CreativeStudioPanel.jsx'
+      - 'src/application/creative/creativeOutfitContext.js'
+      - 'src/components/editor/creative/CreativeStrategySummary.jsx'
+      - 'src/components/editor/creative/CreativeGoalPicker.jsx'
+      - 'src/components/editor/creative/CreativeIdeaCard.jsx'
+      - 'src/components/editor/creative/CreativeMoodBoardCard.jsx'
+      - 'src/lib/creative/CreativeIdeaGenerator.js'
+      - 'src/lib/creative/CreativeMoodBoards.js'
+      - 'src/lib/creative/CreativeThemes.js'
+      - 'src/lib/i18n/locales/en/creative.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/creative-outfit-context.test.mjs'
       - 'src/pages/Editor.jsx'
       - 'src/components/editor/fashion/FashionPanel.jsx'
       - 'src/components/editor/agent/AgentPanel.jsx'
@@ -65,8 +76,26 @@ jobs:
         run: |
           node --test tests/fashion-canonical-outfit-ui.test.mjs
           node --test tests/editor-zero-object-navigation.test.mjs
+          node --test tests/creative-outfit-context.test.mjs
       - name: Prove bounded F3c browser compile closure
         run: node --test tests/fashion-f3c-browser-build-closure.test.mjs
+      - name: Prove bounded Creative Studio browser compile
+        run: |
+          node --input-type=module <<'NODE'
+          import { build } from 'esbuild';
+          await build({
+            absWorkingDir: process.cwd(),
+            entryPoints: ['src/components/editor/creative/CreativeStudioPanel.jsx'],
+            bundle: true,
+            platform: 'browser',
+            format: 'esm',
+            target: ['es2022'],
+            outfile: '.test-cache/fashion-f3c-browser/creative-studio.mjs',
+            packages: 'external',
+            alias: { '@': './src' },
+            logLevel: 'silent',
+          });
+          NODE
       - name: Reject legacy, execution and financial authority widening
         run: |
           set -euo pipefail
@@ -79,9 +108,18 @@ jobs:
           grep -q 'coreClient.fashion.wardrobe' src/components/editor/outfits/OutfitPanel.jsx
           grep -q 'outfits.reorderEntries' src/application/fashion/canonicalOutfitViewModel.js
           grep -q 'outfits.updateMetadata' src/application/fashion/canonicalOutfitViewModel.js
-      - name: Keep Creative Studio disconnected from Outfit data
+      - name: Allow only read-only canonical Outfit context in Creative Studio
         run: |
-          ! grep -E -q 'coreClient|outfitManager' src/components/editor/creative/CreativeStudioPanel.jsx
-          grep -q 'outfits: \[\]' src/components/editor/creative/CreativeStudioPanel.jsx
+          set -euo pipefail
+          FILE=src/components/editor/creative/CreativeStudioPanel.jsx
+          grep -q 'coreClient.fashion.outfits.list' "$FILE"
+          grep -q 'projectReadyCreativeOutfits' "$FILE"
+          grep -q 'useAuth()' "$FILE"
+          grep -q 'principalKey' "$FILE"
+          grep -q 'creativeHistory.save(historyStrategy)' "$FILE"
+          grep -q 'outfits: EMPTY_OUTFITS' "$FILE"
+          ! grep -q 'creativeHistory.save(strategy)' "$FILE"
+          ! grep -E -q 'outfitManager|coreClient\.entities|coreClient\.fashion\.(garments|collections|wardrobe|checkTryOnReadiness|admitManualParametricRepresentation)|coreClient\.fashion\.outfits\.(get|create|updateMetadata|duplicate|archive|restore|remove|addEntry|replaceEntry|removeEntry|setEntryRole|reorderEntries)|coreClient\.creative\.execute|Core\.UploadFile|integrations\.Core|compositeContinuations|functions\.invoke|FASHN|billing|credits|provider|onCommit|onRollback|fetch\(' "$FILE"
+          ! grep -q 'outfits: \[\]' "$FILE"
       - name: Check committed diff whitespace
         run: git diff --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
