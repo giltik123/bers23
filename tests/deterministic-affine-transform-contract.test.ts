@@ -99,3 +99,106 @@ test('Affine registry contract is immutable candidate data and remains productio
   assert.equal(Object.isFrozen(AFFINE_TRANSFORM_TOOL_DEFINITION), true);
   assert.equal(productionLocalExecutorsByCapability[AFFINE_TRANSFORM_CAPABILITY], undefined, 'registry candidate must not become production executable without explicit Core admission');
 });
+
+
+test('Affine v1 quarter-pixel translation has independently fixed bilinear rounding', () => {
+  const source = new Uint8ClampedArray([
+    255,0,0,255,
+    0,255,0,255,
+  ]);
+  const output = affineTransformRgba8(source, 2, 1, {
+    ...IDENTITY_AFFINE_INVERSE_Q16,
+    txQ16: AFFINE_FIXED_POINT_ONE / 4,
+  });
+  assert.deepEqual([...output], [
+    191,64,0,255,
+    0,255,0,191,
+  ]);
+});
+
+test('Affine v1 90-degree clockwise rotation maps output pixel centers to exact source pixels', () => {
+  const output = affineTransformRgba8(source2x2, 2, 2, {
+    m00Q16: 0,
+    m01Q16: AFFINE_FIXED_POINT_ONE,
+    txQ16: 0,
+    m10Q16: -AFFINE_FIXED_POINT_ONE,
+    m11Q16: 0,
+    tyQ16: 2 * AFFINE_FIXED_POINT_ONE,
+  });
+  assert.deepEqual([...output], [
+    0,0,255,255, 255,0,0,255,
+    255,255,255,255, 0,255,0,255,
+  ]);
+});
+
+test('Affine v1 skew preserves integer samples and makes the out-of-bounds edge transparent', () => {
+  const output = affineTransformRgba8(source2x2, 2, 2, {
+    m00Q16: AFFINE_FIXED_POINT_ONE,
+    m01Q16: AFFINE_FIXED_POINT_ONE,
+    txQ16: -AFFINE_FIXED_POINT_ONE / 2,
+    m10Q16: 0,
+    m11Q16: AFFINE_FIXED_POINT_ONE,
+    tyQ16: 0,
+  });
+  assert.deepEqual([...output], [
+    255,0,0,255, 0,255,0,255,
+    255,255,255,255, 0,0,0,0,
+  ]);
+});
+
+test('Affine v1 negative translation uses floor-based coordinates and transparent-black borders', () => {
+  const output = affineTransformRgba8(source2x2, 2, 2, {
+    ...IDENTITY_AFFINE_INVERSE_Q16,
+    txQ16: -AFFINE_FIXED_POINT_ONE,
+  });
+  assert.deepEqual([...output], [
+    0,0,0,0, 255,0,0,255,
+    0,0,0,0, 0,0,255,255,
+  ]);
+});
+
+test('Affine v1 transparent source pixels and out-of-bounds taps cannot create colored fringes', () => {
+  const source = new Uint8ClampedArray([
+    255,0,0,0,
+    0,255,0,255,
+  ]);
+  const output = affineTransformRgba8(source, 2, 1, {
+    ...IDENTITY_AFFINE_INVERSE_Q16,
+    txQ16: AFFINE_FIXED_POINT_ONE / 2,
+  });
+  assert.deepEqual([...output], [
+    0,255,0,128,
+    0,255,0,128,
+  ]);
+});
+
+test('Affine v1 accepts a bounded near-singular inverse map without unbounded allocation', () => {
+  const nearSingular = {
+    m00Q16: AFFINE_FIXED_POINT_ONE,
+    m01Q16: AFFINE_FIXED_POINT_ONE - 1,
+    txQ16: 0,
+    m10Q16: AFFINE_FIXED_POINT_ONE,
+    m11Q16: AFFINE_FIXED_POINT_ONE,
+    tyQ16: 0,
+  };
+  assert.equal(normalizeAffineInverseMatrixQ16(nearSingular).m01Q16, AFFINE_FIXED_POINT_ONE - 1);
+  assert.equal(affineTransformRgba8(source2x2, 2, 2, nearSingular).length, source2x2.length);
+  assert.throws(() => normalizeAffineInverseMatrixQ16({
+    ...nearSingular,
+    m01Q16: AFFINE_FIXED_POINT_ONE,
+  }), /invertible/);
+});
+
+test('Affine v1 rejects non-finite, unsafe and over-limit numeric inputs', () => {
+  for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.MAX_SAFE_INTEGER, Number.MIN_SAFE_INTEGER]) {
+    assert.throws(() => normalizeAffineInverseMatrixQ16({
+      ...IDENTITY_AFFINE_INVERSE_Q16,
+      m00Q16: value,
+    }), /linear coefficient/);
+    assert.throws(() => normalizeAffineInverseMatrixQ16({
+      ...IDENTITY_AFFINE_INVERSE_Q16,
+      txQ16: value,
+    }), /translation/);
+  }
+  assert.throws(() => affineTransformRgba8(new Uint8Array(0), 4097, 4097, IDENTITY_AFFINE_INVERSE_Q16), /pixel limit/);
+});
