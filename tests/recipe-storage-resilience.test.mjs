@@ -50,11 +50,15 @@ test('Recipe favorites and outcome history survive denied/quota Web Storage and 
       durationMs: 800,
       credits: 0,
     }));
-    assert.equal(recipeFavorites.isFavorite('storage-fallback-favorite'), true);
+    assert.equal(recipeFavorites.isFavorite('quota-fallback-favorite'), true);
     assert.equal(recipeHistory.successRate('storage-fallback-recipe'), 0.5);
     assert.equal(recipeAnalytics.stats('storage-fallback-recipe').uses, 2);
 
-    const persisted = new Map();
+    const persisted = new Map([
+      ['recipe_favorites', JSON.stringify(['stale-persisted-favorite'])],
+      ['recipe_history', JSON.stringify({ 'storage-fallback-recipe': { uses: 99, successes: 99, failures: 0, lastUsed: 1 } })],
+      ['recipe_analytics', JSON.stringify({ 'storage-fallback-recipe': { uses: 99, successes: 99, failures: 0, totalDurationMs: 99, creditsSpent: 0 } })],
+    ]);
     Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
       value: {
@@ -63,6 +67,13 @@ test('Recipe favorites and outcome history survive denied/quota Web Storage and 
       },
     });
 
+    // Restored storage must not replace the newer session-local values with stale persisted data.
+    assert.equal(recipeFavorites.isFavorite('quota-fallback-favorite'), true);
+    assert.equal(recipeFavorites.isFavorite('stale-persisted-favorite'), false);
+    assert.equal(recipeHistory.successRate('storage-fallback-recipe'), 0.5);
+    assert.equal(recipeAnalytics.stats('storage-fallback-recipe').uses, 2);
+
+    // The next explicit local preference/history update persists the session snapshot.
     assert.equal(recipeFavorites.toggle('persistent-favorite'), true);
     recipeEngine.recordOutcome('storage-fallback-recipe', { success: true, durationMs: 600, credits: 0 });
     assert.deepEqual(JSON.parse(persisted.get('recipe_favorites')), [
