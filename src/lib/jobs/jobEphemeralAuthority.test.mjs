@@ -91,10 +91,10 @@ test('Job Center separates canonical reconciliation from explicit new-operation 
   assert.doesNotMatch(center, /jobManager\.retry/);
   assert.doesNotMatch(center, /<JobRow[^>]*onRetry=/);
   assert.match(row, /onRunAgain/);
-  assert.match(row, />Run again</);
+  assert.match(row, /t\('jobs\.runAgain'\)/);
   assert.doesNotMatch(row, /onRetry|>Retry<|\bRetry\b/);
   assert.match(center, /<CanonicalExecutionRunRow[^>]*onRetry=\{retryCanonicalWorkflow\}/);
   assert.doesNotMatch(center, /<CanonicalExecutionRunRow[^>]*(onRunAgain|onDuplicate|onMoveUp)=/);
-  assert.match(canonicalRow, />Retry workflow</);
+  assert.match(canonicalRow, /t\('jobs\.canonical\.retryWorkflow'\)/);
   assert.doesNotMatch(canonicalRow, /onRunAgain|onDuplicate|onMoveUp|jobManager|jobStorage/);
 });
