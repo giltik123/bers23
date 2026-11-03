@@ -54,7 +54,9 @@ jobs:
             --outfile=.test-cache/6.42-integration/browser-local-ai-composition.test.mjs \
             --external:node:*
           node --test .test-cache/6.42-integration/browser-local-ai-composition.test.mjs
-          grep -F "createSelectionSegmentation({ projectId: project.id, imageArtifactId" src/pages/Editor.jsx
+          grep -F "const requestedProjectId = initialProject?.id;" src/pages/Editor.jsx
+grep -F "projectId: requestedProjectId," src/pages/Editor.jsx
+grep -F "const artifacts = new CoreMaskArtifactPort(project.id);" src/pages/Editor.jsx
       - name: C1 deterministic mask refinement lineage
         run: |
           npx esbuild tests/mask-refinement-lineage.test.ts \
