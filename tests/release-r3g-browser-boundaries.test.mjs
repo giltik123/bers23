@@ -129,6 +129,7 @@ test('R3g workflow guard follows the localized Fashion region and panel label', 
   assert.equal(workflow.includes('grep -q "Canonical fashion wardrobe" "$script"'), false);
   assert.ok(fashion.includes("aria-label={t('fashionUi.panelLabel')}"));
   assert.ok(harness.includes("getByRole('region', { name: 'Примерка одежды', exact: true })"));
+  assert.ok(harness.includes("page.locator('summary').filter({ hasText: 'Комплекты одежды' })"));
 });
 
 test('R3 release workflow makes R3g cumulative evidence an exact-head merge gate', async () => {
