@@ -173,7 +173,7 @@ try {
   await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
   await initialFashionLoad;
 
-  const wardrobeRegion = page.getByRole('region', { name: 'Canonical fashion wardrobe', exact: true });
+  const wardrobeRegion = page.getByRole('region', { name: 'Canonical wardrobe and collections', exact: true });
   const collectionsRegion = page.locator('[aria-label="Canonical garment collections"]');
   await wardrobeRegion.waitFor({ state: 'visible', timeout: 15_000 });
   await collectionsRegion.waitFor({ state: 'visible', timeout: 15_000 });

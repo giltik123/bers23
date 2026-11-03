@@ -113,6 +113,23 @@ test('R3h binds selected browser image pixels and revisions to durable Garment v
   assert.doesNotMatch(harness, /financialAccount|financialTrial|credit_grants|credit_wallets/);
 });
 
+test('R3h, R3i and R3j follow the localized canonical Fashion region label', async () => {
+  const [fashion, english, r3h, r3i, r3j] = await Promise.all([
+    read('src/components/editor/fashion/FashionPanel.jsx'),
+    read('src/lib/i18n/locales/en/index.js'),
+    read('scripts/test-release-r3h-browser-e2e.mjs'),
+    read('scripts/test-release-r3i-browser-e2e.mjs'),
+    read('scripts/test-release-r3j-browser-e2e.mjs'),
+  ]);
+
+  assert.match(fashion, /aria-label=\\{t\\('fashionUi\\.panelLabel'\\)\\}/);
+  assert.match(english, /"panelLabel": "Canonical wardrobe and collections"/);
+  for (const harness of [r3h, r3i, r3j]) {
+    assert.ok(harness.includes("name: 'Canonical wardrobe and collections', exact: true"));
+    assert.equal(harness.includes('Canonical fashion wardrobe'), false);
+  }
+});
+
 test('R3 release workflow makes R3h cumulative evidence and Managed Garment split-origin regression exact-head merge gates', async () => {
   const workflow = await readFile(WORKFLOW, 'utf8');
 
