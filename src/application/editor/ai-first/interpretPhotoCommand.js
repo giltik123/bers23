@@ -105,6 +105,7 @@ export function interpretPhotoCommand(raw) {
   const operation=candidates[0][0];
   const negative=NEGATIVE.test(instruction);
   let parameters;
+  let explanationKey;
   let explanation;
   if(operation==='MASKED_EXPOSURE'){
     const magnitude=amount(instruction,2,5,10);
