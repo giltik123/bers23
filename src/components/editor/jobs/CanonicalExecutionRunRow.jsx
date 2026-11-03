@@ -4,12 +4,12 @@ import { useTranslation } from '@/lib/i18n/TranslationProvider';
 import { executionRunLabel } from '@/lib/jobs/executionRunPresentation';
 
 function StatusIcon({ status }) {
-  if (status === 'RUNNING') return <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />;
-  if (status === 'QUEUED') return <Circle className="w-3.5 h-3.5 text-muted-foreground" />;
-  if (status === 'SUCCEEDED') return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />;
-  if (status === 'FAILED' || status === 'CANCELLED') return <XCircle className="w-3.5 h-3.5 text-destructive" />;
-  if (status === 'UNKNOWN') return <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />;
-  return <Circle className="w-3.5 h-3.5 text-muted-foreground" />;
+  if (status === 'RUNNING') return <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" aria-hidden="true" />;
+  if (status === 'QUEUED') return <Circle className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />;
+  if (status === 'SUCCEEDED') return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" aria-hidden="true" />;
+  if (status === 'FAILED' || status === 'CANCELLED') return <XCircle className="w-3.5 h-3.5 text-destructive" aria-hidden="true" />;
+  if (status === 'UNKNOWN') return <AlertTriangle className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />;
+  return <Circle className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />;
 }
 
 export default function CanonicalExecutionRunRow({ run, control, retryControl, onCancel, onRetry, depth = 0 }) {
@@ -50,7 +50,7 @@ export default function CanonicalExecutionRunRow({ run, control, retryControl, o
       {cancelPending && <p className="text-[10px] text-muted-foreground text-right">{t('jobs.canonical.cancelling')}</p>}
       {cancelUnavailable && <p className="text-[10px] text-muted-foreground text-right">{t('jobs.canonical.cancellationUnavailable')}</p>}
       {retryAvailable && <div className="flex justify-end pt-1">
-        <button type="button" onClick={() => onRetry(run)} className="text-[11px] text-primary hover:underline flex items-center gap-1"><RotateCcw className="w-3 h-3" />{t('jobs.canonical.retryWorkflow')}</button>
+        <button type="button" onClick={() => onRetry(run)} className="text-[11px] text-primary hover:underline flex items-center gap-1"><RotateCcw className="w-3 h-3" aria-hidden="true" />{t('jobs.canonical.retryWorkflow')}</button>
       </div>}
       {retryPending && <p className="text-[10px] text-muted-foreground text-right">{t('jobs.canonical.retrying')}</p>}
     </div>
