@@ -3,7 +3,43 @@ name: Sprint 6.42C8 LaMa release reproducibility
 on:
   pull_request:
     branches: [ "main" ]
+    paths:
+      - '.github/workflows/sprint-6.42c8-lama-release-reproducibility.yml'
+      - '.github/workflows/sprint-6.42c7-lama-dynamo-onnx.yml'
+      - 'scripts/bridge-lama-generator-safetensors.py'
+      - 'scripts/probe-lama-dynamo-onnx.py'
+      - 'scripts/probe-lama-dynamo-multishape.py'
+      - 'scripts/probe-lama-cross-process-reproducibility.py'
+      - 'scripts/inspect-lama-checkpoint.py'
+      - 'scripts/test-lama-browser-wasm-acceptance.mjs'
+      - 'scripts/test-lama-browser-webgpu-feasibility.mjs'
+      - 'scripts/check-model-weight-tracking.mjs'
+      - 'tests/lama-release-reproducibility.test.mjs'
+      - 'tests/lama-dynamo-onnx-security.test.mjs'
+      - 'tests/lama-webgpu-feasibility.test.mjs'
+      - 'tests/lama-browser-wasm-acceptance.html'
+      - 'tests/lama-browser-webgpu-feasibility.html'
+      - 'src/platform/creative/local-ai/browser/BrowserOnnxSessionFactory.ts'
+      - 'src/platform/creative/local-ai/models/lama-inpainting.manifest.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.npmrc'
+      - '**/*.ckpt'
+      - '**/*.pth'
+      - '**/*.pt'
+      - '**/*.safetensors'
+      - '**/*.onnx'
+      - '**/*.ort'
+      - '**/*.bin'
+      - '**/.local-models/**'
+      - '**/models/releases/**'
+      - '**/models/cache/**'
+      - '**/models/downloads/**'
   workflow_dispatch:
+
+concurrency:
+  group: lama-c8-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
