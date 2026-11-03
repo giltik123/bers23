@@ -28,7 +28,7 @@ test('R3g drives visible zero-object navigation into canonical Fashion and Outfi
   assert.match(tryOnRunner, /aria-label=\{t\('fashionUi\.runnerLabel'\)\}/);
   assert.match(virtualTryOn, /aria-label=\{t\('fashionUi\.virtualTryOnPanelLabel'\)\}/);
   assert.match(english, /"runnerLabel": "Canonical deterministic Try-On runner"/);
-  assert.ok(harness.includes("getByRole('button', { name: 'Открыть гардероб', exact: true })"));
+  assert.ok(harness.includes("getByRole('button', { name: 'Open wardrobe', exact: true })"));
   assert.ok(harness.includes("url.pathname === '/wardrobe'"));
   assert.ok(harness.includes("getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ })"), 'R3g must accept the canonical RU/EN Wardrobe return label');
 
