@@ -208,6 +208,112 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   "download": "Download",
   "viewImage": "View image"
 },
+  editorAi: {
+    "headings": {
+      "wholeImage": "BERS · Photo editing",
+      "commandEditor": "BERS · Command editor"
+    },
+    "sections": {
+      "wholeImage": "Generative photo editing",
+      "commandEditor": "AI-first command editor",
+      "adjustableParameters": "Adjustable command parameters",
+      "examples": "Example commands",
+      "regionAndMask": "Region and mask"
+    },
+    "fields": {
+      "command": "What would you like to change in the photo?",
+      "generationScope": "Which pixels may change?"
+    },
+    "placeholders": {
+      "wholeImage": "For example: make the lighting warmer across the entire photo",
+      "masked": "For example: slightly brighten the jacket, preserve its texture and leave the face unchanged"
+    },
+    "descriptions": {
+      "wholeImage": "Describe a change to the entire frame. Review the result before saving.",
+      "wholeImageScope": "Generative editing affects the entire frame. It is free within the server-side limit; no subscription is required. Compare the result with the original before saving.",
+      "commandEditor": "Describe what you want to change, then confirm the region and effect strength. This is a controlled route to Core, not blind generation.",
+      "fashion": "Realistic clothing try-on is not a simple overlay. It needs a real garment photo, fit to the body, contour and foreground occlusion (hands and hair).",
+      "generative": "This requires a real generation model admitted by Core, not a simulation. The existing Creative Edit may be unavailable if no provider is configured.",
+      "maskGuarantee": "The mask is sent to Core, but preservation outside the mask must be checked in the before/after images. This screen does not guarantee pixel-level behavior from the provider."
+    },
+    "labels": {
+      "exposure": "Exposure",
+      "temperature": "Temperature",
+      "tint": "Tint",
+      "inputBlack": "Input black point",
+      "inputMidpoint": "Midtones",
+      "inputWhite": "Input white point",
+      "outputBlack": "Output black point",
+      "outputWhite": "Output white point",
+      "adjustment": "Adjustment tool",
+      "selectedRegion": "selected region",
+      "selectedObjectOnly": "Selected object only. A saved Core mask is required.",
+      "wholeFrame": "Whole frame — only for general processing without a requirement to preserve individual objects."
+    },
+    "operation": {
+      "maskedExposure": "Exposure · selected region",
+      "maskedWhiteBalance": "White balance · selected region",
+      "maskedLevels": "Levels · selected region",
+      "backgroundIsolation": "Isolate selected object"
+    },
+    "examples": {
+      "brightenFabric": "Slightly brighten the clothing while preserving the fabric texture",
+      "warmRegion": "Make the selected region a little warmer",
+      "increaseContrast": "Increase contrast in the selected region",
+      "sunsetSky": "Replace the sky with a sunset without changing the person",
+      "changeDress": "Try a different dress while preserving the face and pose"
+    },
+    "hints": {
+      "suggestedValues": "These are suggested starting values, not guaranteed correct processing. Compare the original and the result to make the final decision."
+    },
+    "warnings": {
+      "preservation": "A text instruction alone cannot guarantee what must remain unchanged. Check the exact mask, its boundaries and the final frame.",
+      "target": "The region is determined only by your confirmed Core mask, not by words or editor guesses."
+    },
+    "explanations": {
+      "invalid": "Describe in one sentence what to change in the photo (up to 850 characters).",
+      "fashion": "Realistic try-on requires control of garment contour, pose and occlusion. Choose an Outfit or garment in Fashion, review the fit, then decide whether to accept the result.",
+      "backgroundIsolation": "Background removal requires a Core MASK for the region to keep. No background AI fill is performed.",
+      "generative": "This needs generative processing. The original instruction is sent to the existing Core Creative Edit only after explicit confirmation. If Core does not admit a provider, generation is unavailable.",
+      "multipleAdjustments": "The request contains several different adjustments. Apply them one at a time and review each result to help preserve the original photo.",
+      "unknownAdjustment": "I cannot match this request to a safe tool. Clarify whether you want to brighten, darken, warm or cool, change contrast, or generate an object.",
+      "exposure": "An initial exposure value has been suggested. Adjust the slider and confirm the mask; the effect must not create patches or wash out skin.",
+      "whiteBalance": "A gentle white-balance value has been suggested. Review skin and white fabric after preview.",
+      "levels": "Initial Levels settings. They do not automatically determine artistic contrast; review highlights and shadows."
+    },
+    "confirmations": {
+      "wholeImage": "I confirm sending the photo to a cloud model and creating a free processing account on first use. I understand that the entire frame may change.",
+      "mask": "I checked that the selected mask matches my request.",
+      "maskBoundaries": "I checked the Core mask boundaries for {target}.",
+      "generative": "I confirm running the existing Core Creative Edit with this text instruction."
+    },
+    "actions": {
+      "generateFree": "Generate for free",
+      "openFashion": "Open Fashion",
+      "openFashionOutfit": "Open Fashion / Outfit and garment fit",
+      "drawMask": "Draw / refine mask",
+      "showResult": "Show result → accept or discard",
+      "createSelectMask": "Create / select mask",
+      "generateViaCore": "Request generation through Core"
+    },
+    "status": {
+      "unsupportedRegion": "This command cannot be applied to a separate region. Try editing the whole frame or use local tools.",
+      "noConfirmedMask": "No confirmed Core mask. Text does not automatically select skin, face or clothing.",
+      "noMaskSelected": "No Core mask is selected. AI does not automatically determine the exact region.",
+      "coreMaskSelected": "Core mask selected: {target}. Processing must not affect pixels outside it."
+    },
+    "errors": {
+      "adjustmentFailed": "Could not apply the selected adjustment.",
+      "insufficientCredits": "The free cloud-processing allowance is exhausted. A paid subscription is not required and will not be offered.",
+      "generationUnavailable": "Generation is unavailable for this Project."
+    },
+    "values": {
+      "ev": "{value} EV"
+    },
+    "disclaimers": {
+      "commandEditor": "Recognition of supported simple commands is limited by explicit rules, not a full visual AI model. The editor does not claim to infer hidden intent or see an object without a real mask. Project changes are committed only after Core Preview → Accept."
+    }
+  },
   editControls: {
   "history": "Edit history",
   "undo": "Undo",

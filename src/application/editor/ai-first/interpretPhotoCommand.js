@@ -28,6 +28,8 @@ function asDraft(kind, instruction, overrides={}) {
     operation:null, parameters:null, target:'UNRESOLVED',
     needsCoreMask:false, needsExplicitReview:true,
     warnings:Object.freeze([]),
+    warningKeys:Object.freeze([]),
+    explanationKey:null,
     explanation:'', ...overrides,
   });
 }
@@ -38,37 +40,49 @@ function amount(text,light,normal,strong) {
 }
 function commandWarnings(text) {
   const warnings=[];
-  if(PRESERVE.test(text)) warnings.push(
-    'Требование «не менять» нельзя гарантировать по одному тексту: проверьте точную маску, границы и итоговый кадр.'
-  );
-  if(TARGET.test(text)) warnings.push(
-    'Область определяется только подтверждённой вами Core-маской, а не словами или догадкой редактора.'
-  );
-  return Object.freeze(warnings);
+  const warningKeys=[];
+  if(PRESERVE.test(text)) {
+    warnings.push('Требование «не менять» нельзя гарантировать по одному тексту: проверьте точную маску, границы и итоговый кадр.');
+    warningKeys.push('editorAi.warnings.preservation');
+  }
+  if(TARGET.test(text)) {
+    warnings.push('Область определяется только подтверждённой вами Core-маской, а не словами или догадкой редактора.');
+    warningKeys.push('editorAi.warnings.target');
+  }
+  return Object.freeze({
+    warnings:Object.freeze(warnings),
+    warningKeys:Object.freeze(warningKeys),
+  });
 }
 export function interpretPhotoCommand(raw) {
   const instruction=typeof raw==='string'?raw.trim():'';
   if(!instruction || instruction.length>TEXT_LIMIT || /[\x00-\x08\x0E-\x1F]/u.test(instruction)){
-    return asDraft('CLARIFY',instruction,{ explanation:'Опишите одним предложением, что именно изменить на фотографии (до 850 символов).' });
+    return asDraft('CLARIFY',instruction,{
+      explanationKey:'editorAi.explanations.invalid',
+      explanation:'Опишите одним предложением, что именно изменить на фотографии (до 850 символов).',
+    });
   }
-  const warnings=commandWarnings(instruction);
+  const { warnings, warningKeys }=commandWarnings(instruction);
   if(FASHION.test(instruction)){
     return asDraft('FASHION',instruction,{
-      target:'GARMENT',warnings,
+      target:'GARMENT',warnings,warningKeys,
+      explanationKey:'editorAi.explanations.fashion',
       explanation:'Нужна настоящая примерка с управлением контуром одежды, позой и перекрытиями. Выберите Outfit/garment в Fashion, проверьте посадку и затем решайте, принимать ли результат.',
     });
   }
   if(REMOVE_BG.test(instruction)){
     return asDraft('ADJUSTMENT',instruction,{
       operation:'BACKGROUND_ISOLATION',parameters:Object.freeze({}),
-      target:'MASKED_REGION',needsCoreMask:true,warnings,
+      target:'MASKED_REGION',needsCoreMask:true,warnings,warningKeys,
+      explanationKey:'editorAi.explanations.backgroundIsolation',
       explanation:'Удаление фона требует Core MASK области, которую нужно сохранить. Никакого фонового AI-дорисовывания.',
     });
   }
   if(GENERATE.test(instruction)){
     return asDraft('GENERATIVE',instruction,{
       target:TARGET.test(instruction)?'USER_SELECTED_OBJECT':'IMAGE_OR_OBJECT',
-      warnings,
+      warnings,warningKeys,
+      explanationKey:'editorAi.explanations.generative',
       explanation:'Нужна генеративная обработка. План — отправить исходную фразу в существующий Core Creative Edit только после явного подтверждения. Если Core не допустил провайдера, генерация недоступна.',
     });
   }
@@ -79,7 +93,10 @@ export function interpretPhotoCommand(raw) {
   ].filter(([,matched])=>matched);
   if(candidates.length!==1){
     return asDraft('CLARIFY',instruction,{
-      target:TARGET.test(instruction)?'USER_SELECTED_OBJECT':'UNRESOLVED',warnings,
+      target:TARGET.test(instruction)?'USER_SELECTED_OBJECT':'UNRESOLVED',warnings,warningKeys,
+      explanationKey:candidates.length>1
+        ? 'editorAi.explanations.multipleAdjustments'
+        : 'editorAi.explanations.unknownAdjustment',
       explanation:candidates.length>1
         ? 'В запросе несколько разных корректировок. Выполняйте их последовательно с просмотром результата после каждой — так легче сохранить исходное фото.'
         : 'Не могу точно сопоставить запрос с безопасным инструментом. Уточните: осветлить, затемнить, теплее/холоднее, изменить контраст или сгенерировать объект.',
@@ -92,6 +109,7 @@ export function interpretPhotoCommand(raw) {
   if(operation==='MASKED_EXPOSURE'){
     const magnitude=amount(instruction,2,5,10);
     parameters=Object.freeze({eighthStops:negative?-magnitude:magnitude});
+    explanationKey='editorAi.explanations.exposure';
     explanation='Подобрана начальная экспозиция. Меняйте ползунок и подтверждайте маску: эффект не должен создавать пятна или выбеливать кожу.';
   }else if(operation==='MASKED_WHITE_BALANCE'){
     const magnitude=amount(instruction,12,25,42);
@@ -100,16 +118,19 @@ export function interpretPhotoCommand(raw) {
       temperatureQ8:tint?0:(negative?-magnitude:magnitude),
       tintQ8:tint?( /(зелен|green)/iu.test(instruction)?Math.min(32,magnitude):-Math.min(32,magnitude)):0,
     });
+    explanationKey='editorAi.explanations.whiteBalance';
     explanation='Подобран мягкий баланс белого. Оцените цвет кожи и белых тканей после предпросмотра.';
   }else{
     parameters=Object.freeze({
       inputBlack:0,inputMidpoint:128,inputWhite:255,
       outputBlack:amount(instruction,1,3,6),outputWhite:255,
     });
+    explanationKey='editorAi.explanations.levels';
     explanation='Начальная настройка Levels. Она не определяет художественный контраст автоматически; проверьте свет и тени.';
   }
   return asDraft('ADJUSTMENT',instruction,{
-    operation,parameters,target:'MASKED_REGION',needsCoreMask:true,warnings,explanation,
+    operation,parameters,target:'MASKED_REGION',needsCoreMask:true,warnings,warningKeys,
+    explanationKey,explanation,
   });
 }
 

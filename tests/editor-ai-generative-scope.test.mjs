@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bindGenerativeScope } from '../src/application/editor/ai-first/bindGenerativeScope.js';
+import { interpretPhotoCommand } from '../src/application/editor/ai-first/interpretPhotoCommand.js';
+import english from '../src/lib/i18n/locales/en/index.js';
+import russian from '../src/lib/i18n/locales/ru/index.js';
+
+const resolveTranslation = (pack, key) =>
+  key.split('.').reduce((value, part) => value?.[part], pack);
 
 const base = {
   instruction: 'Замени небо на закат, не меняй человека',
@@ -141,4 +147,58 @@ test('AI Studio generation and retry preserve exact mask and source across UI wi
   assert.match(compare, /canAcceptReviewedCandidate\(/);
   assert.match(compare, /reviewComplete: scopedGeneration \? scopedReview : allFashionAccepted/);
   assert.match(compare, /const reviewImagesReady = loaded\.before === identity && loaded\.after === identity/);
+});
+
+
+test('AI Command Studio intent explanations and controls resolve in English and Russian', async () => {
+  const instructions = [
+    '',
+    'надень платье',
+    'удали фон',
+    'замени небо на закат',
+    'осветли и сделай теплее',
+    'сделай красиво',
+    'слегка осветли одежду',
+    'сделай теплее',
+    'повышай контраст',
+    'осветли лицо, не меняй лицо',
+  ];
+  const plans = instructions.map(interpretPhotoCommand);
+  assert.deepEqual(plans.map(plan => plan.kind), [
+    'CLARIFY', 'FASHION', 'ADJUSTMENT', 'GENERATIVE', 'CLARIFY',
+    'CLARIFY', 'ADJUSTMENT', 'ADJUSTMENT', 'ADJUSTMENT', 'ADJUSTMENT',
+  ]);
+
+  for (const plan of plans) {
+    assert.ok(plan.explanationKey, 'every interpreted branch exposes a stable explanation key');
+    assert.ok(Array.isArray(plan.warningKeys), 'warning keys are locale-neutral metadata');
+    for (const pack of [english, russian]) {
+      assert.equal(typeof resolveTranslation(pack, plan.explanationKey), 'string');
+      for (const key of plan.warningKeys) {
+        assert.equal(typeof resolveTranslation(pack, key), 'string');
+      }
+    }
+  }
+  assert.deepEqual(plans.at(-1).warningKeys, [
+    'editorAi.warnings.preservation',
+    'editorAi.warnings.target',
+  ]);
+
+  const studio = await readFile('src/components/editor/ai/AICommandStudio.jsx', 'utf8');
+  assert.match(studio, /useTranslation/);
+  assert.match(studio, /plan\.explanationKey/);
+  assert.match(studio, /plan\.warningKeys/);
+  assert.doesNotMatch(studio, /\{plan\.explanation\}/);
+  assert.doesNotMatch(studio, /plan\.warnings\.map/);
+  assert.doesNotMatch(studio, /error\?\.message/);
+  assert.doesNotMatch(studio, /[\u0400-\u04FF]/u, 'AI Command Studio must not ship hardcoded Russian-only UI copy');
+
+  const referencedKeys = new Set(
+    [...studio.matchAll(/['"](editorAi\.[A-Za-z0-9.]+)['"]/gu)].map(match => match[1]),
+  );
+  assert.ok(referencedKeys.size >= 25, 'the UI must use the dedicated editorAi locale catalog');
+  for (const key of referencedKeys) {
+    assert.equal(typeof resolveTranslation(english, key), 'string', 'missing English translation: ' + key);
+    assert.equal(typeof resolveTranslation(russian, key), 'string', 'missing Russian translation: ' + key);
+  }
 });
