@@ -62,9 +62,16 @@ test('canonical Wardrobe panel copy is driven by the selected RU/EN locale', asy
   assert.match(page, /location\.state\?\.voiceQuery/);
   assert.match(page, /state=\{voiceQuery \? \{ voiceQuery \} : undefined\}/);
   assert.match(virtualTryOn, /useTranslation/);
-  assert.match(virtualTryOn, /aria-label=\{t\('fashionUi\\.virtualTryOnPanelLabel'\)\}/);
+  assert.match(virtualTryOn, /aria-label=\{t\('fashionUi\.virtualTryOnPanelLabel'\)\}/);
   for (const key of ['virtualTryOnTitle', 'virtualTryOnIntro', 'virtualTryOnGarmentLabel', 'virtualTryOnConsent', 'virtualTryOnQualityNote', 'virtualTryOnAccountSetup', 'virtualTryOnRun']) assert.ok(virtualTryOn.includes(`fashionUi.${key}`));
-  assert.doesNotMatch(virtualTryOn, /language\\s*===\\s*['\"]ru['\"]/);
+  assert.doesNotMatch(virtualTryOn, /language\s*===\s*['"]ru['"]/);
+  for (const hardcoded of [
+    'Примерить одежду',
+    'Текущее фото — человек для примерки.',
+    'Открыть гардероб',
+    'Разрешаю отправить текущее фото',
+    'Подготовить облачную обработку',
+  ]) assert.equal(virtualTryOn.includes(hardcoded), false, `Virtual Try-On must not hardcode ${hardcoded}`);
   assert.match(page, /encodeURIComponent\(projectId\).*mode=fashion/);
   assert.match(source, /plural\('fashionUi\.views'/);
   assert.match(source, /fashionUi\.categories\.\$\{category\?\.id/);
@@ -78,11 +85,6 @@ test('canonical Wardrobe panel copy is driven by the selected RU/EN locale', asy
     'No managed garments yet.',
     'Голосовой поиск:',
     'Проверьте категорию или цвет.',
-    'Примерить одежду',
-    'Текущее фото — человек для примерки.',
-    'Открыть гардероб',
-    'Разрешаю отправить текущее фото',
-    'Prepare cloud processing',
   ]) {
     assert.equal(source.includes(hardcoded), false, `Wardrobe panel must not hardcode ${hardcoded}`);
   }
