@@ -9,7 +9,7 @@ const publicKey = createPublicKey(await readFile(new URL('interactive-segmentati
 if (!verify(null, manifestBytes, publicKey, signature)) throw new Error('MODEL_SIGNATURE_INVALID: manifest signature verification failed');
 const tampered = Buffer.from(manifestBytes); tampered[tampered.length - 2] ^= 1;
 if (verify(null, tampered, publicKey, signature)) throw new Error('Tampered manifest was accepted');
-if (manifest.status !== 'CANDIDATE') throw new Error('Selection model must remain CANDIDATE during acceptance');
+if (!['CANDIDATE', 'PRODUCTION_APPROVED'].includes(manifest.status)) throw new Error(`Selection model status must be CANDIDATE or PRODUCTION_APPROVED, got ${manifest.status}`);
 for (const name of ['encoder', 'decoder']) {
   const artifact = manifest.artifacts?.[name];
   if (!artifact || !URL.canParse(artifact.url) || new URL(artifact.url).protocol !== 'https:') throw new Error(`${name}: external HTTPS URL required`);

@@ -1,0 +1,259 @@
+{
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",
+  "onnxruntimeWebVersion": "1.27.0",
+  "provider": "wasm",
+  "directReleaseFetch": {
+    "url": "https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.2/mobilesam-encoder.onnx.sig",
+    "browserFetchable": false,
+    "failure": "TypeError: Failed to fetch",
+    "rootCause": "GITHUB_RELEASE_BROWSER_CORS"
+  },
+  "preprocessing": {
+    "horizontalPaddingZero": true,
+    "verticalPaddingZero": true,
+    "knownRgb": true,
+    "aspectRatio": true,
+    "promptTransform": true
+  },
+  "realImages": [
+    {
+      "category": "person/clothing",
+      "maskCoverage": 0.04035780164930555,
+      "iouPrediction": 0.9794907569885254,
+      "width": 512,
+      "height": 288,
+      "totalFirstClickLatencyMs": 10899.200000000186,
+      "encoderLatencyMs": 6822.299999999814,
+      "decoderLatencyMs": 385.20000000018626
+    },
+    {
+      "category": "car/object",
+      "maskCoverage": 0.29693603515625,
+      "iouPrediction": 0.995719313621521,
+      "width": 384,
+      "height": 512,
+      "totalFirstClickLatencyMs": 6928.5,
+      "encoderLatencyMs": 6542.300000000745,
+      "decoderLatencyMs": 310.20000000018626
+    },
+    {
+      "category": "animal",
+      "maskCoverage": 0.343034016521197,
+      "iouPrediction": 1.0136076211929321,
+      "width": 512,
+      "height": 401,
+      "totalFirstClickLatencyMs": 6753.299999999814,
+      "encoderLatencyMs": 6354.799999999814,
+      "decoderLatencyMs": 323
+    },
+    {
+      "category": "complex-background",
+      "maskCoverage": 0.7896407277960527,
+      "iouPrediction": 0.9856717586517334,
+      "width": 512,
+      "height": 304,
+      "totalFirstClickLatencyMs": 6892.5,
+      "encoderLatencyMs": 6524.700000000186,
+      "decoderLatencyMs": 301.59999999962747
+    }
+  ],
+  "promptRefinement": {
+    "click1TotalLatencyMs": 8011.299999999814,
+    "click2TotalLatencyMs": 387.1000000005588,
+    "negativeClickTotalLatencyMs": 368.90000000037253,
+    "click1EncoderLatencyMs": 6524.5,
+    "click1DecoderLatencyMs": 306.20000000018626,
+    "click2EncoderLatencyMs": 6524.5,
+    "click2DecoderLatencyMs": 336.3999999994412,
+    "negativeEncoderLatencyMs": 6524.5,
+    "negativeDecoderLatencyMs": 314
+  },
+  "embeddingReuse": {
+    "baseline": {
+      "encoderInvocations": 0,
+      "decoderInvocations": 0
+    },
+    "afterClick1": {
+      "encoderInvocations": 1,
+      "decoderInvocations": 1
+    },
+    "afterClick2": {
+      "encoderInvocations": 1,
+      "decoderInvocations": 2
+    },
+    "afterClick3": {
+      "encoderInvocations": 1,
+      "decoderInvocations": 3
+    },
+    "artifactInvalidation": true,
+    "transformInvalidation": true
+  },
+  "persistentCache": {
+    "first": {
+      "encoder": "miss",
+      "decoder": "miss"
+    },
+    "second": {
+      "encoder": "hit",
+      "decoder": "hit"
+    },
+    "firstNetworkRequests": 4,
+    "secondNetworkRequests": 0
+  },
+  "security": {
+    "badSha": {
+      "rejectedBeforeSession": true,
+      "sessionCreateCount": 0
+    },
+    "badSignature": {
+      "rejectedBeforeSession": true,
+      "sessionCreateCount": 0
+    },
+    "networkUnavailable": "LOCAL_UNAVAILABLE",
+    "wasmUnavailable": "LOCAL_UNAVAILABLE"
+  },
+  "selection": {
+    "smartSelect": "SELECTED",
+    "brushAdd": true,
+    "brushSubtract": true,
+    "undo": true,
+    "redo": true,
+    "done": {
+      "coordinateSpace": "ORIGINAL",
+      "encoding": "ALPHA_8_LOSSLESS",
+      "role": "MASK",
+      "state": "AVAILABLE"
+    }
+  },
+  "controlledEdit": {
+    "maskArtifactId": "acceptance-mask",
+    "originalDimensions": [
+      512,
+      288
+    ],
+    "maskCoverage": 0.04035780164930555,
+    "roiBounds": {
+      "x": 185,
+      "y": 81,
+      "width": 81,
+      "height": 101
+    },
+    "roiDimensions": [
+      81,
+      101
+    ],
+    "providerInputDimensions": [
+      81,
+      101
+    ],
+    "candidatePatchRole": "PATCH",
+    "compositeRole": "COMPOSITE",
+    "compositeDimensions": [
+      512,
+      288
+    ],
+    "outsidePixels": 141505,
+    "outsideChangedPixels": 0,
+    "outsideChangedPixelRatio": 0,
+    "outsideMeanDelta": 0,
+    "outsideMaxDelta": 0,
+    "boundaryScore": 1,
+    "verificationOutcome": "PASS",
+    "insideSelectedPixels": 5951,
+    "insideChangedPixels": 5951,
+    "lineage": [
+      "ORIGINAL",
+      "MASK",
+      "ROI_INPUT",
+      "PATCH",
+      "COMPOSITE"
+    ]
+  },
+  "webgpu": "NOT RUN / NOT IMPLEMENTED",
+  "offlineCachedExecution": "NOT RUN",
+  "browserProductVersion": "151.0.7922.108",
+  "ortLocalAssets": [
+    {
+      "url": "http://127.0.0.1:4174/assets/ort-wasm-simd-threaded-Bb4gTywK.mjs",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:4174/assets/ort-wasm-simd-threaded-Cpm-ox6i.wasm",
+      "status": 200
+    }
+  ],
+  "networkDiagnostics": {
+    "pageErrors": [],
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "Connecting to 'https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.2/mobilesam-encoder.onnx.sig' violates the following Content Security Policy directive: \"connect-src 'self'\". The action has been blocked.",
+      "Fetch API cannot load https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.2/mobilesam-encoder.onnx.sig. Refused to connect because it violates the document's Content Security Policy."
+    ],
+    "artifactRequests": [
+      {
+        "url": "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-encoder.onnx",
+        "resourceType": "fetch",
+        "redirectChain": [
+          "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-encoder.onnx"
+        ]
+      },
+      {
+        "url": "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-encoder.onnx.sig",
+        "resourceType": "fetch",
+        "redirectChain": [
+          "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-encoder.onnx.sig"
+        ]
+      },
+      {
+        "url": "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-decoder.onnx",
+        "resourceType": "fetch",
+        "redirectChain": [
+          "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-decoder.onnx"
+        ]
+      },
+      {
+        "url": "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-decoder.onnx.sig",
+        "resourceType": "fetch",
+        "redirectChain": [
+          "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-decoder.onnx.sig"
+        ]
+      }
+    ],
+    "artifactResponses": [
+      {
+        "url": "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-encoder.onnx.sig",
+        "status": 200,
+        "resourceType": "fetch",
+        "redirectChain": [
+          "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-encoder.onnx.sig"
+        ]
+      },
+      {
+        "url": "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-decoder.onnx.sig",
+        "status": 200,
+        "resourceType": "fetch",
+        "redirectChain": [
+          "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-decoder.onnx.sig"
+        ]
+      },
+      {
+        "url": "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-decoder.onnx",
+        "status": 200,
+        "resourceType": "fetch",
+        "redirectChain": [
+          "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-decoder.onnx"
+        ]
+      },
+      {
+        "url": "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-encoder.onnx",
+        "status": 200,
+        "resourceType": "fetch",
+        "redirectChain": [
+          "http://127.0.0.1:4174/api/core/models/mobilesam-vit-t/1.0.2/mobilesam-encoder.onnx"
+        ]
+      }
+    ],
+    "failedRequests": [],
+    "failedResponses": []
+  }
+}

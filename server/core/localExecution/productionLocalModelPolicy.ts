@@ -15,8 +15,10 @@ const approvedMobileSam: readonly LocalExecutionModelBinding[] = manifest.status
 /**
  * Legacy v1 executable model policy. It intentionally remains MobileSAM-only.
  * The C5B composite segment capability aliases this exact release decision rather
- * than creating an independent model-trust authority. While MobileSAM is CANDIDATE,
- * both standalone and composite catalogs remain empty and ticket minting fails closed.
+ * than creating an independent model-trust authority. MobileSAM is PRODUCTION_APPROVED
+ * (see docs/v1-mobilesam-segmentation-production-evidence.md), so both the standalone
+ * and the composite catalog bind the exact manifest model identity; any regression of
+ * the manifest status makes ticket minting fail closed again.
  */
 export const productionLocalModelsByCapability: Readonly<Record<string, readonly LocalExecutionModelBinding[]>> = Object.freeze({
   [MOBILE_SAM_LOCAL_CAPABILITY]: approvedMobileSam,
