@@ -49,6 +49,11 @@ function selectCoveredModules(pack) {
 }
 
 test('core RU/EN creative journey keeps reference keys and interpolation placeholders aligned', () => {
+  for (const [locale, pack] of [['English', english], ['Russian', russian]]) {
+    assert.equal(typeof pack.common.loading, 'string', `${locale} common.loading must exist`);
+    assert.ok(pack.common.loading.trim().length > 0, `${locale} common.loading must not be empty`);
+  }
+
   const report = localizationValidator.validate(
     selectCoveredModules(english),
     selectCoveredModules(russian),
