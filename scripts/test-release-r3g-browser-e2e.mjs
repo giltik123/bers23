@@ -186,7 +186,7 @@ try {
   await waitForCoreResponses(page, [
     '/api/core/wardrobe/outfits',
     '/api/core/wardrobe/garments',
-  ], () => page.getByText('Комплекты одежды · дополнительно', { exact: true }).click());
+  ], () => page.getByRole('button', { name: /Комплекты одежды/ }).click());
   await page.getByRole('region', { name: 'Canonical Outfit builder', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
   await page.getByText('No managed outfits yet. Create one to compose stable garment references.', { exact: true })
