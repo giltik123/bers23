@@ -15,7 +15,7 @@ test('authenticated and authentication layouts provide a localized skip link to 
 
   for (const [name, layout] of [['authenticated', app], ['authentication', auth]]) {
     assert.match(layout, /<a href="#main-content"/i, name + ' layout must expose the skip link');
-    assert.match(layout, /t\('navUi\\.skipToMain'\)/, name + ' layout must use the shared locale key');
+    assert.match(layout, /t\('navUi\.skipToMain'\)/, name + ' layout must use the shared locale key');
     assert.match(layout, /<main id="main-content" tabIndex=\{-1\}/, name + ' main landmark must accept fragment focus');
     assert.match(layout, skipLinkClass, name + ' skip link must be visually hidden until focused');
   }
