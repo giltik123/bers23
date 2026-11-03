@@ -18,6 +18,7 @@ test('Editor defers mask UI and the local selection runtime until explicit user 
   assert.ok(editor.includes("import('@/application/createSelectionSegmentation')"));
   assert.ok(editor.includes('startGeneration !== selectionStartGenerationRef.current'));
   assert.ok(editor.includes('currentProject?.id !== requestedProjectId'));
+  assert.ok(test.includes('projectId: requestedProjectId,'), 'selection segmentation must use the captured canonical Project ID');
   assert.ok(editor.includes('currentProject?.current_image_artifact_id !== imageArtifactId'));
   assert.ok(editor.includes('onStart={startSelection}'));
   assert.ok(editor.includes('onManualSelect={startSelection}'));
