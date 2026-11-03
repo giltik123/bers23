@@ -52,6 +52,8 @@ jobs:
       run: npm run test:creative-planning-6.40c
     - name: Session recovery storage resilience
       run: node --test tests/session-recovery-storage-resilience.test.mjs
+    - name: RU/EN core creative journey locale parity
+      run: node --test tests/ru-en-core-journey-locale-parity.test.mjs
 
   postgres-transactions:
     runs-on: ubuntu-latest
