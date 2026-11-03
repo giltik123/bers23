@@ -58,6 +58,7 @@ test('Android shell is a minimal SDK 36 TWA without dangerous permissions or a s
   const manifest = readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
   const dataRules = readFileSync('android/app/src/main/res/xml/data_extraction_rules.xml', 'utf8');
   assert.match(gradle, /^import java\.net\.URI\n\nplugins \{\n    id 'com\.android\.application'\n\}\n/);
+  assert.match(gradle, /taskNameOnly in \['assemble', 'bundle', 'build'\]/);
   assert.match(gradle, /compileSdk 36/);
   assert.match(gradle, /targetSdk 36/);
   assert.match(gradle, /minSdk 24/);
