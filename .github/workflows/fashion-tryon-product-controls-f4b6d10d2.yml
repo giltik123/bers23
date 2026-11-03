@@ -6,6 +6,8 @@ on:
       - 'src/application/fashion/canonicalTryOnProductUiState.js'
       - 'src/components/editor/outfits/CanonicalTryOnProductControls.jsx'
       - 'src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
       - 'src/application/fashion/createCanonicalTryOnEditorHost.js'
       - 'src/application/fashion/createCanonicalTryOnEditorController.js'
       - 'tests/fashion-tryon-product-controls.test.mjs'
