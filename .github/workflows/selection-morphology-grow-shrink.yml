@@ -6,6 +6,10 @@ on:
     paths:
       - 'src/application/selection/**'
       - 'src/components/editor/SelectionToolbar.jsx'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/product-russian-ui.test.mjs'
+      - 'tests/mask-photoshop-controls.test.mjs'
       - 'src/pages/Editor.jsx'
       - 'src/platform/creative/pipeline/ControlledLocalEdit.ts'
       - 'tests/intelligent-selection.test.ts'
@@ -73,11 +77,11 @@ jobs:
           grep -q "service.open(selectionMorphologyRadius)" "$editor"
           grep -q "service.close(selectionMorphologyRadius)" "$editor"
           grep -q "service.feather(selectionMorphologyRadius)" "$editor"
-          grep -q 'aria-label="Grow selection"' "$toolbar"
-          grep -q 'aria-label="Shrink selection"' "$toolbar"
-          grep -q 'aria-label="Open selection"' "$toolbar"
-          grep -q 'aria-label="Close selection"' "$toolbar"
-          grep -q 'aria-label="Feather selection"' "$toolbar"
+          grep -q "selectionUi.growSelection" "$toolbar"
+          grep -q "selectionUi.shrinkSelection" "$toolbar"
+          grep -q "selectionUi.openSelection" "$toolbar"
+          grep -q "selectionUi.closeSelection" "$toolbar"
+          grep -q "selectionUi.featherSelection" "$toolbar"
           ! grep -E -q "fetch\(|coreClient|provider|billing|credits" "$service"
           test -n "$BASE_SHA"
           git diff --check "$BASE_SHA"..HEAD

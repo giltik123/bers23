@@ -16,6 +16,10 @@ on:
       - 'src/api/coreClient.js'
       - 'src/pages/Editor.jsx'
       - 'src/components/editor/SelectionToolbar.jsx'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/product-russian-ui.test.mjs'
+      - 'tests/mask-photoshop-controls.test.mjs'
       - 'server/core/localExecution/LocalExecutionResultAuthority.ts'
       - 'server/core/localExecution/LocalMaskedLevelsExecutionService.ts'
       - 'server/core/localExecution/LocalExecutionInputDeliveryService.ts'
@@ -145,7 +149,7 @@ jobs:
           grep -q "MASKED_LEVELS_OPERATION" src/platform/creative/canonical/planning/CanonicalPlanningService.ts
           grep -q "MASKED_LEVELS" server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql
           grep -q "createMaskedLevels" src/pages/Editor.jsx
-          grep -q 'aria-label="Preview masked Levels"' src/components/editor/SelectionToolbar.jsx
+          grep -q "selectionUi.previewMaskedLevels" src/components/editor/SelectionToolbar.jsx
           grep -q "MASKED_LEVELS_TOOL_DEFINITION" src/platform/creative/deterministic/DeterministicToolRegistry.ts
           test -n "$BASE_SHA"
           git diff --check "$BASE_SHA"..HEAD

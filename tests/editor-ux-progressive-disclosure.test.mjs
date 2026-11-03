@@ -35,23 +35,23 @@ test('masked exposure, white balance and levels appear only when a saved mask ex
   assert.match(editor, /hasSelectedMask=\{Boolean\(selected\?\.mask_artifact_id\)\}/);
   const noSelection = selection.slice(selection.indexOf('if (!selection) return ('), selection.indexOf('const busy ='));
   const maskGate = noSelection.indexOf('{hasSelectedMask ? (');
-  const firstSlider = noSelection.indexOf('aria-label="Masked exposure"');
+  const firstSlider = noSelection.indexOf('selectionUi.maskedExposure');
   assert.ok(maskGate >= 0 && firstSlider > maskGate);
-  assert.match(noSelection, /<details[^>]*>[\s\S]*<summary[^>]*>Adjust selected area/);
-  assert.match(noSelection, /Change a value, choose Preview, then Accept or Discard/);
-  assert.match(noSelection, /aria-label="Masked exposure"[\s\S]*?onChange=\{\(event\) => onExposureEighthStops\(Number\(event\.target\.value\)\)\}/);
-  assert.match(noSelection, /aria-label="Masked white balance temperature"[\s\S]*?onChange=\{\(event\) => onWhiteBalanceTemperatureQ8\(Number\(event\.target\.value\)\)\}/);
-  assert.match(noSelection, /aria-label="Preview masked Levels"[^>]*onClick=\{onApplyLevels\}/);
-  assert.match(noSelection, /Advanced sliders appear only when a saved mask exists/);
+  assert.match(noSelection, /selectionUi[.]adjustSelectedArea/);
+  assert.match(noSelection, /selectionUi[.]adjustSelectedAreaHint/);
+  assert.match(noSelection, /selectionUi[.]maskedExposure[\s\S]*?onChange=\{\(event\) => onExposureEighthStops\(Number\(event\.target\.value\)\)\}/);
+  assert.match(noSelection, /selectionUi[.]maskedWhiteBalanceTemperature[\s\S]*?onChange=\{\(event\) => onWhiteBalanceTemperatureQ8\(Number\(event\.target\.value\)\)\}/);
+  assert.match(noSelection, /selectionUi[.]previewMaskedLevels[^>]*onClick=\{onApplyLevels\}/);
+  assert.match(noSelection, /selectionUi[.]adjustPartOfImageHint/);
 });
 
 test('brush and edge controls are contextual but retain real edit callbacks', () => {
   assert.match(selection, /\{\(selection\.mode === 'BRUSH_ADD' \|\| selection\.mode === 'BRUSH_SUBTRACT'\) && <>/);
-  assert.match(selection, /aria-label="Brush Size"[^>]*onChange=\{\(event\) => onBrushSize\(Number\(event\.target\.value\)\)\}/);
-  assert.match(selection, /aria-label="Brush Hardness"[^>]*onChange=\{\(event\) => onBrushHardness\(Number\(event\.target\.value\)\)\}/);
-  assert.match(selection, /<summary[^>]*>Refine selection edges<\/summary>/);
+  assert.match(selection, /selectionUi[.]brushSize[^>]*onChange=\{\(event\) => onBrushSize\(Number\(event\.target\.value\)\)\}/);
+  assert.match(selection, /selectionUi[.]brushHardness[^>]*onChange=\{\(event\) => onBrushHardness\(Number\(event\.target\.value\)\)\}/);
+  assert.match(selection, /selectionUi[.]refineSelectionEdges/);
   for (const name of ['Grow', 'Shrink', 'Open', 'Close', 'Feather']) {
-    assert.match(selection, new RegExp('aria-label="' + name + ' selection"[^>]*onClick=\\{on' + name + '\\}'));
+    assert.match(selection, new RegExp('selectionUi[.]' + name.toLowerCase() + 'Selection[^>]*onClick=\\{on' + name + '\\}'));
   }
   assert.match(selection, /disabled=\{!canDone\} onClick=\{onDone\}/);
 });
