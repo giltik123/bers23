@@ -7,6 +7,9 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
   const { t } = useTranslation();
   return (
     <div className="min-h-screen bg-background">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-background focus:px-4 focus:py-3 focus:text-foreground focus:shadow-lg focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-ring">
+        {t('navUi.skipToMain')}
+      </a>
       <div className="mx-auto grid min-h-screen max-w-6xl items-center gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]">
         <aside className="hidden max-w-lg space-y-10 lg:block" aria-label={t("authUi.workspace")}>
           <div className="flex items-center gap-3">
@@ -28,7 +31,7 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
           </div>
         </aside>
 
-        <main className="mx-auto w-full max-w-md space-y-6">
+        <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-md space-y-6">
           <div className="flex justify-end"><LanguageSwitcher /></div>
           <div className="text-center lg:text-left">
             <div className="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary" aria-hidden="true">

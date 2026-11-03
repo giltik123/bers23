@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigationType } from 'react-router-dom';
 import { Sparkles, FolderOpen, Images, Workflow, Settings2, Menu, X } from 'lucide-react';
 import ThemeToggle from '@/components/ThemeToggle';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
@@ -39,6 +39,7 @@ function NavLink({ path, label, icon: Icon, active, onNavigate, compact = false 
 
 export default function AppLayout() {
   const location = useLocation();
+  const navigationType = useNavigationType();
   const platform = usePlatformProfile();
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -53,6 +54,13 @@ export default function AppLayout() {
   }, []);
   useEffect(() => { memoryManager.configure({ cacheMb: adaptiveCachePolicy(platform).cacheMb }); }, [platform.formFactor]);
   useEffect(() => { sessionRecovery.saveRoute([location.pathname, location.search].join('')); offlineQueue.snapshot(); setMenuOpen(false); }, [location.pathname, location.search]);
+  useEffect(() => {
+    // Move focus after client-side navigation so keyboard and screen-reader
+    // users start at the new page content. Preserve browser-restored focus and
+    // native in-page anchor navigation.
+    if (navigationType === 'POP' || location.hash) return;
+    document.getElementById('main-content')?.focus({ preventScroll: true });
+  }, [location.pathname, navigationType]);
 
   const navigation = [
     { path: '/', label: t('navUi.projects'), icon: FolderOpen },
@@ -66,6 +74,9 @@ export default function AppLayout() {
 
   return (
     <div data-platform={platform.formFactor} className="flex min-h-screen flex-col bg-background text-foreground">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-background focus:px-4 focus:py-3 focus:text-foreground focus:shadow-lg focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-ring">
+        {t('navUi.skipToMain')}
+      </a>
       <header className="sticky top-0 z-40 border-b border-border/70 bg-card/95 shadow-sm backdrop-blur-xl">
         <div className="mx-auto flex min-h-[72px] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
           <Link to="/" className="flex shrink-0 items-center gap-3 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring" aria-label={t("navUi.home")}>
@@ -117,7 +128,7 @@ export default function AppLayout() {
           </nav>
         )}
       </header>
-      <main id="main-content" className="min-w-0 flex-1">
+      <main id="main-content" tabIndex={-1} className="min-w-0 flex-1">
         <Outlet />
       </main>
     </div>

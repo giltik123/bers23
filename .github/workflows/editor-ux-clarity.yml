@@ -64,6 +64,7 @@ on:
       - 'scripts/test-release-r3e-browser-e2e.mjs'
       - 'tests/editor-ux-progressive-disclosure.test.mjs'
       - 'tests/bers-ux-system-redesign.test.mjs'
+      - 'tests/app-skip-navigation-a11y.test.mjs'
       - 'tests/mask-photoshop-controls.test.mjs'
       - 'tests/local-adjustments-editor-wiring.test.mjs'
       - 'tests/selection-brush-opacity.test.ts'
@@ -93,6 +94,7 @@ jobs:
       - name: Regression - contextual controls and canonical editor boundaries
         run: |
           node --test \
+            tests/app-skip-navigation-a11y.test.mjs \
             tests/editor-ux-progressive-disclosure.test.mjs \
             tests/bers-ux-system-redesign.test.mjs \
             tests/mask-photoshop-controls.test.mjs \

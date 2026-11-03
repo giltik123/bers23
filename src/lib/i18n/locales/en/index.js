@@ -134,6 +134,7 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
     "projects": "Projects",
     "brand": "Creative studio",
     "home": "BERS — Projects",
+    "skipToMain": "Skip to main content",
     "main": "Main navigation",
     "account": "Account and preferences",
     "mobile": "Mobile navigation",
