@@ -11,6 +11,25 @@ export default {
   pause: 'Pause',
   resume: 'Resume',
   empty: 'No active jobs.',
+  preparing: 'Preparing',
+  succeeded: 'Succeeded',
+  unknown: 'Unknown',
+  unavailable: 'Unavailable',
+  runAgain: 'Run again',
+  duplicate: 'Duplicate',
+  moveUp: 'Move up',
+  estimatedSeconds: 'Estimated {seconds}s',
+  stage: 'Stage: {stage}',
+  stages: {
+    preparing: 'Preparing',
+    running: 'Running',
+  },
+  priority: {
+    high: 'High',
+    normal: 'Normal',
+    low: 'Low',
+    unknown: 'Unknown priority',
+  },
   canonical: {
     server: 'Server',
     statuses: {
