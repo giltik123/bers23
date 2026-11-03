@@ -6,6 +6,26 @@ export const JOB_EXECUTION_CLASSES = Object.freeze({ EPHEMERAL_CLIENT_TASK: 'EPH
 
 export const priorityLabel = (p) => ({ high: 'High', normal: 'Normal', low: 'Low' }[p] || p);
 
+// The queue is browser-wide, but Editor's Job Center is Project-scoped.
+// This view filter grants no Project, execution or persistence authority.
+const normalizedProjectScope = (value) => typeof value === 'string' ? value.trim().toLowerCase() : '';
+
+export const sessionJobsForProject = (jobs, projectId) => {
+  const scope = normalizedProjectScope(projectId);
+  if (!scope || !Array.isArray(jobs)) return [];
+  return jobs.filter((job) => normalizedProjectScope(job?.projectId) === scope);
+};
+
+// Never reorder a visible task across another Project's queued task.
+export const canMoveSessionJobUp = (queue, jobId, projectId) => {
+  const scope = normalizedProjectScope(projectId);
+  if (!scope || !Array.isArray(queue)) return false;
+  const index = queue.findIndex((job) => job?.id === jobId);
+  return index > 0
+    && normalizedProjectScope(queue[index].projectId) === scope
+    && normalizedProjectScope(queue[index - 1]?.projectId) === scope;
+};
+
 export const assertJobExecutionClass = (value) => {
   if (value !== JOB_EXECUTION_CLASSES.EPHEMERAL_CLIENT_TASK) throw new TypeError('Job executionClass must be EPHEMERAL_CLIENT_TASK');
   return value;

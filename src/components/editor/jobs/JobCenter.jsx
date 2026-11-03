@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ListOrdered, RefreshCw } from 'lucide-react';
 import { coreClient } from '@/api/coreClient';
 import { jobManager } from '@/lib/jobs/jobManager';
-import { JOB_EXECUTION_CLASSES } from '@/lib/jobs/jobModel';
+import { JOB_EXECUTION_CLASSES, canMoveSessionJobUp, sessionJobsForProject } from '@/lib/jobs/jobModel';
 import { createExecutionRunProjection } from '@/lib/jobs/executionRunProjection';
 import { CreativeExecutionControlPolicy } from '@/lib/jobs/creativeExecutionControl';
 import { WorkflowExecutionRetryPolicy } from '@/lib/jobs/workflowExecutionRetryControl';
@@ -29,10 +29,10 @@ export default function JobCenter({ projectId = null }) {
     };
   }, [canonicalProjection, projectId]);
 
-  const jobs = [...state.running, ...state.queued, ...state.recent];
+  const normalizedProjectId = typeof projectId === 'string' ? projectId.trim().toLowerCase() : null;
+  const jobs = sessionJobsForProject([...state.running, ...state.queued, ...state.recent], normalizedProjectId);
   const ephemeralJobs = jobs.filter((job) => job.executionClass === JOB_EXECUTION_CLASSES.EPHEMERAL_CLIENT_TASK);
   const unsupportedSessionJobs = jobs.length - ephemeralJobs.length;
-  const normalizedProjectId = typeof projectId === 'string' ? projectId.trim().toLowerCase() : null;
   const canonicalScopeMatches = Boolean(normalizedProjectId) && canonical.projectId === normalizedProjectId;
   const canonicalRuns = canonicalScopeMatches ? canonical.runs : [];
   const canonicalVisible = canonicalScopeMatches && (canonical.loading || canonical.authoritative || canonical.error);
@@ -133,10 +133,10 @@ export default function JobCenter({ projectId = null }) {
           <p className="text-[11px] font-medium">This session</p>
           <p className="text-[10px] text-muted-foreground">Ephemeral browser-only tasks · reload interrupts them · Run again starts a new operation</p>
         </div>
-        <button onClick={() => state.paused ? jobManager.resume() : jobManager.pause()} className="text-[11px] text-muted-foreground hover:text-foreground">{state.paused ? 'Resume queue' : 'Pause queue'}</button>
+        <button onClick={() => state.paused ? jobManager.resume() : jobManager.pause()} className="text-[11px] text-muted-foreground hover:text-foreground">{state.paused ? 'Resume all session jobs' : 'Pause all session jobs'}</button>
       </div>
       {unsupportedSessionJobs > 0 && <p className="text-[11px] text-destructive">Unsupported session task classification. Controls are withheld.</p>}
-      {ephemeralJobs.map((job) => <JobRow key={job.id} job={job} onCancel={(id) => jobManager.cancel(id)} onRunAgain={(id) => jobManager.runAgain(id)} onDuplicate={(id) => jobManager.duplicate(id)} onMoveUp={(id) => jobManager.reorder(id, Math.max(0, state.queued.findIndex((item) => item.id === id) - 1))} />)}
+      {ephemeralJobs.map((job) => <JobRow key={job.id} job={job} onCancel={(id) => jobManager.cancel(id)} onRunAgain={(id) => jobManager.runAgain(id)} onDuplicate={(id) => jobManager.duplicate(id)} onMoveUp={canMoveSessionJobUp(state.queued, job.id, normalizedProjectId) ? (id) => jobManager.reorder(id, Math.max(0, state.queued.findIndex((item) => item.id === id) - 1)) : undefined} />)}
     </div>}
   </section>;
 }
