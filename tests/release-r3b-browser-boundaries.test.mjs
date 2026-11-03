@@ -18,6 +18,8 @@ test('R3 browser harness cumulatively proves baseline plus deterministic Rotate 
     "name: 'Redo'",
     'R3Q_ACCEPT_SIDE_EFFECT_ISOLATION_ACCEPTED',
     'R3Q_NOTIFICATION_SIDE_EFFECT_FAULT',
+    'Your accepted result has been added to project history.',
+    'acceptedNotification',
   ]) {
     assert.equal(harness.includes(required), true, `R3 cumulative harness must contain ${required}`);
   }
@@ -69,6 +71,7 @@ test('R3 deterministic journey fails closed against provider cloud financial and
   const harness = await readFile('scripts/test-release-r3b-browser-e2e.mjs', 'utf8');
 
   assert.match(harness, /providerCalls,\s*0/);
+  assert.match(harness, /getByRole\('button', \{ name: \/\^Notifications\/ \}\)/);
   assert.match(harness, /diagnostics\.creativeRequests,\s*\[\]/);
   assert.match(harness, /diagnostics\.financialRequests,\s*\[\]/);
   assert.match(harness, /diagnostics\.externalBrowserRequests,\s*\[\]/);
