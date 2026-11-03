@@ -115,11 +115,11 @@ test('R3h binds selected browser image pixels and revisions to durable Garment v
 
 test('R3h, R3i and R3j follow the localized canonical Fashion region label', async () => {
   const [fashion, english, r3h, r3i, r3j] = await Promise.all([
-    read('src/components/editor/fashion/FashionPanel.jsx'),
-    read('src/lib/i18n/locales/en/index.js'),
-    read('scripts/test-release-r3h-browser-e2e.mjs'),
-    read('scripts/test-release-r3i-browser-e2e.mjs'),
-    read('scripts/test-release-r3j-browser-e2e.mjs'),
+    readFile('src/components/editor/fashion/FashionPanel.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('scripts/test-release-r3h-browser-e2e.mjs', 'utf8'),
+    readFile('scripts/test-release-r3i-browser-e2e.mjs', 'utf8'),
+    readFile('scripts/test-release-r3j-browser-e2e.mjs', 'utf8'),
   ]);
 
   assert.ok(fashion.includes("aria-label={t('fashionUi.panelLabel')}"));
