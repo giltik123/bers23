@@ -4,6 +4,7 @@ import { build } from 'esbuild';
 import { localizationValidator } from '../src/lib/i18n/LocalizationValidator.js';
 
 const COVERED_MODULES = Object.freeze([
+  'common',
   'editor',
   'notifications',
   'assets',
