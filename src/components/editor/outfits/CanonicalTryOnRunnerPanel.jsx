@@ -144,12 +144,12 @@ export default function CanonicalTryOnRunnerPanel({
     }
   };
 
-  const withManualContext = async (callback, fallbackMessage) => {
+  const withManualContext = async (callback) => {
     try {
       return await callback(context());
     } catch {
       // Never expose raw Core/runtime exception text in this user-facing panel.
-      const message = fallbackMessage || t('fashionUi.selectionInvalid');
+      const message = t('fashionUi.manualActionFailed');
       setError(message);
       throw new Error(message);
     }
@@ -157,26 +157,17 @@ export default function CanonicalTryOnRunnerPanel({
 
   const loadManualGarmentSource = (garmentId) => {
     if (typeof onLoadManualGarmentSource !== 'function') return Promise.reject(new Error(t('fashionUi.manualContourSourceUnavailable')));
-    return withManualContext(
-      (value) => onLoadManualGarmentSource(value, garmentId),
-      t('fashionUi.manualContourInvalid'),
-    );
+    return withManualContext((value) => onLoadManualGarmentSource(value, garmentId));
   };
 
   const saveManualContour = (value) => {
     if (typeof onSaveManualContour !== 'function') return Promise.reject(new Error(t('fashionUi.manualContourSaveUnavailable')));
-    return withManualContext(
-      (current) => onSaveManualContour(current, value),
-      t('fashionUi.manualContourInvalid'),
-    );
+    return withManualContext((current) => onSaveManualContour(current, value));
   };
 
   const saveManualBodyAnchors = (value) => {
     if (typeof onSaveManualBodyAnchors !== 'function') return Promise.reject(new Error(t('fashionUi.manualBodyAnchorsSaveUnavailable')));
-    return withManualContext(
-      (current) => onSaveManualBodyAnchors(current, value),
-      t('fashionUi.manualBodyAnchorsInvalid'),
-    );
+    return withManualContext((current) => onSaveManualBodyAnchors(current, value));
   };
 
   const close = () => {
