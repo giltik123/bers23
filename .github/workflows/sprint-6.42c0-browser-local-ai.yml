@@ -43,8 +43,8 @@ jobs:
       - name: Editor uses explicit canonical project binding
         run: |
           grep -F "const requestedProjectId = initialProject?.id;" src/pages/Editor.jsx
-grep -F "projectId: requestedProjectId," src/pages/Editor.jsx
-grep -F "const artifacts = new CoreMaskArtifactPort(project.id);" src/pages/Editor.jsx
+          grep -F "projectId: requestedProjectId," src/pages/Editor.jsx
+          grep -F "const artifacts = new CoreMaskArtifactPort(project.id);" src/pages/Editor.jsx
       - name: Integrated 6.42 device contract regression
         run: |
           npx esbuild tests/device-capability-fleet-integration.test.ts \
