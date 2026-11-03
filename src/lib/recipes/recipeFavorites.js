@@ -1,9 +1,15 @@
-// RecipeFavorites — persisted favorite recipes (localStorage, per device).
+import { readRecipeStorage, writeRecipeStorage } from '@/lib/recipes/recipeStorage';
+
+// RecipeFavorites — persisted when possible, session-local when Web Storage is unavailable.
 const KEY = 'recipe_favorites';
 
 class RecipeFavorites {
-  _load() { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } }
-  _save(ids) { localStorage.setItem(KEY, JSON.stringify(ids)); }
+  _load() {
+    const value = readRecipeStorage(KEY, []);
+    return Array.isArray(value) ? value.filter((id) => typeof id === 'string') : [];
+  }
+
+  _save(ids) { writeRecipeStorage(KEY, ids); }
 
   list() { return this._load(); }
   isFavorite(id) { return this._load().includes(id); }
