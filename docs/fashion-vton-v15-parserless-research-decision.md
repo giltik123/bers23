@@ -133,3 +133,34 @@ The environment variables `HF_HUB_OFFLINE` and `TRANSFORMERS_OFFLINE` are only d
 4. Implement explicit local Runtime capability registration and ticket/FINAL lineage only once quality/security gates pass.
 
 Do not close #230 or change release readiness while these conditions remain open.
+
+## Generative body-fit review, not a composited decal (2026-10-16)
+
+**Product expectation from the owner:** the end-user Fashion Try-On must actually replace the worn garment in a way that follows body pose/proportions. Merely scaling a transparent image or placing an F4 mesh decal on the torso is not acceptable product quality. The #1017 alpha-outline fit remains a useful geometry experiment, **not the final Fashion solution**.
+
+The next relevant execution candidate is the existing offline **generative** FASHN VTON v1.5 local GPU runner above. It takes the whole person photo and garment reference with pose conditioning and generates candidate person RGB pixels. The actual CUDA inference still requires a vetted pinned model pack, license/dependency clearance, and GPU hardware; this repository has not established those on real user-like photos.
+
+### Reviewing actual generated fit on the same source inputs
+
+Once `scripts/fashion_vton_gpu_smoke.py` has created `result-01.png` and `run-report.json` in an **independent network-isolated GPU environment**, create a local human comparison:
+
+```bash
+python scripts/fashion_vton_fit_review.py \
+  --person /private/research/person.png \
+  --garment /private/research/flat-lay-shirt.png \
+  --run-dir /private/research/tryon-run-01 \
+  --output /private/research/tryon-fit-review-01
+```
+
+For each *actual generated model output* the script verifies the exact person, garment, and model-output SHA-256 recorded by the GPU run; rejects altered results, symlinks, path traversal, invalid images, and occupied output paths; and builds a labelled image comparison **ORIGINAL PERSON | TARGET GARMENT | GENERATED TRY-ON**. The separate `fit-review-manifest.json` keeps body fit, old-clothing replacement, sleeve/arm/hair occlusion, identity/background, logo/pattern fidelity, and drape/lighting review axes **PENDING**. It never declares them passed.
+
+The source report is not a cryptographic signature that a specific model actually generated the pixels; output origin still requires independent GPU/runtime provenance. The contact sheets only facilitate human examination. No generated image automatically enters Core, Artifact, Project, Billing, providers, UI, or any release ledger. There are no model weights or photographs committed to the repository. Work with lawfully sourced images and keep private person photos off hosted CI.
+
+### Required product acceptance (Fashion #230)
+
+- A real garment *replaces* the previous clothing, instead of covering the old shirt/dress with a smaller cutout; body silhouette and shoulder/waist/hip alignment are plausible.
+- Torso and sleeves conform to non-front-facing poses, raised/crossed arms, and hair-in-front occlusion. If confidence is low, a canonical manual correction or a clear unsupported-case refusal is required.
+- Face, skin, identity and scene remain stable; print, text, material texture, and logo remain recognizably true to the garment. Drape and lighting should look like worn fabric.
+- Record human assessment across licensable real-image cases, GPU latency/memory, model and checkpoint license/hash/provenance, explicit LOCAL_ONLY behavior, and exact SHA replays before separately proposing a versioned Core execution path with FINAL/Preview/Accept semantics.
+
+**Do not promote deterministic F4 overlays or alpha-outline corrections to "photorealistic Try-On" based solely on correct pixel geometry.** This is a research review aid only; #230 and release #365 remain blocked.
