@@ -66,6 +66,9 @@ export default function AppLayout() {
 
   return (
     <div data-platform={platform.formFactor} className="flex min-h-screen flex-col bg-background text-foreground">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-background focus:px-4 focus:py-3 focus:text-foreground focus:shadow-lg focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-ring">
+        {t('navUi.skipToMain')}
+      </a>
       <header className="sticky top-0 z-40 border-b border-border/70 bg-card/95 shadow-sm backdrop-blur-xl">
         <div className="mx-auto flex min-h-[72px] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
           <Link to="/" className="flex shrink-0 items-center gap-3 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring" aria-label={t("navUi.home")}>
@@ -117,7 +120,7 @@ export default function AppLayout() {
           </nav>
         )}
       </header>
-      <main id="main-content" className="min-w-0 flex-1">
+      <main id="main-content" tabIndex={-1} className="min-w-0 flex-1">
         <Outlet />
       </main>
     </div>
