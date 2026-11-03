@@ -140,7 +140,15 @@ test('Free generation uses explicit consent, server-owned account setup and no b
   assert.ok(studio.includes("const wholeImageAdmitted = Boolean(plan.instruction) && plan.kind !== 'FASHION'"));
   assert.ok(studio.includes('await onPrepareFreeAccount?.()'));
   assert.ok(studio.includes('generativeConfirmed'));
-  assert.ok(studio.includes('бесплатно в пределах серверного лимита'));
+  assert.ok(studio.includes("t('editorAi.descriptions.wholeImageScope')"));
+  assert.ok(studio.includes("t('editorAi.confirmations.wholeImage')"));
+  assert.ok(!studio.includes('бесплатно в пределах серверного лимита'));
+  const [english, russian] = await Promise.all([
+    read('src/lib/i18n/locales/en/index.js'),
+    read('src/lib/i18n/locales/ru/index.js'),
+  ]);
+  assert.ok(english.includes('"wholeImageScope": "Generative editing affects the entire frame. It is free within the server-side limit; no subscription is required. Compare the result with the original before saving."'));
+  assert.ok(russian.includes('"wholeImageScope": "Генеративное редактирование затрагивает весь кадр. Оно бесплатно в пределах серверного лимита; подписка не нужна. Перед сохранением сравните результат с оригиналом."'));
   assert.ok(editor.includes('onPrepareFreeAccount={() => creativeEditApplicationService.prepareAccount()}'));
 });
 
