@@ -58,7 +58,7 @@ test('runner copy is complete in English and Russian and Voice remains advisory'
     'runnerLabel', 'voiceQuery', 'voiceQuerySingleMatch', 'voiceQueryNoMatches',
     'voiceQueryManualChoice', 'voiceQueryNoAutoRun', 'entryNotReady',
     'manualContourSourceUnavailable', 'manualContourSaveUnavailable',
-    'manualBodyAnchorsSaveUnavailable', 'manualContourInvalid', 'manualBodyAnchorsInvalid',
+    'manualBodyAnchorsSaveUnavailable', 'manualActionFailed',
   ];
   for (const key of keys) {
     assert.equal(typeof english[key], 'string', `English fashionUi.${key}`);
