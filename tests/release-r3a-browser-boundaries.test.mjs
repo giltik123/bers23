@@ -38,3 +38,39 @@ test('startup localization diagnostics do not emit to an unowned remote observab
   assert.doesNotMatch(localization, /coreClient\.analytics|observability\/events/);
   assert.match(localization, /_reportedMissing/);
 });
+
+test('R3a measures protected Projects -> Editor -> Recipes readiness and cold route-chunk transfer', async () => {
+  const script = await readFile('scripts/test-release-r3a-browser-e2e.mjs', 'utf8');
+  assert.match(script, /Network\.setCacheDisabled', \{ cacheDisabled: true \}/);
+  assert.match(script, /performance\.clearResourceTimings\(\)/);
+  assert.match(script, /performance\.getEntriesByType\('resource'\)/);
+  assert.match(script, /projects-to-editor/);
+  assert.match(script, /editor-to-recipes-first-open/);
+  assert.match(script, /scriptTransferBytes/);
+  assert.match(script, /R3A_BROWSER_ROUTE_PERFORMANCE/);
+  assert.doesNotMatch(script, /page\.route\(|browserContext\.route\(|context\.route\(/);
+});
+
+test('R3a repeats cold-document route measurements and reports median plus range', async () => {
+  const script = await readFile('scripts/test-release-r3a-browser-e2e.mjs', 'utf8');
+  assert.match(script, /const PERFORMANCE_SAMPLE_COUNT = 3;/);
+  assert.match(script, /sampleIndex < PERFORMANCE_SAMPLE_COUNT/);
+  assert.match(script, /Network\.setCacheDisabled', \{ cacheDisabled: true \}/);
+  assert.match(script, /sampleCount: performanceSamples\.length/);
+  assert.match(script, /editor: summarizeBrowserRouteTiming\(performanceSamples\.map\(sample => sample\.editor\)\)/);
+  assert.match(script, /recipes: summarizeBrowserRouteTiming\(performanceSamples\.map\(sample => sample\.recipes\)\)/);
+  assert.match(script, /durationMs: summarizeBrowserValues/);
+  assert.match(script, /scriptTransferBytes: summarizeBrowserValues/);
+  assert.match(script, /median: Math\.round\(median \* 100\) \/ 100/);
+  assert.match(script, /min: ordered\[0\]/);
+  assert.match(script, /max: ordered\[ordered\.length - 1\]/);
+});
+
+test('R3a release workflow executes and captures the exact-head route performance measurement', async () => {
+  const workflow = await readFile('.github/workflows/release-r3a-browser-e2e.yml', 'utf8');
+  assert.match(workflow, /CANDIDATE_SHA/);
+  assert.match(workflow, /scripts\/test-release-r3a-browser-e2e\.mjs/);
+  assert.match(workflow, /node \.test-cache\/release-r3\/test-release-r3a-browser-e2e\.mjs/);
+  assert.match(workflow, /R3A_BROWSER_RELEASE_E2E_ACCEPTED/);
+  assert.match(workflow, /R3A_BROWSER_ROUTE_PERFORMANCE/);
+});
