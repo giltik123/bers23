@@ -183,7 +183,7 @@ try {
   await page.getByRole('region', { name: 'Примерка одежды', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
 
-  const outfitDisclosure = page.locator('summary').filter({ hasText: 'Комплекты одежды' });
+  const outfitDisclosure = page.locator('summary').filter({ hasText: 'Outfit sets' });
   assert.equal(await outfitDisclosure.count(), 1, 'the native Outfit disclosure summary must be present exactly once');
   await waitForCoreResponses(page, [
     '/api/core/wardrobe/outfits',
