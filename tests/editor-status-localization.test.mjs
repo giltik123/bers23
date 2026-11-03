@@ -84,9 +84,9 @@ test('EditorStatusBar localizes counters and known runtime states in its accessi
   for (const key of ['objects', 'selection', 'masks', 'segmentation', 'cache']) {
     assert.ok(source.includes('editor.statusBar.' + key), 'missing localized status key: ' + key);
   }
-  assert.match(source, /selectionModes: \{/);
-  assert.match(source, /segmentationStates: \{/);
-  assert.match(source, /cacheStates: \{/);
+  assert.match(source, /const selectionModes = \{/);
+  assert.match(source, /const segmentationStates = \{/);
+  assert.match(source, /const cacheStates = \{/);
   assert.ok(source.includes("aria-label={t('editor.statusBar.region')}"));
   assert.match(source, /role="status" aria-live="polite"/);
   assert.doesNotMatch(source, /'Objects:|'Selected:|'Masks:|'Segmentation:|'Cache:/);
