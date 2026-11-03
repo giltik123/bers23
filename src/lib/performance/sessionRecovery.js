@@ -1,3 +1,5 @@
+import { getSafeSessionStorage } from './safeSessionStorage.js';
+
 const KEY = 'photo-editor-session';
 
 class SessionRecovery {
@@ -8,16 +10,18 @@ class SessionRecovery {
   save(patch) {
     const next = { ...this.restore(), ...patch, savedAt: Date.now() };
     this.memory = next;
+    const storage = getSafeSessionStorage();
     try {
-      sessionStorage.setItem(KEY, JSON.stringify(next));
+      storage?.setItem(KEY, JSON.stringify(next));
     } catch {
       // Session recovery is a best-effort UI cache, never a reason to block editing.
     }
   }
 
   restore() {
+    const storage = getSafeSessionStorage();
     try {
-      const raw = sessionStorage.getItem(KEY);
+      const raw = storage?.getItem(KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
