@@ -40,3 +40,25 @@ test('Automation Studio is canonical and does not revive legacy browser executio
   assert.equal(runner.includes('/agent/bounded-deterministic/'), false);
   assert.doesNotMatch(runner, /view\.executionId|executionId\s*:/, 'Automation browser runner must not consume or expose delegated Agent executionId');
 });
+
+
+test('Canonical Automation Studio uses RU/EN copy without moving execution or Accept authority', async () => {
+  const [studio, english, russian] = await Promise.all([
+    readFile(STUDIO, 'utf8'),
+    readFile('src/lib/i18n/locales/en/automation.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+  assert.match(studio, /useTranslation/);
+  assert.match(studio, /t\('automation\.acceptResult'\)/);
+  assert.match(studio, /coreClient\.projects\.acceptFinal/);
+  const keys = ['canonicalSubtitle', 'definitions', 'boundedPlan', 'manualRun', 'manualRunHint', 'project', 'resumeLatest', 'acceptResult', 'definitionState', 'stateWaiting', 'modeRotate90', 'invalidDimensions', 'defaultName', 'run'];
+  for (const key of keys) {
+    assert.match(english, new RegExp('\\b' + key + ':'));
+    assert.match(russian, new RegExp('\\b' + key + ':'));
+  }
+  assert.match(studio, /t\('automation\.canonicalSubtitle'\)/);
+  assert.ok(studio.includes("t('automation.invocation', { id: invocation.invocationId })"));
+  assert.match(studio, /t\('automation\.run'\)/);
+  assert.match(studio, /translated\(MODE_LABELS/);
+  assert.doesNotMatch(studio, /automationRunner\.run|coreClient\.entities|providerSelector|creditsWallet/);
+});
