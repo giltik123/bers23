@@ -274,6 +274,7 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   "manualActionFailed": "This manual Try-On step could not be completed. Refresh the selection and try again.",
   "manualTryOnDetailsTitle": "Manual texture transfer and outfits (advanced)",
   "manualTryOnGeometryLimit": "Geometric pixel transfer does not model garment fit or arm occlusion.",
+  "outfitsDetailsTitle": "Outfit sets (advanced)",
   "reload": "Reload wardrobe",
   "addGarment": "Add garment",
   "notice": "Images, stable garment identity and capture evidence come from Managed Garment authority; category, season, material, tags and favorite state come from the revisioned Wardrobe authority.",
