@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertTriangle, CheckCircle2, Circle, Loader2, RotateCcw, XCircle } from 'lucide-react';
-import { executionRunCapabilityLabel, executionRunStatusLabel, localExecutionAuthorityStateLabel } from '@/lib/jobs/executionRunProjection';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
+import { executionRunLabel } from '@/lib/jobs/executionRunPresentation';
 
 function StatusIcon({ status }) {
   if (status === 'RUNNING') return <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />;
@@ -12,6 +13,7 @@ function StatusIcon({ status }) {
 }
 
 export default function CanonicalExecutionRunRow({ run, control, retryControl, onCancel, onRetry, depth = 0 }) {
+  const { t } = useTranslation();
   const creativeRunning = run.capability === 'CREATIVE_EXECUTION' && run.authorityKind === 'CREATIVE_EXECUTION' && run.status === 'RUNNING';
   const recoveredFinal = run.capability === 'CREATIVE_EXECUTION' && run.authorityKind === 'CREATIVE_EXECUTION' && run.status === 'SUCCEEDED' && run.result?.kind === 'FINAL_IMAGE';
   const localRun = run.capability === 'LOCAL_EXECUTION' && run.authorityKind === 'LOCAL_EXECUTION_TICKET';
@@ -27,30 +29,30 @@ export default function CanonicalExecutionRunRow({ run, control, retryControl, o
     <div className="rounded-xl border border-border/60 p-3 text-xs space-y-1">
       <div className="flex items-center gap-2">
         <StatusIcon status={run.status} />
-        <span className="font-medium truncate flex-1">{executionRunCapabilityLabel(run.capability)}</span>
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">server</span>
+        <span className="font-medium truncate flex-1">{executionRunLabel(t, 'capabilities', run.capability)}</span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{t('jobs.canonical.server')}</span>
       </div>
       <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-        <span>{executionRunStatusLabel(run.status)}{run.statusReasonCode ? ` · ${run.statusReasonCode}` : ''}</span>
+        <span>{executionRunLabel(t, 'statuses', run.status)}{run.statusReasonCode ? ` · ${run.statusReasonCode}` : ''}</span>
         <span className="font-mono">r{run.revision}</span>
       </div>
       {localRun && <div data-local-execution-authority className="pt-1 text-[10px] text-muted-foreground">
-        <p>{localAuthority ? `${localExecutionAuthorityStateLabel(localAuthority.state)} · expires ${localAuthority.expiresAt}` : 'Local ticket authority unavailable'}</p>
-        <p>Cancellation unsupported.</p>
+        <p>{localAuthority ? `${executionRunLabel(t, 'localStates', localAuthority.state)} · ${t('jobs.canonical.expires', { date: localAuthority.expiresAt })}` : t('jobs.canonical.localAuthorityUnavailable')}</p>
+        <p>{t('jobs.canonical.cancellationUnsupported')}</p>
       </div>}
       {recoveredFinal && <div className="flex items-center justify-between gap-2 pt-1 text-[10px] text-muted-foreground" data-canonical-execution-result>
-        <span>{run.result.width}×{run.result.height} FINAL</span>
-        <a href={run.result.imageUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Open result</a>
+        <span>{run.result.width}×{run.result.height} {t('jobs.canonical.final')}</span>
+        <a href={run.result.imageUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{t('jobs.canonical.openResult')}</a>
       </div>}
       {cancelAvailable && <div className="flex justify-end pt-1">
-        <button type="button" onClick={() => onCancel(run)} className="text-[11px] text-destructive hover:underline">Cancel</button>
+        <button type="button" onClick={() => onCancel(run)} className="text-[11px] text-destructive hover:underline">{t('jobs.canonical.cancel')}</button>
       </div>}
-      {cancelPending && <p className="text-[10px] text-muted-foreground text-right">Cancelling through Creative authority…</p>}
-      {cancelUnavailable && <p className="text-[10px] text-muted-foreground text-right">Cancellation unavailable.</p>}
+      {cancelPending && <p className="text-[10px] text-muted-foreground text-right">{t('jobs.canonical.cancelling')}</p>}
+      {cancelUnavailable && <p className="text-[10px] text-muted-foreground text-right">{t('jobs.canonical.cancellationUnavailable')}</p>}
       {retryAvailable && <div className="flex justify-end pt-1">
-        <button type="button" onClick={() => onRetry(run)} className="text-[11px] text-primary hover:underline flex items-center gap-1"><RotateCcw className="w-3 h-3" />Retry workflow</button>
+        <button type="button" onClick={() => onRetry(run)} className="text-[11px] text-primary hover:underline flex items-center gap-1"><RotateCcw className="w-3 h-3" />{t('jobs.canonical.retryWorkflow')}</button>
       </div>}
-      {retryPending && <p className="text-[10px] text-muted-foreground text-right">Retrying through owning workflow authority…</p>}
+      {retryPending && <p className="text-[10px] text-muted-foreground text-right">{t('jobs.canonical.retrying')}</p>}
     </div>
     {run.children?.length > 0 && <div className="mt-1 space-y-1">{run.children.map((child) => <CanonicalExecutionRunRow key={child.runId} run={child} depth={depth + 1} />)}</div>}
   </div>;
