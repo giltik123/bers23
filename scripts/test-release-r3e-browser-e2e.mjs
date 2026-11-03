@@ -120,17 +120,45 @@ try {
   await page.goto(`${frontendOrigin}/editor?id=unauthenticated-release-r3e`, { waitUntil: 'domcontentloaded' });
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/login', { timeout: 15_000 });
 
+  const authSkipLink = page.getByRole('link', { name: /Skip to main content|Перейти к основному содержимому/ });
+  await authSkipLink.waitFor({ state: 'attached', timeout: 10_000 });
+  await authSkipLink.focus();
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.activeElement?.id === 'main-content', null, { timeout: 10_000 });
+
   await page.locator('#email').fill(email);
   await page.locator('#password').fill(password);
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/', { timeout: 15_000 });
   await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
 
+  const appSkipLink = page.getByRole('link', { name: /Skip to main content|Перейти к основному содержимому/ });
+  await appSkipLink.waitFor({ state: 'attached', timeout: 10_000 });
+  await page.keyboard.press('Tab');
+  assert.equal(
+    await page.evaluate(() => document.activeElement?.getAttribute('href')),
+    '#main-content',
+    'the first keyboard Tab in the authenticated shell must reach the skip link',
+  );
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.activeElement?.id === 'main-content', null, { timeout: 10_000 });
+
+  // Exercise route focus with a real authenticated navigation in both
+  // directions before creating the Project used by the release journey.
+  await page.locator('nav[aria-label] a[href="/assets"]').first().click();
+  await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/assets', { timeout: 15_000 });
+  await page.waitForFunction(() => document.activeElement?.id === 'main-content', null, { timeout: 10_000 });
+  await page.locator('nav[aria-label] a[href="/"]').first().click();
+  await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/', { timeout: 15_000 });
+  await page.waitForFunction(() => document.activeElement?.id === 'main-content', null, { timeout: 10_000 });
+
   await page.locator('input[type="file"]').setInputFiles({ name: 'release-r3e-source.png', mimeType: 'image/png', buffer: sourcePng });
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/editor' && Boolean(url.searchParams.get('id')), { timeout: 20_000 });
   const projectId = new URL(page.url()).searchParams.get('id');
   assert(projectId, 'Projects upload must navigate to Editor with canonical project id');
 
+  await page.getByRole('button', { name: 'Маски и SAM3 · по запросу' }).waitFor({ state: 'visible', timeout: 20_000 });
+  await page.waitForFunction(() => document.activeElement?.id === 'main-content', null, { timeout: 10_000 });
   await page.getByRole('button', { name: 'Маски и SAM3 · по запросу' }).click();
   await page.getByText('Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.', { exact: true })
     .waitFor({ state: 'visible', timeout: 20_000 });
