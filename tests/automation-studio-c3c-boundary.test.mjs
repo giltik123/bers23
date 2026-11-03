@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
+// Keep catalog recovery checks in the existing mandatory C3c workflow.
+import './automation-studio-catalog-freshness.test.mjs';
 
 const PAGE = 'src/pages/AutomationStudio.jsx';
 const STUDIO = 'src/components/automation/CanonicalAutomationStudio.jsx';
