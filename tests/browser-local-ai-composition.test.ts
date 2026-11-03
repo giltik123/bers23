@@ -74,8 +74,8 @@ test('creating smart-selection adapter remains lazy and does not initialize brow
   assert.equal(browserLocalAIComposition.initialized(), false, 'composition must initialize only on first semantic inference intent');
 });
 
-test('CANDIDATE MobileSAM is not represented as a generic production fleet model', () => {
-  assert.equal(MOBILE_SAM_BROWSER_MODEL.status, 'AVAILABLE');
+test('approved MobileSAM is READY for selection while the generic production fleet stays empty', () => {
+  assert.equal(MOBILE_SAM_BROWSER_MODEL.status, 'READY');
   assert.equal(PRODUCTION_BROWSER_FLEET_MODEL_COUNT, 0);
 });
 

@@ -36,25 +36,26 @@ function evaluate(overrides = {}) {
   });
 }
 
-test('current production composite start is blocked only by MobileSAM model authority while the rest of the graph remains aligned', () => {
+test('current production composite start is admitted by the approved MobileSAM release with the full graph aligned', () => {
   const readiness = evaluate();
-  assert.equal(mobileSamProductionReleaseState.releaseStatus, 'CANDIDATE');
-  assert.equal(readiness.status, 'BLOCKED');
-  assert.equal(readiness.admitted, false);
-  assert.deepEqual(readiness.blockers, ['SEGMENT_MODEL_AUTHORITY_UNAVAILABLE']);
+  assert.equal(mobileSamProductionReleaseState.releaseStatus, 'PRODUCTION_APPROVED');
+  assert.equal(readiness.status, 'ADMITTED');
+  assert.equal(readiness.admitted, true);
+  assert.deepEqual(readiness.blockers, []);
   assert.deepEqual(readiness.model, {
     modelId: mobileSamProductionReleaseState.modelId,
     version: mobileSamProductionReleaseState.version,
-    releaseStatus: 'CANDIDATE',
+    releaseStatus: 'PRODUCTION_APPROVED',
   });
 });
 
-test('exact test-only standalone/composite model aliases admit the already-proven C5B graph without changing release state', () => {
+test('readiness reports the exact approved model identity from the release authority', () => {
   const readiness = evaluate({ modelsByCapability: exactTestModels() });
   assert.equal(readiness.status, 'ADMITTED');
   assert.equal(readiness.admitted, true);
   assert.deepEqual(readiness.blockers, []);
-  assert.equal(readiness.model.releaseStatus, 'CANDIDATE', 'test authority must not promote the real release');
+  assert.equal(readiness.model.modelId, exactMobileSam.modelId);
+  assert.equal(readiness.model.version, exactMobileSam.version);
 });
 
 test('segment model identity and exact alias provenance fail closed independently', () => {
@@ -172,7 +173,10 @@ test('broad COMPOSITE_REPLACE_RELIGHT can never inherit narrow C5B local capabil
 
 test('assertStartAllowed exposes one stable fail-closed service code without public blocker details', () => {
   const admission = createProductionLocalCompositeStartAdmission({
-    modelsByCapability: productionLocalModelsByCapability,
+    modelsByCapability: Object.freeze({
+      ...productionLocalModelsByCapability,
+      [MOBILE_SAM_LOCAL_CAPABILITY]: Object.freeze([]),
+    }),
     executorsByCapability: productionLocalExecutorsByCapability,
     capabilityAdmission: productionExecutionCapabilities,
   });
@@ -182,8 +186,19 @@ test('assertStartAllowed exposes one stable fail-closed service code without pub
       assert.equal(error.status, 503);
       assert.equal(error.code, 'local_composite_production_unavailable');
       assert.equal(error.message, 'Local composite production start is not admitted');
-      assert.deepEqual(error.readiness.blockers, ['SEGMENT_MODEL_AUTHORITY_UNAVAILABLE']);
+      assert.deepEqual(error.readiness.blockers, ['SEGMENT_MODEL_AUTHORITY_UNAVAILABLE', 'SEGMENT_MODEL_ALIAS_DRIFT']);
       return true;
     },
   );
+});
+
+test('assertStartAllowed returns the admitted readiness for the aligned production catalogs', () => {
+  const admission = createProductionLocalCompositeStartAdmission({
+    modelsByCapability: productionLocalModelsByCapability,
+    executorsByCapability: productionLocalExecutorsByCapability,
+    capabilityAdmission: productionExecutionCapabilities,
+  });
+  const readiness = admission.assertStartAllowed();
+  assert.equal(readiness.admitted, true);
+  assert.deepEqual(readiness.blockers, []);
 });

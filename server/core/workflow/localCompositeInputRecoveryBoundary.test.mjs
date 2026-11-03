@@ -43,7 +43,7 @@ test('C2a.1 production recovery wiring is workflow-owned, PostgreSQL-backed and 
   assert.doesNotMatch(delivery, /providerId|Billing|financialAccounts|persistFinal|persistMask|submitLocalResult|\.issue\(/);
 });
 
-test('C2a.1 preserves MobileSAM CANDIDATE fail-closed production admission and legacy Agent lockdown', async () => {
+test('C2a.1 preserves MobileSAM fail-closed production admission wiring and legacy Agent lockdown', async () => {
   const [policy, agent] = await Promise.all([
     source('../localExecution/productionLocalModelPolicy.ts'),
     source('../../../src/lib/agent/executionQueue.js'),
