@@ -337,7 +337,7 @@ export default function Editor() {
     const requestedProjectId = initialProject?.id;
     const imageArtifactId = initialProject?.current_image_artifact_id;
     if (!requestedProjectId || !imageArtifactId) {
-      setAiError('Canonical project image identity is unavailable');
+      setAiError(t('editorUi.selectionIdentityUnavailable'));
       return;
     }
     const startGeneration = ++selectionStartGenerationRef.current;
@@ -369,7 +369,7 @@ export default function Editor() {
       setSelection(service.start({ imageArtifactId, width: currentProject.width, height: currentProject.height }));
     } catch {
       if (startGeneration === selectionStartGenerationRef.current) {
-        setAiError('Selection tools could not be loaded. Your Project and existing masks were not changed.');
+        setAiError(t('editorUi.selectionLoadFailed'));
       }
     } finally {
       if (startGeneration === selectionStartGenerationRef.current) {
