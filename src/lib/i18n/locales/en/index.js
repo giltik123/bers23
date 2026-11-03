@@ -196,6 +196,8 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   "cropActive": "Adjust the crop rectangle above, then apply or cancel it before starting another edit.",
   "resizeActive": "Set the exact resize dimensions above, then apply or cancel them before starting another edit.",
   "loadingPanel": "Loading panel…",
+  "selectionIdentityUnavailable": "The current Project image is unavailable. Reload the Project before selecting.",
+  "selectionLoadFailed": "Selection tools could not be loaded. Your Project and existing masks were not changed.",
   "moreTools": "More tools and activity",
   "workspace": "Workspace",
   "jobCenter": "Job Center",
