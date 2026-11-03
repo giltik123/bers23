@@ -25,7 +25,14 @@ class SessionRecovery {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          this.memory = parsed;
+          const hasMemory = Object.keys(this.memory).length > 0;
+          const memorySavedAt = Number(this.memory.savedAt);
+          const persistedSavedAt = Number(parsed.savedAt);
+          const persistedIsNewer = Number.isFinite(persistedSavedAt)
+            && (!Number.isFinite(memorySavedAt) || persistedSavedAt > memorySavedAt);
+          if (!hasMemory || persistedIsNewer) {
+            this.memory = parsed;
+          }
         }
       }
     } catch {

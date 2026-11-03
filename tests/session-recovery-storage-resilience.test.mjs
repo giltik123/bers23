@@ -60,6 +60,11 @@ test('Editor and bounded Agent recovery degrade safely and resume session persis
     assert.doesNotThrow(() => clearHint('project-1'));
 
     const values = new Map();
+    values.set(SESSION_KEY, JSON.stringify({
+      route: '/stale-route',
+      editor: { projectId: 'stale-project', selectionId: null, historyIndex: 0 },
+      savedAt: 1,
+    }));
     replaceSessionStorage({
       value: {
         getItem(key) {
@@ -74,6 +79,7 @@ test('Editor and bounded Agent recovery degrade safely and resume session persis
       },
     });
 
+    assert.equal(sessionRecovery.restore().route, '/assets');
     assert.doesNotThrow(() => sessionRecovery.saveEditor({
       projectId: 'project-2',
       selectionId: null,
