@@ -50,7 +50,9 @@ test('legacy browser bearer cleanup still scrubs the URL when the storage getter
     history: { replaceState(...args) { replacements.push(args); } },
   };
 
-  assert.doesNotThrow(() => runInNewContext(source, { window, document: { title: 'BERS' }, URL }));
+  const executable = source.replace('export const appParams = Object.freeze({});', '');
+  assert.notEqual(executable, source);
+  assert.doesNotThrow(() => runInNewContext(executable, { window, document: { title: 'BERS' }, URL }));
   assert.equal(replacements.length, 1);
   assert.equal(replacements[0][2], '/login?keep=1#return');
   assert.doesNotMatch(replacements[0][2], /access_token|secret/);
@@ -71,7 +73,9 @@ test('legacy browser bearer cleanup continues after an individual storage remova
     history: { replaceState(...args) { replacements.push(args); } },
   };
 
-  assert.doesNotThrow(() => runInNewContext(source, { window, document: { title: 'BERS' }, URL }));
+  const executable = source.replace('export const appParams = Object.freeze({});', '');
+  assert.notEqual(executable, source);
+  assert.doesNotThrow(() => runInNewContext(executable, { window, document: { title: 'BERS' }, URL }));
   assert.deepEqual(removed, ['core_access_token', 'core_token', 'token', 'core_from_url']);
   assert.equal(replacements.length, 1);
   assert.equal(replacements[0][2], '/login?keep=1#return');
