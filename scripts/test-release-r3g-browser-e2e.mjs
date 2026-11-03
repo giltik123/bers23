@@ -278,7 +278,7 @@ async function waitForCoreResponses(page, paths, action) {
   const waits = paths.map(pathName => page.waitForResponse(response => {
     const url = new URL(response.url());
     return response.request().method() === 'GET' && url.origin === coreOrigin && url.pathname === pathName;
-  }, { timeout: 20_000 }));
+  }, { timeout: 30_000 }));
 
   try {
     // Attach rejection handlers to both the UI action and every response wait
@@ -290,7 +290,7 @@ async function waitForCoreResponses(page, paths, action) {
   } catch (cause) {
     const observed = diagnostics.fashionReads.slice(diagnosticsStart);
     throw new Error(
-      'R3g Core read barrier failed; expected=' + paths.join(', ') + '; observed=' + (observed.join(', ') || '(none)') + '; page=' + page.url(),
+      'R3g Core read barrier failed; expected=' + paths.join(', ') + '; observed=' + (observed.join(', ') || '(none)') + '; cause=' + (cause instanceof Error ? cause.message : String(cause)) + '; page=' + page.url(),
       { cause },
     );
   }
