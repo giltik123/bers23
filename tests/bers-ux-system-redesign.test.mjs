@@ -111,9 +111,9 @@ test('Projects and login use the same design and do not hide key actions behind 
 test('object list actions are independent keyboard-reachable buttons, not clickable nonsemantic rows', async () => {
   const panel = await read('src/components/editor/ObjectPanel.jsx');
   assert.match(panel, /role="group"/);
-  assert.match(panel, /aria-label=\{obj\.selected \? 'Deselect ' \+ obj\.label : 'Select ' \+ obj\.label\}/);
+  assert.match(panel, /t\('editorUi\.deselectObject', \{ name: obj\.label \}\)/);
   assert.match(panel, /aria-pressed=\{Boolean\(obj\.selected\)\}/);
-  assert.match(panel, /aria-label=\{isHidden \? "Show object overlay" : "Hide object overlay"\}/);
+  assert.match(panel, /aria-label=\{isHidden \? t\('editorUi\.showObjectOverlay'\) : t\('editorUi\.hideObjectOverlay'\)\}/);
   assert.match(panel, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onToggleHidden\(obj\.id\); \}\}/);
   assert.match(panel, /onClick=\{\(\) => onSelect\(obj\.selected \? null : obj\)\}/);
   assert.doesNotMatch(panel, /className=\{\x60flex items-center gap-2 px-2 py-1\.5 rounded-lg cursor-pointer/);
