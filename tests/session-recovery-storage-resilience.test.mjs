@@ -14,7 +14,7 @@ function replaceSessionStorage(descriptor) {
 
 test('Auth bootstrap announces localized loading without changing the session gate', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  const authenticatedApp = source.match(/const AuthenticatedApp = \(\) => \{([\\s\\S]*?)\\n\};/);
+  const authenticatedApp = source.match(/const AuthenticatedApp = \(\) => \{([\s\S]*?)\n\};/);
 
   assert.ok(authenticatedApp, 'AuthenticatedApp must remain the global route gate');
   assert.match(authenticatedApp[1], /const \{ t \} = useTranslation\(\);/);
@@ -26,7 +26,7 @@ test('Auth bootstrap announces localized loading without changing the session ga
   assert.ok(bootstrap, 'the existing bootstrap wait branch must remain intact');
   assert.match(bootstrap[1], /role="status"/);
   assert.match(bootstrap[1], /aria-live="polite"/);
-  assert.match(bootstrap[1], /<span className="sr-only">\{t\('common\.loading'\)\}<\\/span>/);
+  assert.match(bootstrap[1], /<span className="sr-only">\{t\('common\.loading'\)\}<\/span>/);
   assert.match(bootstrap[1], /aria-hidden="true"/);
 });
 
