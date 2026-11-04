@@ -75,6 +75,7 @@ on:
       - 'scripts/test-release-r3c-browser-e2e.mjs'
       - 'scripts/test-release-r3d-browser-e2e.mjs'
       - 'scripts/test-release-r3e-browser-e2e.mjs'
+      - 'scripts/r3e-browser-request-policy.mjs'
       - 'scripts/test-release-r3f-browser-e2e.mjs'
       - 'scripts/test-release-r3g-browser-e2e.mjs'
       - 'scripts/test-release-r3h-browser-e2e.mjs'
