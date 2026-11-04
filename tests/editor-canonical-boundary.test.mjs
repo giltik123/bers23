@@ -632,17 +632,17 @@ test('bounded Agent context fence rejects missing or mismatched canonical source
 
 test('bounded Agent UI checks current Project/source before publishing progress and terminal preview', async () => {
   const hook = await readFile('src/components/editor/agent/useBoundedAgentEditor.js', 'utf8');
-  assert.match(hook, /contextGateRef\\.current\\.sync\\(project\\?\\.id, project\\?\\.current_image_artifact_id\\)/);
-  assert.match(hook, /if \\(!mountedRef\\.current \\|\\| !contextGateRef\\.current\\.isCurrent\\(ticket\\)\\) return;/);
-  assert.match(hook, /setState\\(\\(previous\\) => contextGateRef\\.current\\.isCurrent\\(ticket\\)/);
-  assert.match(hook, /if \\(!contextGateRef\\.current\\.isCurrent\\(ticket\\)\\) return outcome;/);
-  assert.match(hook, /if \\(!mountedRef\\.current \\|\\| !contextGateRef\\.current\\.isCurrent\\(ticket\\)\\) \\{\\s*revokeBlob\\(previewUrl\\)/);
-  assert.match(hook, /const visibleState = stateOwnerRef\\.current === contextKey \\? state : EMPTY_STATE/);
-  assert.match(hook, /stateOwnerRef\\.current = contextKey;\\s*setState\\(EMPTY_STATE\\)/);
-  assert.match(hook, /operationRef\\.current\\.get\\(lockKey\\)/);
-  assert.match(hook, /operationRef\\.current\\.delete\\(lockKey\\)/);
-  assert.match(hook, /operationRef\\.current\\.has\\(contextKey\\)/);
-  assert.match(hook, /return Object\\.freeze\\(\\{ state: visibleState, busy: visibleState\\.busy/);
+  assert.match(hook, /contextGateRef\.current\.sync\(project\?\.id, project\?\.current_image_artifact_id\)/);
+  assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) return;/);
+  assert.match(hook, /setState\(\(previous\) => contextGateRef\.current\.isCurrent\(ticket\)/);
+  assert.match(hook, /if \(!contextGateRef\.current\.isCurrent\(ticket\)\) return outcome;/);
+  assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) \{\s*revokeBlob\(previewUrl\)/);
+  assert.match(hook, /const visibleState = stateOwnerRef\.current === contextKey \? state : EMPTY_STATE/);
+  assert.match(hook, /stateOwnerRef\.current = contextKey;\s*setState\(EMPTY_STATE\)/);
+  assert.match(hook, /operationRef\.current\.get\(lockKey\)/);
+  assert.match(hook, /operationRef\.current\.delete\(lockKey\)/);
+  assert.match(hook, /operationRef\.current\.has\(contextKey\)/);
+  assert.match(hook, /return Object\.freeze\(\{ state: visibleState, busy: visibleState\.busy/);
 });
 
 test('bounded Agent cancellation failure releases busy state and retains the recovery hint', async () => {
@@ -651,11 +651,11 @@ test('bounded Agent cancellation failure releases busy state and retains the rec
   const end = hook.indexOf('const dismiss', start);
   assert.ok(start >= 0 && end > start, 'cancel callback must remain explicit');
   const cancel = hook.slice(start, end);
-  assert.match(cancel, /catch \\(error\\)/);
+  assert.match(cancel, /catch \(error\)/);
   assert.match(cancel, /busy: false/);
-  assert.match(cancel, /error: error\\?\\.message \\|\\| 'Bounded Agent cancellation failed'/);
+  assert.match(cancel, /error: error\?\.message \|\| 'Bounded Agent cancellation failed'/);
   assert.match(cancel, /throw error;/);
-  assert.match(cancel, /clearHint\\(project\\.id\\)/);
+  assert.match(cancel, /clearHint\(project\.id\)/);
   const catchBlock = cancel.slice(cancel.indexOf('catch'), cancel.indexOf('finally'));
   assert.doesNotMatch(catchBlock, /clearHint/);
 });
