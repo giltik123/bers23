@@ -1,4 +1,5 @@
 import { normalizeRussianFashionVoice } from './normalizeRussianFashionVoice.js';
+import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS } from '../../platform/creative/deterministic/ResizeIdentity.js';
 
 /** VI-2 Russian deterministic recognizer: strictly bounded, never executes. */
 const normalize=s=>s.toLocaleLowerCase('ru-RU').replace(/ё/g,'е')
@@ -30,7 +31,7 @@ function parseResize(text){
   if(!match)return null;
   const width=Number(match[1]),height=Number(match[2]);
   if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||
-     width<1||height<1||width>16384||height>16384||width*height>24_000_000)
+     width<1||height<1||width>RESIZE_MAX_DIMENSION||height>RESIZE_MAX_DIMENSION||width*height>RESIZE_MAX_OUTPUT_PIXELS)
     return action('AMBIGUOUS',{reason:'Неподдерживаемые размеры'},'EDITOR');
   return action('RESIZE',{width,height});
 }
@@ -50,8 +51,8 @@ export function parseRussianVoiceIntent(transcript){
   const compound=text.match(/^поверни(?: фото| фотографию| изображение)?\s+(вправо|влево)\s+и\s+затем\s+сделай\s+(\d{1,5})\s*(?:на|x|х|×)\s*(\d{1,5})$/u);
   if(compound){
     const width=Number(compound[2]),height=Number(compound[3]);
-    if(width<1||height<1||width>16384||height>16384||
-      width*height>24_000_000)
+    if(width<1||height<1||width>RESIZE_MAX_DIMENSION||height>RESIZE_MAX_DIMENSION||
+      width*height>RESIZE_MAX_OUTPUT_PIXELS)
       return action('AMBIGUOUS',{reason:'Размеры Agent выходят за пределы BERS'});
     return action('AGENT_PROPOSAL',{
       mode:compound[1]==='вправо'?'ROTATE_90_CW':'ROTATE_270_CW',

@@ -6,6 +6,7 @@ on:
       - 'src/pages/Editor.jsx'
       - 'src/components/editor/agent/AgentPanel.jsx'
       - 'src/application/agent/routeEditorAgentTask.js'
+      - 'src/platform/creative/deterministic/ResizeIdentity.js'
       - 'tests/agent-editor-task-handoff.test.mjs'
       - 'src/components/editor/local/AdvancedLocalControls.jsx'
       - 'src/lib/local-editor/localAdvanced.js'

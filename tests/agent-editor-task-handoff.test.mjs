@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { routeEditorAgentTask } from '../src/application/agent/routeEditorAgentTask.js';
+import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS } from '../src/platform/creative/deterministic/ResizeIdentity.js';
 
 test('Agent text task prepares the exact admitted bounded transform/resize workflow without executing', () => {
   const proposal = routeEditorAgentTask('Поверни фото вправо и затем сделай 1024 на 1024');
@@ -104,6 +105,18 @@ test('malformed geometric goals and over-limit geometries fail closed, never clo
   }
 });
 
+test('Agent text resize and compound proposals share canonical Resize v1 output bounds', () => {
+  const edge = Math.min(RESIZE_MAX_DIMENSION, Math.floor(Math.sqrt(RESIZE_MAX_OUTPUT_PIXELS)));
+  assert.ok(edge * edge <= RESIZE_MAX_OUTPUT_PIXELS);
+  const accepted = routeEditorAgentTask(`Поверни фото вправо и затем сделай ${edge} на ${edge}`);
+  assert.deepEqual({kind: accepted.kind, width: accepted.width, height: accepted.height},
+    {kind: 'LOCAL_WORKFLOW_DRAFT', width: edge, height: edge});
+  for (const input of [
+    `Поверни фото вправо и затем сделай ${edge + 1} на ${edge}`,
+    `Сделай ${edge + 1} на ${edge}`,
+    `Поверни фото вправо и затем сделай ${RESIZE_MAX_DIMENSION + 1} на 1`,
+  ]) assert.equal(routeEditorAgentTask(input).kind, 'CLARIFY', input);
+});
 test('reviewed single-step Agent controls never execute without a user click', async () => {
   const [panel, editor] = await Promise.all([
     readFile('src/components/editor/agent/AgentPanel.jsx', 'utf8'),
