@@ -61,7 +61,7 @@ test('R3g attaches Core response waits to the triggering UI action immediately',
   const returnNavigation = harness.indexOf("await page.getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ }).click();");
   const returnBarrier = harness.lastIndexOf("await waitForCoreResponses(page,", returnNavigation);
   const returnRoute = harness.indexOf("await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId && url.searchParams.get('mode') === 'fashion');", returnNavigation);
-  const returnRegion = harness.indexOf("await page.getByRole('region', { name: 'Примерка одежды', exact: true })", returnRoute);
+  const returnRegion = harness.indexOf("await page.getByRole('region', { name: 'Virtual Try-On', exact: true })", returnRoute);
   assert.ok(returnBarrier >= 0 && returnNavigation > returnBarrier && returnRoute > returnNavigation && returnRegion > returnRoute, 'return navigation must restore the same Project and Fashion mode through the response barrier');
   assert.doesNotMatch(harness, /const (?:fashionMode|wardrobe|returnMode|outfit)Load = waitForCoreResponses/);
 });
@@ -126,11 +126,11 @@ test('R3g workflow guard follows the localized Fashion region and panel label', 
     readFile(HARNESS, 'utf8'),
   ]);
 
-  assert.ok(workflow.includes('grep -q "Примерка одежды" "$script"'));
+  assert.ok(workflow.includes('grep -q "Virtual Try-On" "$script"'));
   assert.ok(workflow.includes('grep -q "fashionUi.panelLabel" src/components/editor/fashion/FashionPanel.jsx'));
   assert.equal(workflow.includes('grep -q "Canonical fashion wardrobe" "$script"'), false);
   assert.ok(fashion.includes("aria-label={t('fashionUi.panelLabel')}"));
-  assert.ok(harness.includes("getByRole('region', { name: 'Примерка одежды', exact: true })"));
+  assert.ok(harness.includes("getByRole('region', { name: 'Virtual Try-On', exact: true })"));
   assert.ok(harness.includes("page.locator('summary').filter({ hasText: 'Outfit sets' })"));
 });
 
