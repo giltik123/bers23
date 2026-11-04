@@ -14,7 +14,6 @@ import {
   LocalExecutionModelUnavailableError,
   LocalExecutionTicketAuthority,
 } from '../server/core/localExecution/LocalExecutionTicketAuthority.ts';
-import { productionLocalExecutorPolicy } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
 import { productionLocalModelsByCapability } from '../server/core/localExecution/productionLocalModelPolicy.ts';
 
