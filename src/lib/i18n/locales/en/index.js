@@ -148,6 +148,8 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   "methods": "Editing methods",
   "what": "What would you like to do?",
   "chooseMethod": "Choose editing method",
+  "more": "More",
+  "additionalTools": "Additional tools",
   "tabs": {
     "ai": {
       "label": "AI Studio",

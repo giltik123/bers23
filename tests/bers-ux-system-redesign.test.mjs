@@ -46,11 +46,11 @@ test('Editor uses a spacious canvas-led workspace and explanatory editing modes'
   assert.match(editor, /xl:grid-cols-\[minmax\(0,1fr\)_minmax\(19rem,23rem\)\]/);
   assert.ok(editor.indexOf('<ImageCanvas') < editor.indexOf('aria-label="Image tools"'));
   assert.match(editor, /<AdaptiveNavigation items=\{EDITOR_TABS\} active=\{editTab\}/);
-  assert.match(editor, /description: 'Describe what you want to change/);
-  assert.match(navigation, /What would you like to do\?/);
+  assert.match(navigation, /\{t\(`editorUi\.tabs\.\$\{current\.id\}\.description`\)\}/);
+  assert.match(navigation, /\{t\('editorUi\.what'\)\}/);
   assert.match(navigation, /aria-pressed=\{active === item\.id\}/);
   assert.match(navigation, /onClick=\{\(\) => onChange\(item\.id\)\}/);
-  assert.match(navigation, /current\?\.description/);
+  assert.match(navigation, /!compact && current &&/);
   assert.match(editor, /aria-label="Rename project"/);
   assert.match(editor, /View full-size image in a new tab/);
   assert.doesNotMatch(editor, /aria-label="Download"/, 'opening an image in a tab must not claim a file download');
