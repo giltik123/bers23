@@ -105,6 +105,7 @@ const diagnostics = {
   consoleErrors: [],
   requestFailures: [],
   fashionReads: [],
+  fashionResponses: [],
   fashionMutations: [],
   localExecutionRequests: [],
   creativeRequests: [],
@@ -423,6 +424,24 @@ function attachDiagnostics(page) {
   page.on('pageerror', error => diagnostics.pageErrors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') diagnostics.consoleErrors.push(message.text()); });
   page.on('requestfailed', request => diagnostics.requestFailures.push({ url: request.url(), failure: request.failure()?.errorText }));
+  // Fashion panels can prefetch their canonical lists while Editor mounts, before
+  // the user selects the Fashion tab. Keep response evidence, not just request
+  // names, so later navigation barriers can consume an already-completed read.
+  page.on('response', response => {
+    let url;
+    try { url = new URL(response.url()); } catch { return; }
+    if (url.origin !== coreOrigin) return;
+    const pathname = url.pathname;
+    const method = response.request().method();
+    const canonicalFashion = pathname === '/api/core/garments'
+      || pathname.startsWith('/api/core/garments/')
+      || pathname === '/api/core/wardrobe/garments'
+      || pathname.startsWith('/api/core/wardrobe/garments/')
+      || pathname === '/api/core/wardrobe/collections'
+      || pathname.startsWith('/api/core/wardrobe/collections/');
+    if (!canonicalFashion || !['GET', 'HEAD'].includes(method)) return;
+    diagnostics.fashionResponses.push({ method, pathname, status: response.status(), ok: response.ok() });
+  });
   page.on('request', request => {
     let url;
     try { url = new URL(request.url()); } catch { return; }
@@ -456,6 +475,7 @@ function attachDiagnostics(page) {
 function resetJourneyDiagnostics() {
   for (const key of [
     'fashionReads',
+    'fashionResponses',
     'fashionMutations',
     'localExecutionRequests',
     'creativeRequests',
@@ -482,13 +502,21 @@ function waitForCoreResponse(page, method, pathPredicate, timeout = 15_000) {
 
 async function waitForCoreResponses(page, specs, label = 'Core reads') {
   const responses = await Promise.all(specs.map(async ([method, pathname]) => {
+    // A canonical panel may have completed its read during Editor mount. Prefer
+    // the latest observed response for this exact route before arming a new wait.
+    const observed = [...diagnostics.fashionResponses].reverse()
+      .find(entry => entry.method === method && entry.pathname === pathname);
+    if (observed) return observed;
     try {
-      return await waitForCoreResponse(page, method, value => value === pathname);
-    } catch (error) {
+      const response = await waitForCoreResponse(page, method, value => value === pathname);
+      return { method, pathname, status: response.status(), ok: response.ok() };
+    } catch {
       throw new Error(`${label}: timed out waiting for Core ${method} ${pathname}`);
     }
   }));
-  for (const response of responses) assert.equal(response.ok(), true, `${response.request().method()} ${response.url()} must succeed through real Core`);
+  for (const response of responses) {
+    assert.equal(response.ok, true, `${response.method} ${coreOrigin}${response.pathname} must succeed through real Core (HTTP ${response.status})`);
+  }
   return responses;
 }
 

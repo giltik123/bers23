@@ -55,6 +55,12 @@ test('R3h browser is the product mutation actor while PostgreSQL remains a read-
   assert.match(harness, /getByRole\('button', \{ name: 'Fashion', exact: true \}\)/);
   assert.ok(harness.includes("'initial Fashion load'"));
   assert.ok(harness.includes("'Wardrobe return'"));
+  assert.ok(harness.includes('fashionResponses: []'));
+  assert.ok(harness.includes("page.on('response', response =>"));
+  assert.ok(harness.includes('diagnostics.fashionResponses.push'));
+  assert.ok(harness.includes('[...diagnostics.fashionResponses].reverse()'));
+  assert.ok(harness.includes('entry.method === method && entry.pathname === pathname'));
+  assert.ok(harness.includes("'fashionResponses'"));
   assert.ok(harness.includes('timed out waiting for Core ${method} ${pathname}'));
   const initialFashionBarrier = harness.indexOf('const initialFashionLoad = waitForCoreResponses(page, [');
   const fashionClick = harness.indexOf('await fashion.click();');
