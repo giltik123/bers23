@@ -66,7 +66,68 @@ test('object eye controls update the actual canvas overlays, not just the list s
   assert.match(editor, /hidden=\{hiddenObjectIds\} onToggleHidden=\{toggleHiddenObject\}/);
   assert.match(canvas, /objects\.filter\(\(obj\) => !hiddenObjectIds\.has\(obj\.id\)\)\.map/);
   assert.match(objectPanel, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onToggleHidden\(obj\.id\); \}\}/);
-  assert.match(objectPanel, /aria-label=\{isHidden \? "Show object overlay" : "Hide object overlay"\}/);
+  assert.match(objectPanel, /aria-label=\{isHidden \? t\('editorUi\.showObjectOverlay'\) : t\('editorUi\.hideObjectOverlay'\)\}/);
   assert.match(objectPanel, /onClick=\{\(\) => onSelect\(obj\.selected \? null : obj\)\}/);
-  assert.match(objectPanel, /they do not edit the image/);
+  assert.match(objectPanel, /t\('editorUi\.objectPanelHint', \{ count: maskCount \}\)/);
+});
+
+
+test('compact Editor panels expose an accessible disclosure and a localized close action', async () => {
+  const [panel, editor, englishCommon, russian] = await Promise.all([
+    readFile('src/components/adaptive/AdaptivePanels.jsx', 'utf8'),
+    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/common.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+
+  assert.match(panel, /const panelId = useId\(\)/);
+  assert.match(panel, /const \{ t \} = useTranslation\(\)/);
+  assert.match(panel, /aria-expanded=\{expanded\}/);
+  assert.match(panel, /aria-controls=\{panelId\}/);
+  assert.match(panel, /id=\{panelId\} role="region" aria-label=\{title\} hidden=\{!expanded\}/);
+  assert.match(panel, /aria-label=\{t\('common\.close'\)\}/);
+  assert.match(englishCommon, /close:\s*'Close'/);
+  assert.match(russian, /close:\s*'Закрыть'/);
+  assert.match(panel, /onClick=\{\(\) => setExpanded\(false\)\}/);
+  assert.doesNotMatch(panel, /coreClient|projectService|pushEdit\(/);
+
+  for (const key of ['masks', 'workspace', 'jobCenter', 'sceneMemory']) {
+    assert.ok(editor.includes(`t('editorUi.${key}')`), `Editor panel title ${key} must use the existing locale catalog`);
+  }
+});
+
+
+test('saved mask and object controls use RU/EN locale keys while preserving user labels', async () => {
+  const [panel, english, russian] = await Promise.all([
+    readFile('src/components/editor/ObjectPanel.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+  const keys = [
+    'masksAndObjects', 'objectPanelHint', 'objectGroup', 'collapseObject',
+    'expandObject', 'selectObject', 'deselectObject', 'showObjectOverlay',
+    'hideObjectOverlay', 'showObjectGuide', 'hideObjectGuide', 'savedAlphaMask',
+    'maskLabel',
+  ];
+  for (const key of keys) {
+    assert.match(english, new RegExp('"' + key + '"\\s*:'));
+    assert.match(russian, new RegExp('"' + key + '"\\s*:'));
+  }
+  for (const key of ['masksAndObjects', 'objectPanelHint']) {
+    const enValue = english.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"'))?.[1] || '';
+    const ruValue = russian.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"'))?.[1] || '';
+    const placeholders = value => [...value.matchAll(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g)].map(match => match[1]).sort();
+    assert.deepEqual(placeholders(enValue), ['count'], key + ' EN placeholder');
+    assert.deepEqual(placeholders(ruValue), ['count'], key + ' RU placeholder');
+  }
+  for (const key of ['objectGroup', 'collapseObject', 'expandObject', 'selectObject', 'deselectObject']) {
+    const enValue = english.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"'))?.[1] || '';
+    const ruValue = russian.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"'))?.[1] || '';
+    const placeholders = value => [...value.matchAll(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g)].map(match => match[1]).sort();
+    assert.deepEqual(placeholders(enValue), ['name'], key + ' EN placeholder');
+    assert.deepEqual(placeholders(ruValue), ['name'], key + ' RU placeholder');
+  }
+  assert.ok(panel.includes('<span className="flex-1 truncate">{obj.label}</span>'), 'user-provided object labels remain unchanged');
+  assert.ok(panel.includes('ObjectRow key={c.id} obj={c} objects={objects} depth={depth + 1} hidden={hidden} onToggleHidden={onToggleHidden} onSelect={onSelect} t={t} />'), 'nested object rows retain the same translation function');
+  assert.doesNotMatch(panel, /Saved masks and objects|Show object overlay|Hide object overlay|they do not edit the image/);
 });

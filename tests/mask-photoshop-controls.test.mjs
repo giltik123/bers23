@@ -103,13 +103,14 @@ test('saved mask entries live alongside adjustment controls and have honest visi
   const objectPanel = await readFile('src/components/editor/ObjectPanel.jsx', 'utf8');
   assert.match(objectPanel, /const isMask = Boolean\(obj\.mask_artifact_id\)/);
   assert.match(objectPanel, /isMask && <span className=/);
-  assert.match(objectPanel, /Saved masks and objects/);
-  assert.match(objectPanel, /Select one to adjust exposure, white balance or levels/);
+  assert.match(objectPanel, /aria-label=\{t\('editorUi\.masksAndObjects'/);
+  assert.match(objectPanel, /t\('editorUi\.objectPanelHint', \{ count: maskCount \}\)/);
   const list = editor.indexOf('<ObjectPanel objects={objects}');
   const sidebar = editor.indexOf('aria-label="Editing controls"');
   const sidebarClose = editor.indexOf('</aside>', sidebar);
   assert.ok(list > sidebar && list < sidebarClose, 'saved MASK list must stay inside contextual editing sidebar');
-  assert.match(objectPanel, /they do not edit the image/);
+  assert.match(objectPanel, /t\('editorUi\.showObjectOverlay'\)/);
+  assert.match(objectPanel, /t\('editorUi\.hideObjectOverlay'\)/);
 });
 
 test('real browser R3e exercises color and opacity of rendered overlay while Core keeps exact mask authority', async () => {
