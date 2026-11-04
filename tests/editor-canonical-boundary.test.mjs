@@ -641,6 +641,11 @@ test('bounded Agent UI checks current Project/source before publishing progress 
   assert.match(hook, /clearHintForSource\(project\.id, ticket\.sourceArtifactId, executionId\)/);
   assert.match(hook, /clearHintForSource\(project\?\.id, ticket\.sourceArtifactId, view\.executionId\)/);
   assert.match(hook, /clearHintForSource\(project\.id, hint\.sourceArtifactId, hint\.executionId\)/);
+  const dismissStart = hook.indexOf('const dismiss = useCallback');
+  const dismissEnd = hook.indexOf('useEffect', dismissStart);
+  const dismiss = hook.slice(dismissStart, dismissEnd);
+  assert.match(dismiss, /if \(!ticket\) return;/);
+  assert.match(dismiss, /if \(mountedRef\.current && contextGateRef\.current\.isCurrent\(ticket\)\) setState\(EMPTY_STATE\)/);
   assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) \{\s*revokeBlob\(previewUrl\)/);
   assert.match(hook, /const visibleState = stateOwnerRef\.current === contextKey \? state : EMPTY_STATE/);
   assert.match(hook, /stateOwnerRef\.current = contextKey;\s*setState\(EMPTY_STATE\)/);

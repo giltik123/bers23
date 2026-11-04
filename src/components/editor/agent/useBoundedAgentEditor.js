@@ -175,10 +175,9 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
 
   const dismiss = useCallback(() => {
     const ticket = contextGateRef.current.capture(project?.id, project?.current_image_artifact_id);
-    if (ticket) {
-      clearHintForSource(ticket.projectId, ticket.sourceArtifactId, visibleState.view?.executionId ?? null);
-    }
-    if (mountedRef.current && (!ticket || contextGateRef.current.isCurrent(ticket))) setState(EMPTY_STATE);
+    if (!ticket) return;
+    clearHintForSource(ticket.projectId, ticket.sourceArtifactId, visibleState.view?.executionId ?? null);
+    if (mountedRef.current && contextGateRef.current.isCurrent(ticket)) setState(EMPTY_STATE);
   }, [project?.id, project?.current_image_artifact_id, visibleState.view?.executionId]);
 
   useEffect(() => {
