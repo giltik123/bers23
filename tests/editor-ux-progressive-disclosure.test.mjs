@@ -70,3 +70,24 @@ test('object eye controls update the actual canvas overlays, not just the list s
   assert.match(objectPanel, /onClick=\{\(\) => onSelect\(obj\.selected \? null : obj\)\}/);
   assert.match(objectPanel, /they do not edit the image/);
 });
+
+
+test('compact Editor panels expose an accessible disclosure and a localized close action', async () => {
+  const [panel, editor] = await Promise.all([
+    readFile('src/components/adaptive/AdaptivePanels.jsx', 'utf8'),
+    readFile('src/pages/Editor.jsx', 'utf8'),
+  ]);
+
+  assert.match(panel, /const panelId = useId\(\)/);
+  assert.match(panel, /const \{ t \} = useTranslation\(\)/);
+  assert.match(panel, /aria-expanded=\{expanded\}/);
+  assert.match(panel, /aria-controls=\{panelId\}/);
+  assert.match(panel, /id=\{panelId\} role="region" aria-label=\{title\} hidden=\{!expanded\}/);
+  assert.match(panel, /aria-label=\{t\('common\.close'\)\}/);
+  assert.match(panel, /onClick=\{\(\) => setExpanded\(false\)\}/);
+  assert.doesNotMatch(panel, /coreClient|projectService|pushEdit\(/);
+
+  for (const key of ['masks', 'workspace', 'jobCenter', 'sceneMemory']) {
+    assert.ok(editor.includes(`t('editorUi.${key}')`), `Editor panel title ${key} must use the existing locale catalog`);
+  }
+});
