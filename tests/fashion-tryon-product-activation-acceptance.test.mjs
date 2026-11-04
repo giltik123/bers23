@@ -26,7 +26,10 @@ test('one explicit Outfit entry is the only product selection admitted per Try-O
   const [runner, host] = await Promise.all([source('runner'), source('host')]);
   assert.match(runner, /selectedEntryId/);
   assert.match(runner, /entryId: selectedEntry\.entryId/);
-  assert.match(runner, /Locked selection:/);
+  assert.match(runner, /if \(lockedSelection\) \{/);
+  assert.match(runner, /entryId: lockedSelection\.entryId/);
+  assert.match(runner, /projectId: lockedSelection\.projectId/);
+  assert.match(runner, /sourceArtifactId: lockedSelection\.sourceArtifactId/);
   assert.doesNotMatch(runner, /selectedEntryIds|garmentIds|Promise\.all\([^]*onAction/);
   assert.match(host, /requireExactKeys\(value\.selection, \['entryId', 'outfit', 'projectId', 'sourceArtifactId'\]/);
 });
@@ -35,7 +38,9 @@ test('READY is required for Run and no render/effect can advance execution', asy
   const [controls, runner] = await Promise.all([source('controls'), source('runner')]);
   assert.match(controls, /disabled=\{!ui\.canRun/);
   assert.match(controls, /Check readiness/);
-  assert.match(runner, /Selection alone never starts execution/);
+  assert.match(runner, /t\('fashionUi\.tryOnHint'\)/);
+  assert.match(runner, /t\('fashionUi\.voiceQueryNoAutoRun'\)/);
+  assert.match(runner, /onRun=\{\(\) => action\('run'\)\}/);
   const effectStart = runner.indexOf('useEffect(() => {');
   const effectEnd = runner.indexOf('}, [load, outfitRevision]);', effectStart);
   assert.ok(effectStart >= 0 && effectEnd > effectStart, 'read-only Outfit load effect must remain explicit');

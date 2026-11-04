@@ -93,6 +93,7 @@ const diagnostics = {
   consoleErrors: [],
   requestFailures: [],
   fashionReads: [],
+  fashionResponses: [],
   localExecutionRequests: [],
   creativeRequests: [],
   financialRequests: [],
@@ -152,44 +153,42 @@ try {
   const fashion = page.getByRole('button', { name: 'Fashion', exact: true });
   await fashion.waitFor({ state: 'visible', timeout: 10_000 });
 
-  const fashionModeLoad = waitForCoreResponses(page, [
+  await waitForCoreResponses(page, [
     '/api/core/wardrobe/outfits',
     '/api/core/wardrobe/garments',
-  ]);
-  await fashion.click();
-  await fashionModeLoad;
-  await page.getByRole('region', { name: 'Примерка одежды', exact: true })
+  ], () => fashion.click());
+  await page.getByRole('region', { name: 'Virtual Try-On', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
   await assertActiveNavigation(fashion, 'Fashion');
 
-  const wardrobeLoad = waitForCoreResponses(page, [
+  await waitForCoreResponses(page, [
     '/api/core/garments',
     '/api/core/wardrobe/garments',
-  ]);
-  await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
-  await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
-  await wardrobeLoad;
-  await page.getByRole('region', { name: 'Canonical fashion wardrobe', exact: true })
+  ], async () => {
+    await page.getByRole('button', { name: 'Open wardrobe', exact: true }).click();
+    await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
+  });
+  await page.getByRole('region', { name: 'Canonical wardrobe and collections', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
   await page.getByText('No managed garments yet. Add a garment photo to create the first stable wardrobe item.', { exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
 
-  const returnModeLoad = waitForCoreResponses(page, [
+  await waitForCoreResponses(page, [
     '/api/core/wardrobe/outfits',
     '/api/core/wardrobe/garments',
-  ]);
-  await page.getByRole('link', { name: /Back to workspace|Назад к редактору/ }).click();
-  await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId && url.searchParams.get('mode') === 'fashion');
-  await returnModeLoad;
-  await page.getByRole('region', { name: 'Примерка одежды', exact: true })
+  ], async () => {
+    await page.getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ }).click();
+    await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId && url.searchParams.get('mode') === 'fashion');
+  });
+  await page.getByRole('region', { name: 'Virtual Try-On', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
 
-  const outfitLoad = waitForCoreResponses(page, [
+  const outfitDisclosure = page.locator('summary').filter({ hasText: 'Outfit sets' });
+  assert.equal(await outfitDisclosure.count(), 1, 'the native Outfit disclosure summary must be present exactly once');
+  await waitForCoreResponses(page, [
     '/api/core/wardrobe/outfits',
     '/api/core/wardrobe/garments',
-  ]);
-  await page.getByText('Комплекты одежды · дополнительно', { exact: true }).click();
-  await outfitLoad;
+  ], () => outfitDisclosure.click());
   await page.getByRole('region', { name: 'Canonical Outfit builder', exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
   await page.getByText('No managed outfits yet. Create one to compose stable garment references.', { exact: true })
@@ -266,24 +265,59 @@ function attachDiagnostics(page) {
     if (pathName.includes('/api/core/artifacts/masks')) diagnostics.maskRequests.push(entry);
     if (!['GET', 'HEAD'].includes(method) && pathName.includes('/api/core/projects/')) diagnostics.projectMutations.push(entry);
   });
+  page.on('response', response => {
+    let url;
+    try { url = new URL(response.url()); } catch { return; }
+    if (response.request().method() !== 'GET' || url.origin !== coreOrigin) return;
+    if (!['/api/core/garments', '/api/core/wardrobe/garments', '/api/core/wardrobe/outfits'].includes(url.pathname)) return;
+    diagnostics.fashionResponses.push({ path: url.pathname, status: response.status(), ok: response.ok() });
+  });
 }
 
 function resetJourneyDiagnostics() {
-  for (const key of ['fashionReads', 'localExecutionRequests', 'creativeRequests', 'financialRequests', 'maskRequests', 'projectMutations', 'externalBrowserRequests', 'pageErrors', 'requestFailures']) diagnostics[key].length = 0;
+  for (const key of ['fashionReads', 'fashionResponses', 'localExecutionRequests', 'creativeRequests', 'financialRequests', 'maskRequests', 'projectMutations', 'externalBrowserRequests', 'pageErrors', 'requestFailures']) diagnostics[key].length = 0;
 }
 
 function countRequest(entry) {
   return diagnostics.fashionReads.filter(value => value === entry).length;
 }
 
-async function waitForCoreResponses(page, paths) {
-  const waits = paths.map(pathName => page.waitForResponse(response => {
+async function waitForCoreResponses(page, paths, action) {
+  assert.equal(typeof action, 'function', 'Core response barrier requires the user action that starts the reads');
+  const diagnosticsStart = diagnostics.fashionReads.length;
+  const responseDiagnosticsStart = diagnostics.fashionResponses.length;
+  const successfulBefore = new Set(
+    diagnostics.fashionResponses.filter(entry => entry.ok).map(entry => entry.path),
+  );
+  // A later navigation/disclosure may reuse a successful canonical read from
+  // this same Project journey. Wait only for paths that have not succeeded yet.
+  const missing = paths.filter(pathName => !successfulBefore.has(pathName));
+  const waits = missing.map(pathName => page.waitForResponse(response => {
     const url = new URL(response.url());
     return response.request().method() === 'GET' && url.origin === coreOrigin && url.pathname === pathName;
-  }, { timeout: 15_000 }));
-  const responses = await Promise.all(waits);
-  for (const response of responses) assert.equal(response.ok(), true, `${response.url()} must succeed through real Core`);
-  return responses;
+  }, { timeout: 30_000 }));
+
+  try {
+    // Attach rejection handlers to both the UI action and every response wait
+    // immediately. A slow navigation must not turn a timed-out read into an
+    // unhandled rejection before the barrier is awaited.
+    const [, responses] = await Promise.all([action(), Promise.all(waits)]);
+    for (const response of responses) assert.equal(response.ok(), true, response.url() + ' must succeed through real Core');
+    const successful = new Set([
+      ...successfulBefore,
+      ...responses.filter(response => response.ok()).map(response => new URL(response.url()).pathname),
+    ]);
+    for (const pathName of paths) assert.ok(successful.has(pathName), pathName + ' must have a successful real-Core response during this journey');
+    return responses;
+  } catch (cause) {
+    const observed = diagnostics.fashionReads.slice(diagnosticsStart);
+    const observedResponses = diagnostics.fashionResponses.slice(responseDiagnosticsStart)
+      .map(entry => entry.path + ' HTTP ' + entry.status).join(', ');
+    throw new Error(
+      'R3g Core read barrier failed; expected=' + paths.join(', ') + '; observedRequests=' + (observed.join(', ') || '(none)') + '; observedResponses=' + (observedResponses || '(none)') + '; cause=' + (cause instanceof Error ? cause.message : String(cause)) + '; page=' + page.url(),
+      { cause },
+    );
+  }
 }
 
 async function assertActiveNavigation(locator, label) {

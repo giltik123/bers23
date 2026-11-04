@@ -209,6 +209,21 @@ test('voice UI is Editor-wide with typed callback; confirmation never triggers g
   assert.match(ui,/onClick=\{confirm\}/);
 });
 
+test('Voice Fashion query survives Editor → Wardrobe → Editor without gaining authority',async()=>{
+  const [editor,wardrobe]=await Promise.all([
+    readFile('src/pages/Editor.jsx','utf8'),
+    readFile('src/pages/Wardrobe.jsx','utf8'),
+  ]);
+  assert.match(editor,/useLocation, useNavigate/);
+  assert.match(editor,/useState\(\(\) => location\.state\?\.voiceQuery \?\? null\)/);
+  assert.match(editor,/setVoiceTryOnQuery\(location\.state\?\.voiceQuery \?\? null\)/);
+  assert.match(editor,/onOpenWardrobe=\{\(\) => openWardrobe\(voiceTryOnQuery\)\}/);
+  assert.match(wardrobe,/state=\{voiceQuery \? \{ voiceQuery \} : undefined\}/);
+  assert.match(wardrobe,/const voiceQuery = location\.state\?\.voiceQuery \|\| null/);
+  assert.doesNotMatch(wardrobe,/coreClient|fetch\(|pushEdit|acceptFinal|billing/i);
+  assert.doesNotMatch(editor,/voiceTryOnQuery[^\n]*(?:coreClient|fetch\(|acceptFinal|billing)/i);
+});
+
 test('local model installation only runs after a user action and re-verifies Russian on-device readiness',async()=>{
   let availableCalls=0,installCalls=0;
   class Installable {

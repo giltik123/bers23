@@ -201,10 +201,11 @@ try {
     ['GET', '/api/core/wardrobe/garments'],
     ['GET', '/api/core/wardrobe/collections'],
   ]);
-  await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
+  const openWardrobe = page.getByRole('button', { name: /^(?:Open wardrobe|Открыть гардероб)$/ });
+  await openWardrobe.click();
   await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
   await fashionLoad;
-  const wardrobeRegion = page.getByRole('region', { name: 'Canonical fashion wardrobe', exact: true });
+  const wardrobeRegion = page.getByRole('region', { name: 'Canonical wardrobe and collections', exact: true });
   await wardrobeRegion.waitFor({ state: 'visible', timeout: 15_000 });
 
   const garment = await createGarmentThroughUi();
@@ -212,13 +213,14 @@ try {
   assert.equal(Number(garmentBeforeContour.revision), 2);
   assert.equal(garmentBeforeContour.category, 'jackets');
 
-  await page.getByRole('link', { name: /Back to workspace|Назад к редактору/ }).click();
+  await page.getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ }).click();
   await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId);
   const outfitLoad = waitForCoreResponses(page, [
     ['GET', '/api/core/wardrobe/outfits'],
     ['GET', '/api/core/wardrobe/garments'],
   ]);
-  await page.getByText('Комплекты одежды · дополнительно', { exact: true }).click();
+  const outfitDisclosure = page.locator('summary').filter({ hasText: /^(?:Outfit sets \(advanced\)|Комплекты одежды · дополнительно)$/ });
+  await outfitDisclosure.click();
   await outfitLoad;
   const outfitRegion = page.getByRole('region', { name: 'Canonical Outfit builder', exact: true });
   await outfitRegion.waitFor({ state: 'visible', timeout: 15_000 });
@@ -247,7 +249,8 @@ try {
   assert.match(entryId, /^[0-9a-f-]{36}$/);
   assert.equal(outfitWithEntry.entries[0].garment_id, garment.id);
 
-  await page.getByText('Ручной перенос текстуры и комплекты (дополнительно)', { exact: true }).click();
+  const manualTryOnDisclosure = page.locator('summary').filter({ hasText: /^(?:Manual texture transfer and outfits \(advanced\)|Ручной перенос текстуры и комплекты \(дополнительно\))$/ });
+  await manualTryOnDisclosure.click();
   const runner = page.getByRole('region', { name: 'Canonical deterministic Try-On runner', exact: true });
   await runner.waitFor({ state: 'visible', timeout: 15_000 });
   const runnerReload = waitForCoreResponses(page, [
@@ -504,12 +507,13 @@ try {
   await waitImage(page, 'Original image', 120, 160, 20_000);
   await page.getByRole('button', { name: 'After', exact: true }).click();
   await waitImage(page, 'Unaccepted edited image', 120, 160, 20_000);
-  for (const label of [
-    'Одежда сидит по телу, плечам и талии естественно',
-    'Руки, волосы и контуры тела правильно перекрывают ткань',
-    'Ткань, принт, швы и логотипы без заметных искажений',
-    'Лицо, освещение и фон остались естественными',
-  ]) await page.getByRole('checkbox', { name: label, exact: true }).check();
+  const fashionReviewLabels = [
+    /^(?:The garment fits the body, shoulders and waist naturally\.|Одежда сидит по телу, плечам и талии естественно)$/,
+    /^(?:Arms, hair and body contours correctly overlap the garment\.|Руки, волосы и контуры тела правильно перекрывают ткань)$/,
+    /^(?:Fabric, print, seams and logos have no visible distortion\.|Ткань, принт, швы и логотипы без заметных искажений)$/,
+    /^(?:The face, lighting and background remain natural\.|Лицо, освещение и фон остались естественными)$/,
+  ];
+  for (const label of fashionReviewLabels) await page.getByRole('checkbox', { name: label }).check();
   assert.equal(await acceptButton.isEnabled(), true, 'all four review decisions gate the existing Core Accept');
 
   // Scenario D: existing Editor ResultCompare -> Accept is the sole Project mutation boundary.

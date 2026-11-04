@@ -29,7 +29,7 @@ export default function CanonicalTryOnRunnerPanel({
   onAbandon,
   onClose,
 }) {
-  const { t, language } = useTranslation();
+  const { t, plural } = useTranslation();
   const model = useMemo(() => createCanonicalOutfitViewModel({
     outfits: coreClient.fashion.outfits,
     wardrobe: coreClient.fashion.wardrobe,
@@ -61,7 +61,7 @@ export default function CanonicalTryOnRunnerPanel({
       // An archived or emptied Outfit must never remain a hidden select value.
       setSelectedOutfitId((current) => selectable.some((outfit) => outfit.id === current) ? current : '');
       setSelectedEntryId('');
-    } catch (cause) {
+    } catch {
       if (request === loadRequestRef.current) {
         // A failed canonical read cannot authorize Run from a prior snapshot.
         // Leave Reload usable, but require a fresh successful selection.
@@ -69,12 +69,12 @@ export default function CanonicalTryOnRunnerPanel({
         setGarments([]);
         setSelectedOutfitId('');
         setSelectedEntryId('');
-        setError(`${language === 'ru' ? t('fashionUi.refreshError') : 'Try-On choices could not be refreshed. Reload canonical Outfits before trying again.'} ${cause?.message || ''}`.trim());
+        setError(t('fashionUi.refreshError'));
       }
     } finally {
       if (request === loadRequestRef.current) setLoading(false);
     }
-  }, [busy, hostActive, model, t, language]);
+  }, [busy, hostActive, model, t]);
 
   useEffect(() => {
     void load(); // read-only refresh; never starts Try-On execution
@@ -138,44 +138,36 @@ export default function CanonicalTryOnRunnerPanel({
     if (typeof onAction !== 'function') return undefined;
     try {
       return onAction(name, context());
-    } catch (cause) {
-      setError(cause?.message || 'Try-On selection is invalid.');
+    } catch {
+      setError(t('fashionUi.selectionInvalid'));
       return undefined;
     }
   };
 
-  const withManualContext = (callback, fallbackMessage) => {
+  const withManualContext = async (callback) => {
     try {
-      return callback(context());
-    } catch (cause) {
-      const message = cause?.message || fallbackMessage;
+      return await callback(context());
+    } catch {
+      // Never expose raw Core/runtime exception text in this user-facing panel.
+      const message = t('fashionUi.manualActionFailed');
       setError(message);
-      return Promise.reject(cause instanceof Error ? cause : new Error(message));
+      throw new Error(message);
     }
   };
 
   const loadManualGarmentSource = (garmentId) => {
-    if (typeof onLoadManualGarmentSource !== 'function') return Promise.reject(new Error('Manual contour source loading is unavailable.'));
-    return withManualContext(
-      (value) => onLoadManualGarmentSource(value, garmentId),
-      'Manual contour selection is invalid.',
-    );
+    if (typeof onLoadManualGarmentSource !== 'function') return Promise.reject(new Error(t('fashionUi.manualContourSourceUnavailable')));
+    return withManualContext((value) => onLoadManualGarmentSource(value, garmentId));
   };
 
   const saveManualContour = (value) => {
-    if (typeof onSaveManualContour !== 'function') return Promise.reject(new Error('Manual contour saving is unavailable.'));
-    return withManualContext(
-      (current) => onSaveManualContour(current, value),
-      'Manual contour selection is invalid.',
-    );
+    if (typeof onSaveManualContour !== 'function') return Promise.reject(new Error(t('fashionUi.manualContourSaveUnavailable')));
+    return withManualContext((current) => onSaveManualContour(current, value));
   };
 
   const saveManualBodyAnchors = (value) => {
-    if (typeof onSaveManualBodyAnchors !== 'function') return Promise.reject(new Error('Manual body-anchor saving is unavailable.'));
-    return withManualContext(
-      (current) => onSaveManualBodyAnchors(current, value),
-      'Manual body-anchor selection is invalid.',
-    );
+    if (typeof onSaveManualBodyAnchors !== 'function') return Promise.reject(new Error(t('fashionUi.manualBodyAnchorsSaveUnavailable')));
+    return withManualContext((current) => onSaveManualBodyAnchors(current, value));
   };
 
   const close = () => {
@@ -185,27 +177,34 @@ export default function CanonicalTryOnRunnerPanel({
   };
 
   return (
-    <section className="rounded-2xl border border-border p-3 space-y-2" aria-label="Canonical deterministic Try-On runner">
+    <section className="rounded-2xl border border-border p-3 space-y-2" aria-label={t('fashionUi.runnerLabel')} aria-busy={loading}>
       <div className="flex items-center justify-between gap-2">
         <div>
-          <p className="text-xs font-medium">{language === 'ru' ? t('fashionUi.tryOn') : 'Try one managed garment'}</p>
-          <p className="text-[10px] text-muted-foreground">{language === 'ru' ? t('fashionUi.tryOnHint') : 'Choose one canonical Outfit entry. Selection alone never starts execution.'}</p>
+          <p className="text-xs font-medium">{t('fashionUi.tryOn')}</p>
+          <p className="text-[10px] text-muted-foreground">{t('fashionUi.tryOnHint')}</p>
         </div>
-        <Button type="button" variant="ghost" size="sm" className="h-8" onClick={load} disabled={selectionLocked || disabled} aria-label={language === 'ru' ? t('fashionUi.reloadOutfits') : 'Reload Try-On Outfit choices'}>
+        <Button type="button" variant="ghost" size="sm" className="h-8" onClick={load} disabled={selectionLocked || disabled} aria-label={t('fashionUi.reloadOutfits')}>
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
         </Button>
       </div>
 
-      {voiceQuery?.query&&(
-        <div role="status" className="rounded-md border p-2 text-xs">
-          Голосовой запрос: {voiceQuery.query}.
-          Найдено готовых записей примерки: {voiceMatches.length}.
-          {voiceMatches.length===1
-            ?` Найдена ${voiceMatches[0].garmentName} в образе ${voiceMatches[0].outfitName}. Подтвердите выбор в списке ниже.`
-            :' Выберите одну подходящую вещь вручную; BERS не угадывает идентификатор.'}
-          Голосовой поиск не запускает примерку.
+      {voiceQuery?.query && (
+        <div role="status" aria-live="polite" className="rounded-md border p-2 text-xs space-y-1">
+          <p>{t('fashionUi.voiceQuery', { query: voiceQuery.query })}</p>
+          <p>{plural('fashionUi.voiceQueryMatches', voiceMatches.length)}</p>
+          <p>{voiceMatches.length === 1
+            ? t('fashionUi.voiceQuerySingleMatch', {
+              garmentName: voiceMatches[0].garmentName,
+              outfitName: voiceMatches[0].outfitName,
+            })
+            : voiceMatches.length === 0
+              ? t('fashionUi.voiceQueryNoMatches')
+              : t('fashionUi.voiceQueryManualChoice')}</p>
+          <p>{t('fashionUi.voiceQueryNoAutoRun')}</p>
         </div>
       )}
+      {loading && <p className="text-[10px] text-muted-foreground" role="status" aria-live="polite">{t('common.loading')}</p>}
+
       {!hostActive && (
         <div className="grid grid-cols-2 gap-1.5">
           <select
@@ -213,9 +212,9 @@ export default function CanonicalTryOnRunnerPanel({
             onChange={(event) => { setSelectedOutfitId(event.target.value); setSelectedEntryId(''); setError(''); }}
             disabled={selectionLocked || disabled}
             className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-            aria-label={language === 'ru' ? t('fashionUi.outfitForTryon') : 'Outfit for deterministic Try-On'}
+            aria-label={t('fashionUi.outfitForTryon')}
           >
-            <option value="">{language === 'ru' ? t('fashionUi.chooseOutfit') : 'Choose Outfit…'}</option>
+            <option value="">{t('fashionUi.chooseOutfit')}</option>
             {outfits.map((outfit) => <option key={outfit.id} value={outfit.id}>{outfit.name}</option>)}
           </select>
           <select
@@ -223,14 +222,14 @@ export default function CanonicalTryOnRunnerPanel({
             onChange={(event) => { setSelectedEntryId(event.target.value); setError(''); }}
             disabled={selectionLocked || disabled || !selectedOutfit}
             className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-            aria-label={language === 'ru' ? t('fashionUi.garmentForTryon') : 'Garment entry for deterministic Try-On'}
+            aria-label={t('fashionUi.garmentForTryon')}
           >
-            <option value="">{language === 'ru' ? t('fashionUi.chooseGarment') : 'Choose garment…'}</option>
+            <option value="">{t('fashionUi.chooseGarment')}</option>
             {(selectedOutfit?.entries || []).map((entry) => {
               const garment = garmentById.get(entry.garmentId);
               return (
                 <option key={entry.entryId} value={entry.entryId} disabled={entry.referenceReadiness !== 'READY'}>
-                  {garment?.name || entry.garmentId}{entry.referenceReadiness === 'READY' ? '' : ` · ${entry.referenceReadiness.toLowerCase()}`}
+                  {garment?.name || entry.garmentId}{entry.referenceReadiness === 'READY' ? '' : ` · ${t('fashionUi.entryNotReady')}`}
                 </option>
               );
             })}
@@ -240,7 +239,7 @@ export default function CanonicalTryOnRunnerPanel({
 
       {hostActive && selectedOutfit && selectedEntry && (
         <p className="text-[11px] text-muted-foreground" role="status">
-          {language === 'ru' ? t('fashionUi.locked', { name: selectedOutfit.name }) : `Locked selection: ${selectedOutfit.name}`} · {selectedGarment?.name || selectedEntry.garmentId}
+          {t('fashionUi.locked', { name: selectedOutfit.name })} · {selectedGarment?.name || selectedEntry.garmentId}
         </p>
       )}
 

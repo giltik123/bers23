@@ -39,3 +39,79 @@ test('runner has read-only Outfit authority and no execution/provider/Project mu
   ]) assert.equal(panel.includes(forbidden), false, forbidden);
   assert.match(panel, /model\.load\(\)/);
 });
+
+
+test('runner copy is complete in English and Russian and Voice remains advisory', async () => {
+  const [panel, englishSource, russianSource] = await Promise.all([
+    readFile('src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+  const extractFashionUi = (source) => {
+    const match = source.match(/fashionUi:\s*(\{[\s\S]*?\n\}),\n  assetUi:/);
+    assert.ok(match, 'fashionUi catalog exists');
+    return JSON.parse(match[1]);
+  };
+  const english = extractFashionUi(englishSource);
+  const russian = extractFashionUi(russianSource);
+  const keys = [
+    'runnerLabel', 'voiceQuery', 'voiceQuerySingleMatch', 'voiceQueryNoMatches',
+    'voiceQueryManualChoice', 'voiceQueryNoAutoRun', 'entryNotReady',
+    'manualContourSourceUnavailable', 'manualContourSaveUnavailable',
+    'manualBodyAnchorsSaveUnavailable', 'manualActionFailed',
+  ];
+  for (const key of keys) {
+    assert.equal(typeof english[key], 'string', `English fashionUi.${key}`);
+    assert.equal(typeof russian[key], 'string', `Russian fashionUi.${key}`);
+    assert.ok(english[key].trim(), `English fashionUi.${key} is non-empty`);
+    assert.ok(russian[key].trim(), `Russian fashionUi.${key} is non-empty`);
+  }
+  for (const [locale, catalog, categories] of [
+    ['English', english, ['one', 'other']],
+    ['Russian', russian, ['one', 'few', 'many', 'other']],
+  ]) {
+    assert.equal(typeof catalog.voiceQueryMatches, 'object', `${locale} voiceQueryMatches`);
+    for (const category of categories) {
+      assert.equal(typeof catalog.voiceQueryMatches[category], 'string', `${locale} voiceQueryMatches.${category}`);
+      assert.ok(catalog.voiceQueryMatches[category].trim(), `${locale} voiceQueryMatches.${category} is non-empty`);
+    }
+  }
+
+  for (const key of [
+    ...keys,
+    'tryOn', 'tryOnHint', 'reloadOutfits', 'chooseOutfit', 'chooseGarment',
+    'outfitForTryon', 'garmentForTryon', 'locked', 'refreshError', 'selectionInvalid',
+  ]) assert.ok(panel.includes(`fashionUi.${key}`), `runner uses fashionUi.${key}`);
+
+  assert.match(panel, /plural\('fashionUi\.voiceQueryMatches', voiceMatches\.length\)/);
+  assert.match(panel, /role="status" aria-live="polite"/);
+  assert.match(panel, /aria-label=\{t\('fashionUi\.runnerLabel'\)\}/);
+  assert.match(panel, /aria-busy=\{loading\}/);
+  assert.doesNotMatch(panel, /Голосовой запрос|Голосовой поиск|Try one managed garment|Choose one canonical Outfit entry|Reload Try-On Outfit choices|Choose Outfit…|Choose garment…|Locked selection:/);
+  assert.doesNotMatch(panel, /cause\?\.message/);
+  assert.doesNotMatch(panel, /setSelectedOutfitId\(voiceMatches/);
+});
+
+
+test('Fashion Editor Try-On disclosure is localized and keeps the geometric quality caveat', async () => {
+  const [editor, englishSource, russianSource] = await Promise.all([
+    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+  const extractFashionUi = (source) => {
+    const match = source.match(/fashionUi:\s*(\{[\s\S]*?\n\}),\n  assetUi:/);
+    assert.ok(match, 'fashionUi catalog exists');
+    return JSON.parse(match[1]);
+  };
+  const english = extractFashionUi(englishSource);
+  const russian = extractFashionUi(russianSource);
+  for (const key of ['manualTryOnDetailsTitle', 'manualTryOnGeometryLimit', 'outfitsDetailsTitle']) {
+    assert.equal(typeof english[key], 'string', `English fashionUi.${key}`);
+    assert.equal(typeof russian[key], 'string', `Russian fashionUi.${key}`);
+    assert.ok(english[key].trim());
+    assert.ok(russian[key].trim());
+    assert.ok(editor.includes(`t('fashionUi.${key}')`), `Editor uses fashionUi.${key}`);
+  }
+  assert.doesNotMatch(editor, /Ручной перенос текстуры и комплекты \\(дополнительно\\)|Геометрический перенос пикселей не моделирует посадку ткани и перекрытие руками|Комплекты одежды · дополнительно/);
+});

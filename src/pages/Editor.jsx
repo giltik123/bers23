@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '@/lib/i18n/TranslationProvider';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, ExternalLink, Download, Pencil, Maximize2, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useProject from '@/hooks/useProject';
@@ -141,6 +141,7 @@ function proportionalResizeDimension(value, sourceSame, sourceOther) {
 export default function Editor() {
   const { t, language } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const projectId = new URLSearchParams(window.location.search).get('id')?.trim() || null;
   const {
     project, loading, error, reload,
@@ -168,7 +169,10 @@ export default function Editor() {
     `/wardrobe?project=${encodeURIComponent(projectId || '')}`,
     voiceQuery ? { state: { voiceQuery } } : undefined,
   );
-  const [voiceTryOnQuery,setVoiceTryOnQuery]=useState(null);
+  const [voiceTryOnQuery,setVoiceTryOnQuery]=useState(() => location.state?.voiceQuery ?? null);
+  useEffect(() => {
+    setVoiceTryOnQuery(location.state?.voiceQuery ?? null);
+  }, [location.key]);
   const [voiceAgentProposal,setVoiceAgentProposal]=useState(null);
   const [activeRecipe, setActiveRecipe] = useState(null);
   const [lastAction, setLastAction] = useState(null);
@@ -1495,11 +1499,11 @@ export default function Editor() {
                 onRun={runVirtualTryOn}
                 needsAccountSetup={virtualTryOnNeedsAccountSetup}
                 onPrepareAccount={prepareVirtualTryOnAccount}
-                onOpenWardrobe={() => openWardrobe()}
+                onOpenWardrobe={() => openWardrobe(voiceTryOnQuery)}
               />}
               <details open={tryOn.state.host.active || manualTryOnExpanded} onToggle={event => setManualTryOnExpanded(event.currentTarget.open)}>
-                <summary className="text-sm cursor-pointer">Ручной перенос текстуры и комплекты (дополнительно)</summary>
-                <p className="text-xs text-muted-foreground my-2">Геометрический перенос пикселей не моделирует посадку ткани и перекрытие руками.</p>
+                <summary className="text-sm cursor-pointer">{t('fashionUi.manualTryOnDetailsTitle')}</summary>
+                <p className="text-xs text-muted-foreground my-2">{t('fashionUi.manualTryOnGeometryLimit')}</p>
               <CanonicalTryOnRunnerPanel
                 project={project}
                 outfitRevision={outfitRevision}
@@ -1517,7 +1521,7 @@ export default function Editor() {
               </details>
               {!tryOn.state.host.active && <details className="rounded-xl border border-border/70 bg-card p-3"
                 open={outfitsExpanded} onToggle={(event) => setOutfitsExpanded(event.currentTarget.open)}>
-                <summary className="cursor-pointer text-sm font-medium">Комплекты одежды · дополнительно</summary>
+                <summary className="cursor-pointer text-sm font-medium">{t('fashionUi.outfitsDetailsTitle')}</summary>
                 {outfitsExpanded && <div className="mt-3"><OutfitPanel onCanonicalChange={notifyOutfitChange} /></div>}
               </details>}
             </div>

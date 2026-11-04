@@ -53,6 +53,29 @@ test('R3h browser is the product mutation actor while PostgreSQL remains a read-
   assert.match(harness, /PostgresAuthStore/);
   assert.match(harness, /chromium\.launch\(\{ channel: 'chrome', headless: true \}\)/);
   assert.match(harness, /getByRole\('button', \{ name: 'Fashion', exact: true \}\)/);
+  assert.ok(harness.includes("'initial Fashion load'"));
+  assert.ok(harness.includes("'Wardrobe return'"));
+  assert.match(harness, /name: \/\^\(\?:Open wardrobe\|Открыть гардероб\)\$\//);
+  assert.equal((harness.match(/await openWardrobe\.click\(\);/g) || []).length, 2, 'both initial and return navigation must use the localized Wardrobe action');
+  assert.ok(harness.includes('fashionResponses: []'));
+  assert.ok(harness.includes("page.on('response', response =>"));
+  assert.ok(harness.includes('diagnostics.fashionResponses.push'));
+  assert.ok(harness.includes('[...diagnostics.fashionResponses].reverse()'));
+  assert.ok(harness.includes('entry.method === method && entry.pathname === pathname'));
+  assert.ok(harness.includes("'fashionResponses'"));
+  assert.ok(harness.includes('timed out waiting for Core ${method} ${pathname}'));
+  const fashionClick = harness.indexOf('await fashion.click();');
+  const wardrobeRoute = harness.indexOf("await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);", fashionClick);
+  const initialFashionBarrier = harness.indexOf("await waitForCoreResponses(page, [", wardrobeRoute);
+  assert.ok(fashionClick >= 0 && wardrobeRoute > fashionClick && initialFashionBarrier > wardrobeRoute,
+    'R3h must wait after Wardrobe navigation while the persistent response recorder preserves any reads completed earlier');
+  const returnClick = harness.indexOf("await page.getByRole('link', { name: /Back to (?:editor|projects)|Назад к редактору|К проектам/ }).click();");
+  const editorRoute = harness.indexOf("await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId);", returnClick);
+  const reopenWardrobe = harness.indexOf('await openWardrobe.click();', editorRoute);
+  const returnRoute = harness.indexOf("await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);", reopenWardrobe);
+  const returnBarrier = harness.indexOf("await waitForCoreResponses(page, [", returnRoute);
+  assert.ok(returnClick >= 0 && editorRoute > returnClick && reopenWardrobe > editorRoute && returnRoute > reopenWardrobe && returnBarrier > returnRoute,
+    'R3h return must restore the same Project before waiting for Wardrobe reads');
   assert.match(harness, /getByRole\('button', \{ name: 'Add garment', exact: true \}\)/);
   assert.match(harness, /getByRole\('button', \{ name: 'Save garment', exact: true \}\)/);
   assert.match(harness, /getByPlaceholder\('New collection'\)/);
@@ -113,6 +136,23 @@ test('R3h binds selected browser image pixels and revisions to durable Garment v
   assert.doesNotMatch(harness, /financialAccount|financialTrial|credit_grants|credit_wallets/);
 });
 
+test('R3h, R3i and R3j follow the localized canonical Fashion region label', async () => {
+  const [fashion, english, r3h, r3i, r3j] = await Promise.all([
+    readFile('src/components/editor/fashion/FashionPanel.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('scripts/test-release-r3h-browser-e2e.mjs', 'utf8'),
+    readFile('scripts/test-release-r3i-browser-e2e.mjs', 'utf8'),
+    readFile('scripts/test-release-r3j-browser-e2e.mjs', 'utf8'),
+  ]);
+
+  assert.ok(fashion.includes("aria-label={t('fashionUi.panelLabel')}"));
+  assert.match(english, /"panelLabel": "Canonical wardrobe and collections"/);
+  for (const harness of [r3h, r3i, r3j]) {
+    assert.ok(harness.includes("name: 'Canonical wardrobe and collections', exact: true"));
+    assert.equal(harness.includes('Canonical fashion wardrobe'), false);
+  }
+});
+
 test('R3 release workflow makes R3h cumulative evidence and Managed Garment split-origin regression exact-head merge gates', async () => {
   const workflow = await readFile(WORKFLOW, 'utf8');
 
@@ -126,4 +166,16 @@ test('R3 release workflow makes R3h cumulative evidence and Managed Garment spli
   assert.match(workflow, /scripts\/test-release-r3h-browser-e2e\.mjs/);
   assert.match(workflow, /R3h managed garment create favorite collection membership journey/);
   assert.match(workflow, /R3H_BROWSER_MANAGED_GARMENT_COLLECTION_ACCEPTED/);
+});
+
+test('Wardrobe return navigation preserves the active Project and exposes both localized destinations', async () => {
+  const [wardrobe, harness] = await Promise.all([
+    readFile('src/pages/Wardrobe.jsx', 'utf8'),
+    readFile(HARNESS, 'utf8'),
+  ]);
+
+  assert.match(wardrobe, /const backTo = projectId \? `\/editor\?id=\$\{encodeURIComponent\(projectId\)\}&mode=fashion` : '\/'/);
+  assert.match(wardrobe, /projectId \? t\('fashionUi\.backToEditor'\) : t\('fashionUi\.backToProjects'\)/);
+  assert.equal((harness.match(/Back to \(\?:editor\|projects\)\|Назад к редактору\|К проектам/g) || []).length, 2);
+  assert.equal(harness.includes('Back to workspace'), false);
 });

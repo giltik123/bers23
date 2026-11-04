@@ -21,7 +21,25 @@ test('R3j browser journey uses real production composition and post-response amb
     "'/api/core/fashion/try-on/preview'",
     "':garment-warp:v1'",
     "':texture-composite:v1'",
+    "getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ })",
+    'Open wardrobe|Открыть гардероб',
+    "outfitDisclosure = page.locator('summary')",
+    'Outfit sets',
+    'Комплекты одежды',
+    "manualTryOnDisclosure = page.locator('summary')",
+    'Manual texture transfer and outfits',
+    'Ручной перенос текстуры и комплекты',
+    'The garment fits the body, shoulders and waist naturally',
+    'Одежда сидит по телу, плечам и талии естественно',
+    'Arms, hair and body contours correctly overlap the garment',
+    'Руки, волосы и контуры тела правильно перекрывают ткань',
+    'Fabric, print, seams and logos have no visible distortion',
+    'Ткань, принт, швы и логотипы без заметных искажений',
+    'The face, lighting and background remain natural',
+    'Лицо, освещение и фон остались естественными',
   ]) assert.equal(harness.includes(required), true, required);
+
+  assert.doesNotMatch(harness, /getByText\('Комплекты одежды|getByText\('Ручной перенос текстуры|name: 'Открыть гардероб'/);
 
   for (const forbidden of [
     'page.route(',
