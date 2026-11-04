@@ -18,9 +18,12 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
   if (!contextGateRef.current) contextGateRef.current = createBoundedAgentContextGate(project?.id, project?.current_image_artifact_id);
   const contextKey = JSON.stringify([project?.id ?? null, project?.current_image_artifact_id ?? null]);
   const finalCallbackRef = useRef(onFinalCandidate);
-  finalCallbackRef.current = onFinalCandidate;
   const [state, setState] = useState(EMPTY_STATE);
   const stateOwnerRef = useRef(contextKey);
+  // Keep callbacks from abandoned renders out of asynchronous completions.
+  useLayoutEffect(() => {
+    finalCallbackRef.current = onFinalCandidate;
+  }, [onFinalCandidate]);
   // Do not render the previous Project's workflow even for the first paint
   // before the route-change cleanup effect can reset React state.
   const visibleState = stateOwnerRef.current === contextKey ? state : EMPTY_STATE;
