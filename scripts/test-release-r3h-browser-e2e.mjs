@@ -162,13 +162,14 @@ try {
   assert.equal(await countCollections(), 0, 'R3h owner must begin without canonical Collections');
 
   const fashion = page.getByRole('button', { name: 'Fashion', exact: true });
-  await fashion.click();
-  await assertActiveNavigation(fashion, 'Fashion');
+  // Arm all response barriers before the click can trigger fast Core reads.
   const initialFashionLoad = waitForCoreResponses(page, [
     ['GET', '/api/core/garments'],
     ['GET', '/api/core/wardrobe/garments'],
     ['GET', '/api/core/wardrobe/collections'],
   ]);
+  await fashion.click();
+  await assertActiveNavigation(fashion, 'Fashion');
   await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
   await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
   await initialFashionLoad;
