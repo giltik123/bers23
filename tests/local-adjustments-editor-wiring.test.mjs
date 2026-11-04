@@ -16,7 +16,7 @@ test('local adjustment tab is reachable and descriptions do not claim server-sid
   assert.match(editor, /const EDITOR_TABS = \[\s*\{ id: 'ai' \},\s*\{ id: 'fashion' \},\s*\{ id: 'local' \},/);
   assert.match(english, /"local": \{\s*"label": "Local tools",\s*"description": "No AI, no credits:/);
   assert.match(russian, /"local": \{\s*"label": "Локальные инструменты",\s*"description": "Без ИИ и кредитов:/);
-  assert.match(await readFile('src/components/adaptive/AdaptiveNavigation.jsx', 'utf8'), /const tabLabel = \(item\) => t\(`editorUi\.tabs\.\$\{item\.id\}\\.label`\);/);
+  assert.match(await readFile('src/components/adaptive/AdaptiveNavigation.jsx', 'utf8'), /const tabLabel = \(item\) => t\(`editorUi\.tabs\.\$\{item\.id\}\.label`\);/);
   assert.match(editor, /const LocalAdjustmentsPanel = lazy\(\(\) => import\('@\/components\/editor\/local\/LocalAdjustmentsPanel'\)\)/);
   assert.match(editor, /editTab === 'local' \? \(/);
   assert.match(editor, /<LocalAdjustmentsPanel key=\{project\.current_image_artifact_id \|\| project\.id\} imageUrl=\{project\.current_image_url\} projectName=\{project\.name\} \/>/);
