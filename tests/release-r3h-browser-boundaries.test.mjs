@@ -62,10 +62,18 @@ test('R3h browser is the product mutation actor while PostgreSQL remains a read-
   assert.ok(harness.includes('entry.method === method && entry.pathname === pathname'));
   assert.ok(harness.includes("'fashionResponses'"));
   assert.ok(harness.includes('timed out waiting for Core ${method} ${pathname}'));
-  const initialFashionBarrier = harness.indexOf('const initialFashionLoad = waitForCoreResponses(page, [');
   const fashionClick = harness.indexOf('await fashion.click();');
-  assert.ok(initialFashionBarrier >= 0 && fashionClick >= 0 && initialFashionBarrier < fashionClick,
-    'R3h must arm Fashion Core response listeners before the navigation click can trigger fast reads');
+  const wardrobeRoute = harness.indexOf("await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);", fashionClick);
+  const initialFashionBarrier = harness.indexOf("await waitForCoreResponses(page, [", wardrobeRoute);
+  assert.ok(fashionClick >= 0 && wardrobeRoute > fashionClick && initialFashionBarrier > wardrobeRoute,
+    'R3h must wait after Wardrobe navigation while the persistent response recorder preserves any reads completed earlier');
+  const returnClick = harness.indexOf("await page.getByRole('link', { name: /Back to (?:editor|projects)|Назад к редактору|К проектам/ }).click();");
+  const editorRoute = harness.indexOf("await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId);", returnClick);
+  const reopenWardrobe = harness.indexOf("await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();", editorRoute);
+  const returnRoute = harness.indexOf("await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);", reopenWardrobe);
+  const returnBarrier = harness.indexOf("await waitForCoreResponses(page, [", returnRoute);
+  assert.ok(returnClick >= 0 && editorRoute > returnClick && reopenWardrobe > editorRoute && returnRoute > reopenWardrobe && returnBarrier > returnRoute,
+    'R3h return must restore the same Project before waiting for Wardrobe reads');
   assert.match(harness, /getByRole\('button', \{ name: 'Add garment', exact: true \}\)/);
   assert.match(harness, /getByRole\('button', \{ name: 'Save garment', exact: true \}\)/);
   assert.match(harness, /getByPlaceholder\('New collection'\)/);

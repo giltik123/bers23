@@ -163,17 +163,16 @@ try {
   assert.equal(await countCollections(), 0, 'R3h owner must begin without canonical Collections');
 
   const fashion = page.getByRole('button', { name: 'Fashion', exact: true });
-  // Arm all response barriers before the click can trigger fast Core reads.
-  const initialFashionLoad = waitForCoreResponses(page, [
-    ['GET', '/api/core/garments'],
-    ['GET', '/api/core/wardrobe/garments'],
-    ['GET', '/api/core/wardrobe/collections'],
-  ], 'initial Fashion load');
   await fashion.click();
   await assertActiveNavigation(fashion, 'Fashion');
   await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
   await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
-  await initialFashionLoad;
+  // The page-level response recorder captures reads even when they complete during navigation.
+  await waitForCoreResponses(page, [
+    ['GET', '/api/core/garments'],
+    ['GET', '/api/core/wardrobe/garments'],
+    ['GET', '/api/core/wardrobe/collections'],
+  ], 'initial Fashion load');
 
   const wardrobeRegion = page.getByRole('region', { name: 'Canonical wardrobe and collections', exact: true });
   const collectionsRegion = page.locator('[aria-label="Canonical garment collections"]');
@@ -299,13 +298,13 @@ try {
 
   await page.getByRole('link', { name: /Back to (?:editor|projects)|Назад к редактору|К проектам/ }).click();
   await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId);
-  const remountLoad = waitForCoreResponses(page, [
+  await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
+  await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
+  await waitForCoreResponses(page, [
     ['GET', '/api/core/garments'],
     ['GET', '/api/core/wardrobe/garments'],
     ['GET', '/api/core/wardrobe/collections'],
   ], 'Wardrobe return');
-  await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
-  await remountLoad;
   await wardrobeRegion.waitFor({ state: 'visible', timeout: 15_000 });
   await page.getByRole('button', { name: `Remove ${garmentName} from favorites`, exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
   await collectionsRegion.getByRole('button', { name: `${collectionName} (1)`, exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
@@ -431,7 +430,7 @@ function attachDiagnostics(page) {
     let url;
     try { url = new URL(response.url()); } catch { return; }
     if (url.origin !== coreOrigin) return;
-    const pathname = url.pathname;
+    const pathname = url.pathname.replace(/\/+$/, '') || '/';
     const method = response.request().method();
     const canonicalFashion = pathname === '/api/core/garments'
       || pathname.startsWith('/api/core/garments/')
@@ -496,7 +495,8 @@ function countRead(entry) {
 function waitForCoreResponse(page, method, pathPredicate, timeout = 15_000) {
   return page.waitForResponse(response => {
     const url = new URL(response.url());
-    return response.request().method() === method && url.origin === coreOrigin && pathPredicate(url.pathname);
+    const pathname = url.pathname.replace(/\/+$/, '') || '/';
+    return response.request().method() === method && url.origin === coreOrigin && pathPredicate(pathname);
   }, { timeout });
 }
 
