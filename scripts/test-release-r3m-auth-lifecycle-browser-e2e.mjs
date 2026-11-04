@@ -6,6 +6,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import { Pool } from 'pg';
+import { isExpectedR3mAuthRequestAbort } from './r3m-auth-browser-diagnostics.mjs';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required: R3m auth browser E2E must use real PostgreSQL');
@@ -215,7 +216,7 @@ try {
   });
   assert.equal(diagnostics.consoleErrors.length, toleratedConsole.length, `unexpected browser console errors: ${JSON.stringify(diagnostics.consoleErrors)}`);
   const unexpectedNetworkFailures = diagnostics.requestFailures.filter(entry =>
-    !(entry.url === `${coreOrigin}/api/core/auth/logout` && entry.failure === 'net::ERR_ABORTED')
+    !isExpectedR3mAuthRequestAbort(entry, { frontendOrigin, coreOrigin })
   );
   assert.deepEqual(unexpectedNetworkFailures, [], `unexpected browser network failures: ${JSON.stringify(unexpectedNetworkFailures)}`);
 
