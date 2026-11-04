@@ -11,6 +11,7 @@ on:
       - 'server/core/providers/productionExecutionCapabilities.ts'
       - 'src/platform/creative/canonical/planning/CanonicalPlanningService.ts'
       - 'tests/deterministic-affine-transform-contract.test.ts'
+      - 'tests/deterministic-affine-core-admission.test.ts'
       - 'tests/deterministic-crop-contract.test.ts'
       - 'tests/background-isolation-canonical-wiring.test.ts'
       - '.github/workflows/affine-deterministic-tool-candidate.yml'
@@ -46,13 +47,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .test-cache/p192-affine
-          for file in             tests/deterministic-affine-transform-contract.test.ts             tests/deterministic-crop-contract.test.ts             tests/background-isolation-canonical-wiring.test.ts; do
+          for file in \
+            tests/deterministic-affine-transform-contract.test.ts \
+            tests/deterministic-affine-core-admission.test.ts \
+            tests/deterministic-crop-contract.test.ts \
+            tests/background-isolation-canonical-wiring.test.ts; do
             out=".test-cache/p192-affine/$(basename "${file%.ts}").mjs"
             npx esbuild "$file" --bundle --platform=node --format=esm --target=node24 --outfile="$out" --external:node:* --external:pg --external:sharp
           done
-      - name: Prove Affine kernel and data-only registry contract
+      - name: Prove Affine kernel, Core ticket boundary and registry contract
         run: |
-          node --test             .test-cache/p192-affine/deterministic-affine-transform-contract.test.mjs             .test-cache/p192-affine/deterministic-crop-contract.test.mjs             .test-cache/p192-affine/background-isolation-canonical-wiring.test.mjs
+          node --test \
+            .test-cache/p192-affine/deterministic-affine-transform-contract.test.mjs \
+            .test-cache/p192-affine/deterministic-affine-core-admission.test.mjs \
+            .test-cache/p192-affine/deterministic-crop-contract.test.mjs \
+            .test-cache/p192-affine/background-isolation-canonical-wiring.test.mjs
       - name: Build production browser
         run: npm run build
       - name: Prove Affine candidate remains production fail closed
