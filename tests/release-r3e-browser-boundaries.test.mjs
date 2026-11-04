@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { isExpectedReplacedProjectImageAbort } from '../scripts/r3e-browser-request-policy.mjs';
 
 const HARNESS = 'scripts/test-release-r3e-browser-e2e.mjs';
 const WORKFLOW = '.github/workflows/release-r3a-browser-e2e.yml';
@@ -128,6 +129,24 @@ test('R3e manual Selection and deterministic MASK consumer cannot silently cross
   assert.match(harness, /\/api\/core\/local-execution\//);
   assert.match(harness, /R3E_BROWSER_SELECTION_MASK_ACCEPTED/);
   assert.doesNotMatch(harness, /financialAccount|financialTrial|credit_grants|credit_wallets/);
+});
+
+test('R3e ignores only replaced signed Core Project image aborts in browser diagnostics', () => {
+  const coreOrigin = 'http://127.0.0.1:4188';
+  const expected = {
+    url: `${coreOrigin}/api/core/artifacts/results/signed-capability`,
+    resourceType: 'image',
+    failure: 'net::ERR_ABORTED',
+  };
+  assert.equal(isExpectedReplacedProjectImageAbort(expected, coreOrigin), true);
+  for (const rejected of [
+    { ...expected, resourceType: 'fetch' },
+    { ...expected, failure: 'net::ERR_FAILED' },
+    { ...expected, url: `${coreOrigin}/api/core/projects/project-1` },
+    { ...expected, url: `${coreOrigin}/api/core/artifacts/results-extra/signed-capability` },
+    { ...expected, url: 'https://outside.example/api/core/artifacts/results/signed-capability' },
+    { ...expected, url: 'not a URL' },
+  ]) assert.equal(isExpectedReplacedProjectImageAbort(rejected, coreOrigin), false);
 });
 
 test('R3e proves canonical ORIGINAL and accepted FINAL downloads follow Preview, Discard, Undo and Redo', async () => {

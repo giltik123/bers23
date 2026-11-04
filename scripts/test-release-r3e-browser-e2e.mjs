@@ -9,6 +9,7 @@ import { Pool } from 'pg';
 import sharp from 'sharp';
 
 import { PostgresAuthStore } from '../server/core/auth/postgresAuthStore.ts';
+import { isExpectedReplacedProjectImageAbort } from './r3e-browser-request-policy.mjs';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required: R3e release browser E2E must use real PostgreSQL');
@@ -93,6 +94,7 @@ const diagnostics = {
   pageErrors: [],
   consoleErrors: [],
   requestFailures: [],
+  expectedReplacedImageAborts: [],
   maskRequests: [],
   segmentationRequests: [],
   localExecutionRequests: [],
@@ -838,7 +840,22 @@ async function runBackgroundIsolation(page) {
 function attachDiagnostics(page) {
   page.on('pageerror', error => diagnostics.pageErrors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') diagnostics.consoleErrors.push(message.text()); });
-  page.on('requestfailed', request => diagnostics.requestFailures.push({ url: request.url(), failure: request.failure()?.errorText }));
+  page.on('requestfailed', request => {
+    const failedRequest = Object.freeze({
+      url: request.url(),
+      resourceType: request.resourceType(),
+      failure: request.failure()?.errorText ?? 'unknown',
+    });
+    if (isExpectedReplacedProjectImageAbort(failedRequest, coreOrigin)) {
+      // React may replace a signed Project image while its previous image
+      // request is still in flight. The journey separately waits for and
+      // byte-compares the new current image, so only this stale-image abort
+      // is expected; all other request failures remain fatal.
+      diagnostics.expectedReplacedImageAborts.push(failedRequest);
+      return;
+    }
+    diagnostics.requestFailures.push(failedRequest);
+  });
   page.on('request', request => {
     let url;
     try { url = new URL(request.url()); } catch { return; }
