@@ -385,7 +385,7 @@ jobs:
           grep -q "/api/core/garments" "$script"
           grep -q "/api/core/wardrobe/garments" "$script"
           grep -q "/api/core/wardrobe/outfits" "$script"
-          grep -q "Примерка одежды" "$script"
+          grep -q "Virtual Try-On" "$script"
           grep -q "fashionUi.panelLabel" src/components/editor/fashion/FashionPanel.jsx
           grep -q "Canonical Outfit builder" "$script"
           grep -q "R3G_BROWSER_ZERO_OBJECT_FASHION_OUTFITS_ACCEPTED" "$script"
