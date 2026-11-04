@@ -1,0 +1,42 @@
+name: Recipe browser-storage resilience
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'src/lib/recipes/recipeStorage.js'
+      - 'src/lib/recipes/recipeFavorites.js'
+      - 'src/lib/recipes/recipeHistory.js'
+      - 'src/lib/recipes/recipeAnalytics.js'
+      - 'tests/recipe-storage-resilience.test.mjs'
+      - '.github/workflows/recipe-storage-resilience.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recipe-storage-resilience:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Verify exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Bundle isolated Recipe adapters for Node
+        run: |
+          mkdir -p .test-cache/recipe-storage
+          node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints: ['tests/recipe-storage-resilience.test.mjs'], bundle: true, platform: 'node', format: 'esm', target: 'node24', outfile: '.test-cache/recipe-storage/recipe-storage-resilience.test.mjs', alias: { '@': './src' }, external: ['node:*'] });"
+      - name: Verify Recipe storage fallback and telemetry isolation
+        run: node --test .test-cache/recipe-storage/recipe-storage-resilience.test.mjs
+      - name: Verify whitespace
+        if: github.event_name == 'pull_request'
+        run: git diff --check "${{ github.event.pull_request.base.sha }}"..HEAD
