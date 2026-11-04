@@ -4,24 +4,24 @@ import { readFile } from 'node:fs/promises';
 
 test('Settings uses only canonical Auth context and exposes recoverable failures', async () => {
   const ui = await readFile('src/pages/Settings.jsx', 'utf8');
-  assert.match(ui, /await coreClient\\.auth\\.me\\(\\)/);
-  assert.match(ui, /request !== requestId\\.current/);
-  assert.match(ui, /request === requestId\\.current/);
-  assert.match(ui, /return \\(\\) => \\{ requestId\\.current\\+\\+; \\}/);
-  assert.match(ui, /account\\.status === 'error'/);
+  assert.match(ui, /await coreClient\.auth\.me\(\)/);
+  assert.match(ui, /request !== requestId\.current/);
+  assert.match(ui, /request === requestId\.current/);
+  assert.match(ui, /return \(\) => \{ requestId\.current\+\+; \}/);
+  assert.match(ui, /account\.status === 'error'/);
   assert.match(ui, /role="alert"/);
-  assert.match(ui, /onClick=\\{loadAccount\\}/);
-  assert.match(ui, /setAccount\\(\\{ status: 'loading', email: '' \\}\\)/);
-  assert.doesNotMatch(ui, /localStorage|sessionStorage|\\.entities\\.|\\/data\\/|setUser\\(/);
+  assert.match(ui, /onClick=\{loadAccount\}/);
+  assert.match(ui, /setAccount\(\{ status: 'loading', email: '' \}\)/);
+  assert.doesNotMatch(ui, /localStorage|sessionStorage|\.entities\.|\/data\/|setUser\(/);
 });
 
 test('Settings does not treat a rejected Core logout as success and releases the retry guard', async () => {
   const ui = await readFile('src/pages/Settings.jsx', 'utf8');
-  assert.match(ui, /await coreClient\\.auth\\.logout\\('\\/'\\)/);
-  assert.match(ui, /catch \\{\\s*signOutInFlight\\.current = false;\\s*setSignOutFailed\\(true\\);\\s*setSigningOut\\(false\\);\\s*\\}/);
-  assert.match(ui, /disabled=\\{signingOut\\}/);
-  assert.match(ui, /settings\\.signOutFailed/);
-  assert.doesNotMatch(ui, /window\\.location\\.(?:assign|replace)|localStorage\\.clear/);
+  assert.match(ui, /await coreClient\.auth\.logout\('\/'\)/);
+  assert.match(ui, /catch \{\s*signOutInFlight\.current = false;\s*setSignOutFailed\(true\);\s*setSigningOut\(false\);\s*\}/);
+  assert.match(ui, /disabled=\{signingOut\}/);
+  assert.match(ui, /settings\.signOutFailed/);
+  assert.doesNotMatch(ui, /window\.location\.(?:assign|replace)|localStorage\.clear/);
 
   const guard = ui.indexOf('if (signOutInFlight.current) return;');
   const acquire = ui.indexOf('signOutInFlight.current = true;', guard);
@@ -43,7 +43,7 @@ test('Settings recovery messages are translated in English and Russian', async (
 
 test('Settings sign-out is synchronously single-flight and announces its busy state', async () => {
   const ui = await readFile('src/pages/Settings.jsx', 'utf8');
-  assert.match(ui, /signOutInFlight\\.current/);
-  assert.match(ui, /signOutInFlight\\.current = false/);
-  assert.match(ui, /aria-busy=\\{signingOut\\}/);
+  assert.match(ui, /signOutInFlight\.current/);
+  assert.match(ui, /signOutInFlight\.current = false/);
+  assert.match(ui, /aria-busy=\{signingOut\}/);
 });
