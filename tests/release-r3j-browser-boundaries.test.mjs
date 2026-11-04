@@ -29,13 +29,13 @@ test('R3j browser journey uses real production composition and post-response amb
     "manualTryOnDisclosure = page.locator('summary')",
     'Manual texture transfer and outfits',
     'Ручной перенос текстуры и комплекты',
-    'The garment fits the body, shoulders and waist naturally.',
+    'The garment fits the body, shoulders and waist naturally',
     'Одежда сидит по телу, плечам и талии естественно',
-    'Arms, hair and body contours correctly overlap the garment.',
+    'Arms, hair and body contours correctly overlap the garment',
     'Руки, волосы и контуры тела правильно перекрывают ткань',
-    'Fabric, print, seams and logos have no visible distortion.',
+    'Fabric, print, seams and logos have no visible distortion',
     'Ткань, принт, швы и логотипы без заметных искажений',
-    'The face, lighting and background remain natural.',
+    'The face, lighting and background remain natural',
     'Лицо, освещение и фон остались естественными',
   ]) assert.equal(harness.includes(required), true, required);
 
