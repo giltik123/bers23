@@ -167,7 +167,7 @@ try {
     ['GET', '/api/core/garments'],
     ['GET', '/api/core/wardrobe/garments'],
     ['GET', '/api/core/wardrobe/collections'],
-  ]);
+  ], 'initial Fashion load');
   await fashion.click();
   await assertActiveNavigation(fashion, 'Fashion');
   await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
@@ -302,7 +302,7 @@ try {
     ['GET', '/api/core/garments'],
     ['GET', '/api/core/wardrobe/garments'],
     ['GET', '/api/core/wardrobe/collections'],
-  ]);
+  ], 'Wardrobe return');
   await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
   await remountLoad;
   await wardrobeRegion.waitFor({ state: 'visible', timeout: 15_000 });
@@ -480,8 +480,14 @@ function waitForCoreResponse(page, method, pathPredicate, timeout = 15_000) {
   }, { timeout });
 }
 
-async function waitForCoreResponses(page, specs) {
-  const responses = await Promise.all(specs.map(([method, pathname]) => waitForCoreResponse(page, method, value => value === pathname)));
+async function waitForCoreResponses(page, specs, label = 'Core reads') {
+  const responses = await Promise.all(specs.map(async ([method, pathname]) => {
+    try {
+      return await waitForCoreResponse(page, method, value => value === pathname);
+    } catch (error) {
+      throw new Error(`${label}: timed out waiting for Core ${method} ${pathname}`);
+    }
+  }));
   for (const response of responses) assert.equal(response.ok(), true, `${response.request().method()} ${response.url()} must succeed through real Core`);
   return responses;
 }
