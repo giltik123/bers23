@@ -647,6 +647,10 @@ test('bounded Agent UI checks current Project/source before publishing progress 
   const layoutSync = hook.indexOf('useLayoutEffect(() => {');
   assert.ok(layoutSync >= 0 && gateSync > layoutSync, 'Project/source gate synchronization must run only after commit');
   assert.doesNotMatch(hook.slice(0, layoutSync), /contextGateRef\.current\.sync\(/);
+  const callbackLayoutEffect = hook.indexOf('useLayoutEffect(() => {\n    finalCallbackRef.current = onFinalCandidate;');
+  const callbackWrite = hook.indexOf('finalCallbackRef.current = onFinalCandidate;');
+  assert.ok(callbackLayoutEffect >= 0 && callbackWrite > callbackLayoutEffect, 'async completion callback must follow the committed render');
+  assert.doesNotMatch(hook.slice(0, callbackLayoutEffect), /finalCallbackRef\\.current = onFinalCandidate/);
   assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) return;/);
   assert.match(hook, /setState\(\(previous\) => contextGateRef\.current\.isCurrent\(ticket\)/);
   assert.match(hook, /if \(!contextGateRef\.current\.isCurrent\(ticket\)\) return outcome;/);
