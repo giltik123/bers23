@@ -1,30 +1,49 @@
 import React from 'react';
-import { Coins, Clock, Wand2 } from 'lucide-react';
+import { Wand2 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 
-// Shows the compiled prompt (editable), structured prompt, credits and estimated time before execution.
+// Recipe metadata is a prompt template, not a Core quote or execution request.
 export default function RecipePromptPreview({ compiled, prompt, onPromptChange, onUse, disabled }) {
-  const sp = compiled.structuredPrompt;
+  const { t } = useTranslation();
+  const structured = compiled.structuredPrompt;
+
   return (
     <div className="space-y-3">
       <div>
-        <p className="text-xs font-medium mb-1.5">Generated prompt <span className="text-muted-foreground font-normal">(editable)</span></p>
-        <Textarea value={prompt} onChange={(e) => onPromptChange(e.target.value)} rows={3} className="text-sm" />
+        <label htmlFor="recipe-generated-prompt" className="block text-xs font-medium mb-1.5">
+          {t('recipes.generatedPrompt')} <span className="text-muted-foreground font-normal">({t('recipes.editable')})</span>
+        </label>
+        <Textarea
+          id="recipe-generated-prompt"
+          value={prompt}
+          onChange={(event) => onPromptChange(event.target.value)}
+          rows={3}
+          className="text-sm"
+        />
       </div>
       <div className="flex flex-wrap gap-1.5">
-        <Badge variant="secondary" className="text-[10px] capitalize">{sp.action}</Badge>
-        <Badge variant="secondary" className="text-[10px] capitalize">target: {sp.target}</Badge>
-        {(sp.preserve || []).map((p) => <Badge key={p} variant="outline" className="text-[10px]">keeps {p}</Badge>)}
+        <Badge variant="secondary" className="text-[10px] capitalize">{structured.action}</Badge>
+        <Badge variant="secondary" className="text-[10px] capitalize">{t('recipes.target', { target: structured.target })}</Badge>
+        {(structured.preserve || []).map((value) => (
+          <Badge key={value} variant="outline" className="text-[10px]">{t('recipes.keeps', { value })}</Badge>
+        ))}
       </div>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-          <span className="flex items-center gap-1"><Coins className="w-3 h-3" />{compiled.credits} credits</span>
-          <span className="flex items-center gap-1"><Clock className="w-3 h-3" />~{Math.round(compiled.estimatedTimeMs / 1000)}s</span>
-        </div>
-        <Button size="sm" onClick={onUse} disabled={disabled || !prompt.trim()} className="rounded-lg">
-          <Wand2 className="w-3.5 h-3.5 mr-1.5" /> Use recipe
+      <p id="recipe-handoff-note" role="note" className="text-xs text-muted-foreground">
+        {t('recipes.handoffNotice')}
+      </p>
+      <div className="flex justify-end">
+        <Button
+          type="button"
+          size="sm"
+          onClick={onUse}
+          disabled={disabled || !prompt.trim()}
+          aria-describedby="recipe-handoff-note"
+          className="rounded-lg"
+        >
+          <Wand2 aria-hidden="true" className="w-3.5 h-3.5 mr-1.5" /> {t('recipes.use')}
         </Button>
       </div>
     </div>
