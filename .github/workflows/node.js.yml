@@ -52,6 +52,8 @@ jobs:
       run: npm run test:creative-planning-6.40c
     - name: Session recovery storage resilience
       run: node --test tests/session-recovery-storage-resilience.test.mjs
+    - name: Editor mode navigation RU/EN parity
+      run: node --test tests/editor-unified-modes.test.mjs
 
   postgres-transactions:
     runs-on: ubuntu-latest
