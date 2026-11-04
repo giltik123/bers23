@@ -2,16 +2,21 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const [editor, local, engine, coreUrl, e2e] = await Promise.all([
+const [editor, local, engine, coreUrl, e2e, english, russian] = await Promise.all([
   readFile('src/pages/Editor.jsx', 'utf8'),
   readFile('src/components/editor/local/LocalAdjustmentsPanel.jsx', 'utf8'),
   readFile('src/lib/local-editor/localAdjustments.js', 'utf8'),
   readFile('src/api/coreResourceUrl.js', 'utf8'),
   readFile('scripts/test-release-r3e-browser-e2e.mjs', 'utf8'),
+  readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+  readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
 ]);
 
 test('local adjustment tab is reachable and descriptions do not claim server-side persistence', () => {
-  assert.match(editor, /\{ id: 'local', label: 'Local tools', description: 'No AI, no credits:/);
+  assert.match(editor, /const EDITOR_TABS = \[\s*\{ id: 'ai' \},\s*\{ id: 'fashion' \},\s*\{ id: 'local' \},/);
+  assert.match(english, /"local": \{\s*"label": "Local tools",\s*"description": "No AI, no credits:/);
+  assert.match(russian, /"local": \{\s*"label": "Локальные инструменты",\s*"description": "Без ИИ и кредитов:/);
+  assert.match(await readFile('src/components/adaptive/AdaptiveNavigation.jsx', 'utf8'), /const tabLabel = \(item\) => t\(`editorUi\\.tabs\\.\$\{item\.id\}\\.label`\);/);
   assert.match(editor, /const LocalAdjustmentsPanel = lazy\(\(\) => import\('@\/components\/editor\/local\/LocalAdjustmentsPanel'\)\)/);
   assert.match(editor, /editTab === 'local' \? \(/);
   assert.match(editor, /<LocalAdjustmentsPanel key=\{project\.current_image_artifact_id \|\| project\.id\} imageUrl=\{project\.current_image_url\} projectName=\{project\.name\} \/>/);
