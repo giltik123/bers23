@@ -109,3 +109,23 @@ test('journey matrix workflow supports pending and proven deployment states and 
   assert.match(workflow,/hosted artifact does not match committed journey 22 evidence/u);
   assert.match(workflow,/Check committed diff whitespace\s*\n\s*if:\s*github\.event_name == 'pull_request'/u);
 });
+
+test('human-readable journey disposition cannot outrun the machine-readable ledger', async () => {
+  const document = await readFile('docs/v1-release-journey-matrix.md','utf8');
+  const readiness = JSON.parse(await readFile('config/v1-release-readiness.json','utf8'));
+  const deployment = matrix.entries.find(value => value.id === 22);
+  assert.ok(deployment);
+
+  if (deployment.disposition === 'DEPLOYMENT_TARGET_PENDING') {
+    assert.match(document, /Journey 22 is currently `DEPLOYMENT_TARGET_PENDING`/u);
+    assert.match(document, /historical evidence for that exact SHA only/u);
+    assert.doesNotMatch(document, /no remaining in-v1 browser journey gap/iu);
+    assert.ok(readiness.blockers.some(value => value.id === 'FRONTEND_DEPLOYMENT_HEADERS'
+      && value.state === 'EXTERNAL_DEPLOYMENT_EVIDENCE_PENDING'));
+  } else {
+    assert.equal(deployment.disposition, 'PROVEN');
+    assert.match(document, /Journey 22 is `PROVEN`/u);
+    assert.match(document, /exact verified SHA/u);
+    assert.ok(!readiness.blockers.some(value => value.id === 'FRONTEND_DEPLOYMENT_HEADERS'));
+  }
+});
