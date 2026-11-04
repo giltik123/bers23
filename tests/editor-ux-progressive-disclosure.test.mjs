@@ -73,9 +73,11 @@ test('object eye controls update the actual canvas overlays, not just the list s
 
 
 test('compact Editor panels expose an accessible disclosure and a localized close action', async () => {
-  const [panel, editor] = await Promise.all([
+  const [panel, editor, englishCommon, russian] = await Promise.all([
     readFile('src/components/adaptive/AdaptivePanels.jsx', 'utf8'),
     readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/common.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
   ]);
 
   assert.match(panel, /const panelId = useId\(\)/);
@@ -84,6 +86,8 @@ test('compact Editor panels expose an accessible disclosure and a localized clos
   assert.match(panel, /aria-controls=\{panelId\}/);
   assert.match(panel, /id=\{panelId\} role="region" aria-label=\{title\} hidden=\{!expanded\}/);
   assert.match(panel, /aria-label=\{t\('common\.close'\)\}/);
+  assert.match(englishCommon, /close:\s*'Close'/);
+  assert.match(russian, /close:\s*'Закрыть'/);
   assert.match(panel, /onClick=\{\(\) => setExpanded\(false\)\}/);
   assert.doesNotMatch(panel, /coreClient|projectService|pushEdit\(/);
 
