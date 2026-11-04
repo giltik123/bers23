@@ -51,6 +51,15 @@ on:
       - 'src/components/editor/HistoryControls.jsx'
       - 'src/components/editor/VersionsPanel.jsx'
       - 'src/components/editor/InstructionBar.jsx'
+      - 'src/components/editor/recipes/RecipeCard.jsx'
+      - 'src/components/editor/recipes/RecipePanel.jsx'
+      - 'src/components/editor/recipes/RecipeDetail.jsx'
+      - 'src/components/editor/recipes/RecipePromptPreview.jsx'
+      - 'src/components/editor/recipes/RecipeVariablesForm.jsx'
+      - 'src/lib/i18n/locales/en/recipes.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'src/lib/recipes/recipeCategories.js'
+      - 'tests/recipe-template-handoff-ux.test.mjs'
       - 'src/components/editor/ResultCompare.jsx'
       - 'src/components/adaptive/AdaptiveLayout.jsx'
       - 'src/components/adaptive/AdaptiveToolbar.jsx'
@@ -94,6 +103,7 @@ jobs:
         run: |
           node --test \
             tests/editor-ux-progressive-disclosure.test.mjs \
+            tests/recipe-template-handoff-ux.test.mjs \
             tests/bers-ux-system-redesign.test.mjs \
             tests/mask-photoshop-controls.test.mjs \
             tests/local-adjustments.test.mjs \

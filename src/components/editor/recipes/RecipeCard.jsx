@@ -1,29 +1,36 @@
 import React from 'react';
-import { Star, Lock } from 'lucide-react';
+import { Star } from 'lucide-react';
 import RecipeIcon from '@/components/editor/recipes/RecipeIcon';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
 
+// Selection prepares a prompt; device-local favorites remain usable even when selection is disabled.
 export default function RecipeCard({ recipe, isFavorite, onSelect, onToggleFavorite, disabled }) {
+  const { t } = useTranslation();
+
   return (
-    <button
-      onClick={() => onSelect(recipe)}
-      disabled={disabled}
-      className={`relative text-left border border-border/60 rounded-xl p-3 hover:border-primary/50 hover:shadow-sm transition-all ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-    >
-      <div className="flex items-center gap-2 mb-1">
-        <span className="p-1.5 rounded-lg bg-secondary"><RecipeIcon name={recipe.icon} className="w-3.5 h-3.5" /></span>
-        <span className="text-sm font-medium truncate flex-1">{recipe.name}</span>
-        {recipe.isPremium && <Lock className="w-3 h-3 text-amber-500 shrink-0" />}
-      </div>
-      <p className="text-[11px] text-muted-foreground line-clamp-2">{recipe.description}</p>
-      <p className="text-[10px] text-muted-foreground/70 mt-1">{recipe.credits} credits</p>
-      <span
-        role="button"
-        onClick={(e) => { e.stopPropagation(); onToggleFavorite(recipe.id); }}
-        className="absolute top-2 right-2 p-1"
-        aria-label="Toggle favorite"
+    <div className={`relative rounded-xl border border-border/60 hover:border-primary/50 ${disabled ? 'opacity-40' : ''}`}>
+      <button
+        type="button"
+        onClick={() => onSelect(recipe)}
+        disabled={disabled}
+        aria-label={t('recipes.openRecipe', { name: recipe.name })}
+        className="block w-full rounded-xl p-3 pr-10 text-left focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed"
       >
-        <Star className={isFavorite ? 'w-3.5 h-3.5 fill-amber-400 text-amber-400' : 'w-3.5 h-3.5 text-muted-foreground/40'} />
-      </span>
-    </button>
+        <div className="flex items-center gap-2 mb-1">
+          <span className="p-1.5 rounded-lg bg-secondary"><RecipeIcon name={recipe.icon} className="w-3.5 h-3.5" /></span>
+          <span className="text-sm font-medium truncate flex-1">{recipe.name}</span>
+        </div>
+        <p className="text-[11px] text-muted-foreground line-clamp-2">{recipe.description}</p>
+      </button>
+      <button
+        type="button"
+        onClick={() => onToggleFavorite(recipe.id)}
+        aria-pressed={Boolean(isFavorite)}
+        aria-label={t(isFavorite ? 'recipes.removeFavorite' : 'recipes.addFavorite', { name: recipe.name })}
+        className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-accent focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        <Star aria-hidden="true" className={isFavorite ? 'w-3.5 h-3.5 fill-amber-400 text-amber-400' : 'w-3.5 h-3.5 text-muted-foreground'} />
+      </button>
+    </div>
   );
 }
