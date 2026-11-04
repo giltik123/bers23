@@ -165,7 +165,8 @@ try {
   const fashion = page.getByRole('button', { name: 'Fashion', exact: true });
   await fashion.click();
   await assertActiveNavigation(fashion, 'Fashion');
-  await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
+  const openWardrobe = page.getByRole('button', { name: /^(?:Open wardrobe|Открыть гардероб)$/ });
+  await openWardrobe.click();
   await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
   // The page-level response recorder captures reads even when they complete during navigation.
   await waitForCoreResponses(page, [
@@ -298,7 +299,7 @@ try {
 
   await page.getByRole('link', { name: /Back to (?:editor|projects)|Назад к редактору|К проектам/ }).click();
   await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId);
-  await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
+  await openWardrobe.click();
   await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
   await waitForCoreResponses(page, [
     ['GET', '/api/core/garments'],

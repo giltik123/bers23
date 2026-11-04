@@ -55,6 +55,8 @@ test('R3h browser is the product mutation actor while PostgreSQL remains a read-
   assert.match(harness, /getByRole\('button', \{ name: 'Fashion', exact: true \}\)/);
   assert.ok(harness.includes("'initial Fashion load'"));
   assert.ok(harness.includes("'Wardrobe return'"));
+  assert.match(harness, /name: \/\^\(\?:Open wardrobe\|Открыть гардероб\)\$\//);
+  assert.equal((harness.match(/await openWardrobe\.click\(\);/g) || []).length, 2, 'both initial and return navigation must use the localized Wardrobe action');
   assert.ok(harness.includes('fashionResponses: []'));
   assert.ok(harness.includes("page.on('response', response =>"));
   assert.ok(harness.includes('diagnostics.fashionResponses.push'));
@@ -69,7 +71,7 @@ test('R3h browser is the product mutation actor while PostgreSQL remains a read-
     'R3h must wait after Wardrobe navigation while the persistent response recorder preserves any reads completed earlier');
   const returnClick = harness.indexOf("await page.getByRole('link', { name: /Back to (?:editor|projects)|Назад к редактору|К проектам/ }).click();");
   const editorRoute = harness.indexOf("await page.waitForURL(url => url.pathname === '/editor' && url.searchParams.get('id') === projectId);", returnClick);
-  const reopenWardrobe = harness.indexOf("await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();", editorRoute);
+  const reopenWardrobe = harness.indexOf('await openWardrobe.click();', editorRoute);
   const returnRoute = harness.indexOf("await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);", reopenWardrobe);
   const returnBarrier = harness.indexOf("await waitForCoreResponses(page, [", returnRoute);
   assert.ok(returnClick >= 0 && editorRoute > returnClick && reopenWardrobe > editorRoute && returnRoute > reopenWardrobe && returnBarrier > returnRoute,
