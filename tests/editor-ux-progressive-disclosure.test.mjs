@@ -116,11 +116,11 @@ test('saved mask and object controls use RU/EN locale keys while preserving user
   for (const key of ['objectGroup', 'collapseObject', 'expandObject', 'selectObject', 'deselectObject']) {
     const enValue = english.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"'))?.[1] || '';
     const ruValue = russian.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"'))?.[1] || '';
-    const placeholders = value => [...value.matchAll(/\\{([a-zA-Z][a-zA-Z0-9_]*)\\}/g)].map(match => match[1]).sort();
+    const placeholders = value => [...value.matchAll(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g)].map(match => match[1]).sort();
     assert.deepEqual(placeholders(enValue), ['name'], key + ' EN placeholder');
     assert.deepEqual(placeholders(ruValue), ['name'], key + ' RU placeholder');
   }
-  assert.match(panel, /<span className="flex-1 truncate">\\{obj\.label\\}<\\/span>/);
-  assert.match(panel, /ObjectRow key=\\{c\.id\\}[\\s\\S]*?t=\\{t\\}/);
+  assert.ok(panel.includes('<span className="flex-1 truncate">{obj.label}</span>'), 'user-provided object labels remain unchanged');
+  assert.ok(panel.includes('ObjectRow key={c.id} obj={c} objects={objects} depth={depth + 1} hidden={hidden} onToggleHidden={onToggleHidden} onSelect={onSelect} t={t} />'), 'nested object rows retain the same translation function');
   assert.doesNotMatch(panel, /Saved masks and objects|Show object overlay|Hide object overlay|they do not edit the image/);
 });
