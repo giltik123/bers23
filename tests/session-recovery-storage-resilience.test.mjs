@@ -21,7 +21,7 @@ test('Auth bootstrap announces localized loading without changing the session ga
   assert.match(authenticatedApp[1], /if \(isLoadingPublicSettings \|\| isLoadingAuth\)/);
 
   const bootstrap = authenticatedApp[1].match(
-    /if \(isLoadingPublicSettings \|\| isLoadingAuth\) \{\s*return \(([\\s\\S]*?)\);\s*\}/,
+    /if \(isLoadingPublicSettings \|\| isLoadingAuth\) \{\s*return \(([\s\S]*?)\);\s*\}/,
   );
   assert.ok(bootstrap, 'the existing bootstrap wait branch must remain intact');
   assert.match(bootstrap[1], /role="status"/);
