@@ -54,8 +54,12 @@ test('R3i browser uses built SPA/Core, system Chrome and visible Fashion/Outfit 
   assert.match(harness, /chromium\.launch\(\{ channel: 'chrome', headless: true \}\)/);
   assert.match(harness, /getByRole\('button', \{ name: 'Fashion', exact: true \}\)/);
   assert.ok(harness.includes("getByRole('link', { name: /Back to editor|Back to workspace|Назад к редактору/ })"), 'R3i must follow the localized Wardrobe return-to-Editor label');
-  assert.match(harness, /getByText\('Комплекты одежды · дополнительно'/);
-  assert.match(harness, /getByRole\('button', \{ name: 'Открыть гардероб', exact: true \}\)/);
+  assert.ok(harness.includes('Open wardrobe|Открыть гардероб'));
+  assert.match(harness, /outfitDisclosure = page\.locator\('summary'\)/);
+  assert.match(harness, /Outfit sets/);
+  assert.match(harness, /Комплекты одежды/);
+  assert.match(harness, /await outfitDisclosure\.click\(\);/);
+  assert.doesNotMatch(harness, /getByText\('Комплекты одежды|name: 'Открыть гардероб'/);
   assert.match(harness, /getByRole\('region', \{ name: 'Canonical Outfit builder', exact: true \}\)/);
   assert.match(harness, /getByPlaceholder\('New outfit'\)/);
   assert.match(harness, /getByLabel\('Garment to add'\)/);

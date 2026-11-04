@@ -180,7 +180,8 @@ try {
     ['GET', '/api/core/wardrobe/garments'],
     ['GET', '/api/core/wardrobe/collections'],
   ]);
-  await page.getByRole('button', { name: 'Открыть гардероб', exact: true }).click();
+  const openWardrobe = page.getByRole('button', { name: /^(?:Open wardrobe|Открыть гардероб)$/ });
+  await openWardrobe.click();
   await page.waitForURL(url => url.pathname === '/wardrobe' && url.searchParams.get('project') === projectId);
   await initialFashionLoad;
 
@@ -227,7 +228,8 @@ try {
     ['GET', '/api/core/wardrobe/outfits'],
     ['GET', '/api/core/wardrobe/garments'],
   ]);
-  await page.getByText('Комплекты одежды · дополнительно', { exact: true }).click();
+  const outfitDisclosure = page.locator('summary').filter({ hasText: /^(?:Outfit sets \(advanced\)|Комплекты одежды · дополнительно)$/ });
+  await outfitDisclosure.click();
   await initialOutfitLoad;
   await assertActiveNavigation(page.getByRole('button', { name: 'Fashion', exact: true }), 'Fashion');
 
