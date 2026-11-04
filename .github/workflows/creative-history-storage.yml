@@ -1,0 +1,33 @@
+name: Creative History local storage resilience
+
+on:
+  pull_request:
+    paths:
+      - 'src/lib/creative/CreativeHistory.js'
+      - 'src/components/editor/creative/CreativeStudioPanel.jsx'
+      - 'src/lib/i18n/locales/en/creative.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/creative-history-storage-resilience.test.mjs'
+      - '.github/workflows/creative-history-storage.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  local-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+      - name: Creative History storage resilience
+        run: node --test tests/creative-history-storage-resilience.test.mjs
+      - name: Diff hygiene
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
