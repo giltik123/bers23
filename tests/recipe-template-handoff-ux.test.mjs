@@ -26,6 +26,7 @@ test('Recipe browser localizes filters and exposes their selected state', () => 
   assert.match(panel, /recipes\.categories\.\$\{item\.id\}/);
   assert.match(panel, /recipes\.chainsUnavailable/);
   assert.match(panel, /role="group"/);
+  assert.match(panel, /!query\.trim\(\) &&/);
   assert.match(panel, /aria-label=\{t\('recipes\.searchPlaceholder'\)\}/);
   assert.match(panel, /disabled=\{disabled \|\| !recipeManager\.isApplicable\(selectedRecipe, selectedObjects\)\}/);
   assert.match(read('src/components/editor/recipes/RecipeDetail.jsx'), /recipes\.allRecipes/);
