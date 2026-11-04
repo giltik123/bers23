@@ -4,6 +4,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { productionBrowserCsp } from '../vite.config.js';
+// Keep Settings account recovery inside the required Auth lifecycle suite.
+import './settings-account-recovery.test.mjs';
 
 const retiredTokenApi = /(?:\.|\b)(?:hasToken|getToken|setToken|clearToken|storeAccessToken|persistedToken)\s*(?:\(|:|=)/;
 
