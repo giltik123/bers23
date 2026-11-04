@@ -113,6 +113,13 @@ test('saved mask and object controls use RU/EN locale keys while preserving user
     assert.match(english, new RegExp('"' + key + '"\\s*:'));
     assert.match(russian, new RegExp('"' + key + '"\\s*:'));
   }
+  for (const key of ['masksAndObjects', 'objectPanelHint']) {
+    const enValue = english.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"'))?.[1] || '';
+    const ruValue = russian.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"'))?.[1] || '';
+    const placeholders = value => [...value.matchAll(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g)].map(match => match[1]).sort();
+    assert.deepEqual(placeholders(enValue), ['count'], key + ' EN placeholder');
+    assert.deepEqual(placeholders(ruValue), ['count'], key + ' RU placeholder');
+  }
   for (const key of ['objectGroup', 'collapseObject', 'expandObject', 'selectObject', 'deselectObject']) {
     const enValue = english.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"'))?.[1] || '';
     const ruValue = russian.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"'))?.[1] || '';
