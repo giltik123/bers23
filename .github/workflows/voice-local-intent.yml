@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'src/application/voice/**'
+      - 'src/platform/creative/deterministic/ResizeIdentity.js'
       - 'src/components/editor/fashion/FashionPanel.jsx'
       - 'src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx'
       - 'src/components/editor/VoiceInputPanel.jsx'

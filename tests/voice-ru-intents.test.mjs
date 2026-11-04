@@ -5,6 +5,7 @@ import { buildVoiceIntentDraft,applyConfirmedVoiceDraft } from '../src/applicati
 import { parseRussianVoiceIntent,parseRussianVoiceNumber } from '../src/application/voice/parseRussianVoiceIntent.js';
 import { normalizeRussianFashionVoice,resolveFashionVoiceCandidates } from '../src/application/voice/normalizeRussianFashionVoice.js';
 import { admitVoiceEditorAction } from '../src/application/voice/admitVoiceEditorAction.js';
+import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS } from '../src/platform/creative/deterministic/ResizeIdentity.js';
 
 const ctx={projectId:'project-1',sourceArtifactId:'signed-image-1',
   confirmedProjectId:'project-1',confirmedSourceArtifactId:'signed-image-1',
@@ -54,6 +55,26 @@ test('VI-2 ambiguity, invalid resize and compound commands fail closed',()=>{
   assert.equal(parseRussianVoiceNumber('сто восемьдесят'),180);
   assert.equal(parseRussianVoiceNumber('1024'),1024);
   assert.equal(parseRussianVoiceNumber('абракадабра'),null);
+});
+test('VI-2 voice resize parsing and admission share the canonical Resize v1 output bounds',()=>{
+  const edge=Math.floor(Math.sqrt(RESIZE_MAX_OUTPUT_PIXELS));
+  assert.equal(edge*edge,RESIZE_MAX_OUTPUT_PIXELS);
+  const accepted=buildVoiceIntentDraft(`сделай ${edge} на ${edge}`);
+  assert.equal(accepted.kind,'RESIZE');
+  assert.equal(admitVoiceEditorAction(accepted,ctx).kind,'RESIZE');
+
+  for(const utterance of [
+    `сделай ${edge+1} на ${edge}`,
+    `сделай ${RESIZE_MAX_DIMENSION+1} на 1`,
+    `поверни вправо и затем сделай ${edge+1} на ${edge}`,
+  ]) assert.equal(buildVoiceIntentDraft(utterance).kind,'AMBIGUOUS',utterance);
+
+  const forgedResize={...accepted,params:{width:edge+1,height:edge}};
+  assert.throws(()=>admitVoiceEditorAction(forgedResize,ctx),/VOICE_SIZE_INVALID/);
+  const acceptedAgent=buildVoiceIntentDraft(`поверни вправо и затем сделай ${edge} на ${edge}`);
+  assert.equal(acceptedAgent.kind,'AGENT_PROPOSAL');
+  const forgedAgent={...acceptedAgent,params:{...acceptedAgent.params,width:edge+1}};
+  assert.throws(()=>admitVoiceEditorAction(forgedAgent,ctx),/VOICE_AGENT_PROPOSAL_INVALID/);
 });
 test('VI-3 Russian fashion inflections and RU/EN style codes are read-only hints',()=>{
   for(const variant of ['чёрная куртка','черную куртку','в чёрной куртке']){

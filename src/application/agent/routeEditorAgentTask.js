@@ -1,4 +1,5 @@
 import { parseRussianVoiceIntent } from '../voice/parseRussianVoiceIntent.js';
+import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS } from '../../platform/creative/deterministic/ResizeIdentity.js';
 import { interpretPhotoCommand } from '../editor/ai-first/interpretPhotoCommand.js';
 
 const INVALID_TEXT = 'Введите текстовую задачу длиной до 850 символов.';
@@ -10,8 +11,8 @@ const FORBIDDEN_CONTROL = /[\x00-\x08\x0e-\x1f\x7f]/u;
 
 // This recognition is advisory, with the same broad geometry ceiling as the
 // Voice draft parser. Core performs its own authoritative bounds verification.
-const TEXT_MAX_DIMENSION = 16_384;
-const TEXT_MAX_PIXELS = 24_000_000;
+const TEXT_MAX_DIMENSION = RESIZE_MAX_DIMENSION;
+const TEXT_MAX_PIXELS = RESIZE_MAX_OUTPUT_PIXELS;
 function admissibleTextTarget(width, height) {
   return Number.isSafeInteger(width) && Number.isSafeInteger(height) &&
     width > 0 && height > 0 && width <= TEXT_MAX_DIMENSION &&
@@ -30,7 +31,7 @@ function compoundLocalDraft(instruction) {
   if (!mode) return null;
   const width = Number(match[2]), height = Number(match[3]);
   if (!admissibleTextTarget(width, height)) {
-    return Object.freeze({ kind: 'CLARIFY', message: 'Размеры выходят за ограничения BERS: до 16384 пикселей по стороне и 24 Мп.' });
+    return Object.freeze({ kind: 'CLARIFY', message: `Размеры выходят за ограничения BERS: до ${TEXT_MAX_DIMENSION.toLocaleString('ru-RU')} пикселей по стороне и ${TEXT_MAX_PIXELS.toLocaleString('ru-RU')} пикселей суммарно.` });
   }
   return Object.freeze({
     kind: 'LOCAL_WORKFLOW_DRAFT', mode, width, height,

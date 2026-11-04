@@ -1,4 +1,5 @@
 /** Typed Voice Intent -> existing Editor handlers, never a voice-owned engine. */
+import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS } from '../../platform/creative/deterministic/ResizeIdentity.js';
 export const VOICE_EXECUTABLE_KINDS=Object.freeze([
   'NAVIGATE','HISTORY_UNDO','HISTORY_REDO','HISTORY_RESTORE',
   'TRANSFORM','RESIZE','WARDROBE_QUERY','TRYON_SELECT_PROPOSAL','AGENT_PROPOSAL',
@@ -26,7 +27,7 @@ export function admitVoiceEditorAction(draft,context){
     throw new Error('VOICE_TRANSFORM_UNKNOWN');
   if(draft.kind==='RESIZE' && (!Number.isSafeInteger(args.width)||
      !Number.isSafeInteger(args.height)||args.width<1||args.height<1||
-     args.width>16384||args.height>16384||args.width*args.height>24_000_000))
+     args.width>RESIZE_MAX_DIMENSION||args.height>RESIZE_MAX_DIMENSION||args.width*args.height>RESIZE_MAX_OUTPUT_PIXELS))
     throw new Error('VOICE_SIZE_INVALID');
   if(draft.kind==='HISTORY_UNDO'&&!context.canUndo)
     throw new Error('VOICE_UNDO_UNAVAILABLE');
@@ -35,7 +36,7 @@ export function admitVoiceEditorAction(draft,context){
   if(draft.kind==='AGENT_PROPOSAL' && Object.keys(args).length>0 &&
      (!modes.has(args.mode)||!Number.isSafeInteger(args.width)||
       !Number.isSafeInteger(args.height)||args.width<1||args.height<1||
-      args.width>16384||args.height>16384||args.width*args.height>24_000_000))
+      args.width>RESIZE_MAX_DIMENSION||args.height>RESIZE_MAX_DIMENSION||args.width*args.height>RESIZE_MAX_OUTPUT_PIXELS))
     throw new Error('VOICE_AGENT_PROPOSAL_INVALID');
   if(['WARDROBE_QUERY','TRYON_SELECT_PROPOSAL'].includes(draft.kind) &&
      (typeof args.query!=='string'||!args.query.trim()||
