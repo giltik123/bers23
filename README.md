@@ -8,6 +8,21 @@ Read [PROJECT_SOURCE_OF_TRUTH.md](PROJECT_SOURCE_OF_TRUTH.md) first for the curr
 
 Read [BERS_V1_DEVELOPMENT_ROADMAP.md](BERS_V1_DEVELOPMENT_ROADMAP.md) for the canonical pre-release development program, sequencing, mandatory Agent/Automation/Job Center work, advanced generative research, MoE/DiT + FreeToken-derived validation, and the exact-SHA path to `BERS_V1_RC` / `BERS v1.0 RELEASE` on continuously improving `main`.
 
+## Product completion and development beyond v1
+
+The broad product-completion objective is [issue #182](https://github.com/giltik123/bers23/issues/182), coordinated by the [BERS Master Development Plan / issue #1090](https://github.com/giltik123/bers23/issues/1090). The unit of completion is an end-to-end user journey through the canonical authorities in `PROJECT_SOURCE_OF_TRUTH.md`, not the presence of a UI component or an experimental model.
+
+[BERS v1.0 / issue #365](https://github.com/giltik123/bers23/issues/365) is a finite intermediate release milestone. It does not close #182 or end product development; continue against the open product backlog and accepted post-v1 work after that milestone.
+
+Long-term companion tracks:
+
+- [Voice Input Architecture](BERS_VOICE_INPUT_ARCHITECTURE_ROADMAP.md) / [issue #536](https://github.com/giltik123/bers23/issues/536) — the Russian-first Voice Intent Layer; Voice proposes typed intent and never becomes execution, Project, Artifact or Billing authority.
+- [Hybrid Sparse Mobile Engine](BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md) / [issue #352](https://github.com/giltik123/bers23/issues/352) — HSME architecture and real-device research.
+- [Universal Local AI Runtime](BERS_UNIVERSAL_LOCAL_AI_RUNTIME_ROADMAP.md) / [issue #561](https://github.com/giltik123/bers23/issues/561) — shared Model Virtual Memory and cross-platform local runtime.
+- [Model Lab / BYOM](BERS_MODEL_LAB_BYOM_ROADMAP.md) / [issue #563](https://github.com/giltik123/bers23/issues/563) — the separate advanced model environment and quarantined user-model lifecycle.
+
+These companion documents guide sequencing and research but do not grant production authority. HSME, Universal Local AI Runtime and Model Lab/BYOM remain R&D until their own evidence gates are met; Voice remains an AEE intent layer. Current production code, accepted tests and the canonical source-of-truth document take precedence over stale inventory or historical plans.
+
 ## Core runtime
 
 See [CORE_RUNTIME.md](CORE_RUNTIME.md) for the checked-in Node Core entrypoint, production composition, HTTP boundary, health/shutdown behavior, and deployment contract.
