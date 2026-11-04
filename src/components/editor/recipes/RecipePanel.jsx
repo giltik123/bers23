@@ -63,7 +63,7 @@ export default function RecipePanel({ objects = [], selectedObjects = [], onUse,
         />
       </div>
 
-      {!query && (
+      {!query.trim() && (
         <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('recipes.viewsLabel')}>
           {VIEWS.map((id) => (
             <button
