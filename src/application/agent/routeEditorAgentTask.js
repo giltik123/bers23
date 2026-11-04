@@ -9,8 +9,8 @@ const MAX_TEXT = 850;
 const FORBIDDEN_CONTROL = /[\x00-\x08\x0e-\x1f\x7f]/u;
 
 
-// This recognition is advisory, with the same broad geometry ceiling as the
-// Voice draft parser. Core performs its own authoritative bounds verification.
+// This recognition is advisory and reuses the canonical Resize v1 geometry limits.
+// Core still performs source-aware authoritative bounds verification.
 const TEXT_MAX_DIMENSION = RESIZE_MAX_DIMENSION;
 const TEXT_MAX_PIXELS = RESIZE_MAX_OUTPUT_PIXELS;
 function admissibleTextTarget(width, height) {
