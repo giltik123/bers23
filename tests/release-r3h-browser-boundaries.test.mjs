@@ -53,6 +53,10 @@ test('R3h browser is the product mutation actor while PostgreSQL remains a read-
   assert.match(harness, /PostgresAuthStore/);
   assert.match(harness, /chromium\.launch\(\{ channel: 'chrome', headless: true \}\)/);
   assert.match(harness, /getByRole\('button', \{ name: 'Fashion', exact: true \}\)/);
+  const initialFashionBarrier = harness.indexOf('const initialFashionLoad = waitForCoreResponses(page, [');
+  const fashionClick = harness.indexOf('await fashion.click();');
+  assert.ok(initialFashionBarrier >= 0 && fashionClick >= 0 && initialFashionBarrier < fashionClick,
+    'R3h must arm Fashion Core response listeners before the navigation click can trigger fast reads');
   assert.match(harness, /getByRole\('button', \{ name: 'Add garment', exact: true \}\)/);
   assert.match(harness, /getByRole\('button', \{ name: 'Save garment', exact: true \}\)/);
   assert.match(harness, /getByPlaceholder\('New collection'\)/);
