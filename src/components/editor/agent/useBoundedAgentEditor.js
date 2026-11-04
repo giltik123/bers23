@@ -3,7 +3,7 @@ import { CONFIGURED_CORE_API_ROOT, resolveCoreResourceUrl } from '@/api/coreReso
 import { createBoundedAgentRunner } from '@/application/agent/createBoundedAgentRunner';
 import { encodeDeterministicRgbaPng } from '@/platform/creative/deterministic/DeterministicPng';
 import { createBoundedAgentContextGate } from './boundedAgentContextGate';
-import { clearHint, readHint, writeHint } from './sessionHintStorage.js';
+import { clearHintForSource, readHint, writeHint } from './sessionHintStorage.js';
 
 const EMPTY_STATE = Object.freeze({ active: false, busy: false, view: null, error: null });
 const TERMINAL = new Set(['SUCCESS', 'FAILED', 'CANCELLED', 'UNKNOWN']);
@@ -51,7 +51,7 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
     operationRef.current.set(lockKey, name);
     publishScopedState(ticket, (previous) => Object.freeze({ ...previous, active: true, busy: true, error: null }));
     try {
-      const outcome = await operation((view) => publishView(view, ticket));
+      const outcome = await operation((view) => publishView(view, ticket), ticket);
       // The old Core workflow may finish, but it must never replace the new
       // Project's Agent state or publish a FINAL candidate in its Editor.
       if (!contextGateRef.current.isCurrent(ticket)) return outcome;
@@ -89,7 +89,7 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
         return outcome;
       }
       if (TERMINAL.has(view.state)) {
-        clearHint(project?.id);
+        clearHintForSource(project?.id, ticket.sourceArtifactId, view.executionId);
         publishScopedState(ticket, Object.freeze({ active: false, busy: false, view, error: terminalMessage(view) }));
         return outcome;
       }
@@ -113,16 +113,22 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
     const clientRequestId = globalThis.crypto.randomUUID();
     // Only touch the recovery hint after the per-source operation lock is
     // acquired. A duplicate start must not erase the first run's hint.
-    return runOperation('start', async (onView) => {
-      writeHint(project.id, { executionId: null, sourceArtifactId, mode, width, height });
+    return runOperation('start', async (onView, ticket) => {
+      if (contextGateRef.current.isCurrent(ticket)) {
+        writeHint(project.id, { executionId: null, sourceArtifactId, mode, width, height });
+      }
       try {
         return await runner.start({ clientRequestId, sourceArtifactId, mode, width, height }, (view) => {
-          writeHint(project.id, { executionId: view.executionId, sourceArtifactId, mode, width, height });
+          if (contextGateRef.current.isCurrent(ticket)) {
+            writeHint(project.id, { executionId: view.executionId, sourceArtifactId, mode, width, height });
+          }
           onView(view);
         });
       } catch (error) {
         const hint = readHint(project.id);
-        if (!hint?.executionId) clearHint(project.id);
+        if (contextGateRef.current.isCurrent(ticket) && !hint?.executionId) {
+          clearHintForSource(project.id, sourceArtifactId);
+        }
         throw error;
       }
     }, context);
@@ -150,7 +156,7 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
     publishScopedState(ticket, (previous) => Object.freeze({ ...previous, busy: true, error: null }));
     try {
       const view = await createBoundedAgentRunner({ projectId: project.id }).cancel(executionId);
-      clearHint(project.id);
+      clearHintForSource(project.id, ticket.sourceArtifactId, executionId);
       publishScopedState(ticket, Object.freeze({ active: false, busy: false, view, error: null }));
       return view;
     } catch (error) {
@@ -168,9 +174,12 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
   }, [project?.id, project?.current_image_artifact_id, visibleState.view?.executionId, publishScopedState]);
 
   const dismiss = useCallback(() => {
-    clearHint(project?.id);
-    if (mountedRef.current) setState(EMPTY_STATE);
-  }, [project?.id]);
+    const ticket = contextGateRef.current.capture(project?.id, project?.current_image_artifact_id);
+    if (ticket) {
+      clearHintForSource(ticket.projectId, ticket.sourceArtifactId, visibleState.view?.executionId ?? null);
+    }
+    if (mountedRef.current && (!ticket || contextGateRef.current.isCurrent(ticket))) setState(EMPTY_STATE);
+  }, [project?.id, project?.current_image_artifact_id, visibleState.view?.executionId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -188,7 +197,7 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
     if (!project?.id || !project.current_image_artifact_id || operationRef.current.has(contextKey)) return;
     const hint = readHint(project.id);
     if (!hint?.executionId) return;
-    if (hint.sourceArtifactId !== project.current_image_artifact_id) { clearHint(project.id); return; }
+    if (hint.sourceArtifactId !== project.current_image_artifact_id) { clearHintForSource(project.id, hint.sourceArtifactId, hint.executionId); return; }
     const runner = createBoundedAgentRunner({ projectId: project.id });
     const context = Object.freeze({ sourceArtifactId: hint.sourceArtifactId, beforeUrl: project.current_image_url, mode: hint.mode, width: hint.width, height: hint.height });
     void runOperation('resume', (onView) => runner.resume(hint.executionId, onView), context)

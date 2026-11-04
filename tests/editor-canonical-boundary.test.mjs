@@ -636,6 +636,11 @@ test('bounded Agent UI checks current Project/source before publishing progress 
   assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) return;/);
   assert.match(hook, /setState\(\(previous\) => contextGateRef\.current\.isCurrent\(ticket\)/);
   assert.match(hook, /if \(!contextGateRef\.current\.isCurrent\(ticket\)\) return outcome;/);
+  assert.match(hook, /operation\(\(view\) => publishView\(view, ticket\), ticket\)/);
+  assert.match(hook, /if \(contextGateRef\.current\.isCurrent\(ticket\)\) \{\s*writeHint\(project\.id, \{ executionId: view\.executionId/);
+  assert.match(hook, /clearHintForSource\(project\.id, ticket\.sourceArtifactId, executionId\)/);
+  assert.match(hook, /clearHintForSource\(project\?\.id, ticket\.sourceArtifactId, view\.executionId\)/);
+  assert.match(hook, /clearHintForSource\(project\.id, hint\.sourceArtifactId, hint\.executionId\)/);
   assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) \{\s*revokeBlob\(previewUrl\)/);
   assert.match(hook, /const visibleState = stateOwnerRef\.current === contextKey \? state : EMPTY_STATE/);
   assert.match(hook, /stateOwnerRef\.current = contextKey;\s*setState\(EMPTY_STATE\)/);
@@ -655,7 +660,7 @@ test('bounded Agent cancellation failure releases busy state and retains the rec
   assert.match(cancel, /busy: false/);
   assert.match(cancel, /error: error\?\.message \|\| 'Bounded Agent cancellation failed'/);
   assert.match(cancel, /throw error;/);
-  assert.match(cancel, /clearHint\(project\.id\)/);
+  assert.match(cancel, /clearHintForSource\(project\.id, ticket\.sourceArtifactId, executionId\)/);
   const catchBlock = cancel.slice(cancel.indexOf('catch'), cancel.indexOf('finally'));
-  assert.doesNotMatch(catchBlock, /clearHint/);
+  assert.doesNotMatch(catchBlock, /clearHintForSource/);
 });

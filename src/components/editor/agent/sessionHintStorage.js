@@ -48,3 +48,13 @@ export function clearHint(projectId) {
     // Agent recovery hints are non-authoritative.
   }
 }
+
+export function clearHintForSource(projectId, sourceArtifactId, executionId = null) {
+  const expectedSource = typeof sourceArtifactId === 'string' ? sourceArtifactId.trim() : '';
+  if (!projectId || !expectedSource) return false;
+  const current = readHint(projectId);
+  if (!current || current.sourceArtifactId !== expectedSource) return false;
+  if (typeof executionId === 'string' && executionId && current.executionId !== executionId) return false;
+  clearHint(projectId);
+  return true;
+}
