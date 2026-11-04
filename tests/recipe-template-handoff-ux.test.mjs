@@ -40,6 +40,9 @@ test('Recipe template handoff is prompt-only and never presents a browser price 
   assert.match(preview, /disabled=\{disabled \|\| !prompt\.trim\(\)\}/);
   assert.doesNotMatch(preview, /compiled\.credits|compiled\.estimatedTimeMs|coreClient|fetch\(/);
   assert.match(editor, /setInstruction\(prompt\);\s*setActiveRecipe\(recipe\);\s*setEditTab\('prompt'\)/);
+  const detail = read('src/components/editor/recipes/RecipeDetail.jsx');
+  assert.match(detail, /recipeEngine\.compile\(recipe, values\)/);
+  assert.match(detail, /onUse\(prompt, recipe\)/);
 });
 
 test('Recipe variable controls have labels and localized slider strength without changing prompt values', () => {
