@@ -79,7 +79,7 @@ test('journey 22 is either honestly deployment-pending or bound to recorded live
   }
 });
 
-test('matrix has no fake success for external deployment evidence', async () => {
+test('matrix has no fake success for external deployment evidence', () => {
   const serialized=JSON.stringify(matrix);
   assert.doesNotMatch(serialized,/ASSUME_DEPLOYED|FAKE_HEADER_SUCCESS|BYPASS/);
   const security=matrix.entries.find(entry=>entry.id===22);
