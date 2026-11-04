@@ -98,3 +98,14 @@ test('export implementation is strictly local, no provider/upload/Project commit
   assert.match(code,/get bytes\(\): Uint8Array/u);
   assert.match(code,/coreAuthorityGranted:false/u);
 });
+
+
+test('legacy pipeline cannot expose the unused Core.UploadFile export path', async () => {
+  // The workflow bundles this test under .test-cache; resolve repository files from its working directory.
+  const pipeline = await readFile('src/lib/pipeline/imagePipeline.js', 'utf8');
+  assert.doesNotMatch(pipeline, /exportManager|exportResult/u);
+  await assert.rejects(
+    readFile('src/lib/pipeline/exportManager.js'),
+    (error) => error?.code === 'ENOENT',
+  );
+});

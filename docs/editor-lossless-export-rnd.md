@@ -4,7 +4,13 @@ Status: **EXPERIMENTAL, NOT WIRED TO PRODUCT**. Owner authorized quality-first e
 
 ## Problem
 
-The legacy `src/lib/pipeline/exportManager.js` relies on Canvas and `coreClient.integrations.Core.UploadFile`, which is **not** an approved canonical Project/Artifact publishing route. A professional export must start from a reviewed FINAL source, preserve image fidelity, prevent cross-project substitution and give the user meaningful format/color/alpha choices without silently charging or sending an image to a cloud service.
+The former `src/lib/pipeline/exportManager.js` relied on Canvas and `coreClient.integrations.Core.UploadFile`, which is **not** an approved canonical Project/Artifact publishing route; that unused path is retired below. A professional export must start from a reviewed FINAL source, preserve image fidelity, prevent cross-project substitution and give the user meaningful format/color/alpha choices without silently charging or sending an image to a cloud service.
+
+## Legacy export path retirement — 2026-11-02
+
+The unused `imagePipeline.exportResult()` adapter and its `exportManager.js` implementation have been removed. Repository search on the base SHA found no callers of `exportResult()` or other imports of `exportManager`; the path therefore provided no active product value while retaining an unsafe generic `Core.UploadFile` export route. A source regression now prevents its reintroduction.
+
+This retirement is deliberately narrow: `imagePipeline.prepare()` still contains a separate legacy provider-input upload path. This change does not authorize, modernize, or claim that path as canonical; it remains outside the Export Studio scope. The R&D PNG helper below remains local-only and is still not wired to product or Core FINAL authority.
 
 ## First implementation
 
