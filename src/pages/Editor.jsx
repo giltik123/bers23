@@ -82,17 +82,17 @@ import { isFinalSourceConflict, recoverFinalSourceConflict } from '@/application
 // Never start any segmentation automatically on Editor mount or source change.
 
 const EDITOR_TABS = [
-  { id: 'ai', label: 'AI', description: 'AI-assisted photo editing.' },
-  { id: 'fashion', label: 'Fashion', description: 'Try on clothes from your wardrobe.' },
-  { id: 'local', label: 'Local tools', description: 'No AI, no credits: tune light, color and detail in your browser, compare before/after and download a PNG.' },
+  { id: 'ai' },
+  { id: 'fashion' },
+  { id: 'local' },
 ];
 
 // Secondary tools are still part of this workspace, not separate pages.
 const EDITOR_EXTRA_TABS = [
-  { id: 'prompt', label: 'Prompt', description: 'Describe what you want to change, preview the result, then decide whether to save it.' },
-  { id: 'creative', label: 'Creative Studio', description: 'Mood boards and concepts.' },
-  { id: 'recipes', label: 'Recipes', description: 'Ready-made editing recipes.' },
-  { id: 'agent', label: 'AI Agent', description: 'Controlled multistep editing.' },
+  { id: 'prompt' },
+  { id: 'creative' },
+  { id: 'recipes' },
+  { id: 'agent' },
 ];
 
 function disposePendingPreview(pending) {
