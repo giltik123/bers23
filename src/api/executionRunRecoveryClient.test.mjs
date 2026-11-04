@@ -54,13 +54,20 @@ test('recovery client rejects invalid scope and unbounded limits before network 
 });
 
 test('recovery client preserves server error classification without exposing a mutation fallback', async () => {
+  const privateBackendMessage = 'postgres://private-user:private-password@internal-db';
   const client = createExecutionRunRecoveryClient({
-    fetcher: async () => response(404, { error: 'execution_run_not_found', message: 'Execution run is unavailable in this scope', correlationId: 'corr-1' }),
+    translate: key => `ru:${key}`,
+    fetcher: async () => response(404, { error: 'execution_run_not_found', message: privateBackendMessage, correlationId: 'corr-1' }),
   });
 
   await assert.rejects(
     () => client.get(runId, projectId),
-    (error) => error.status === 404 && error.code === 'execution_run_not_found' && error.correlationId === 'corr-1',
+    (error) => error.status === 404
+      && error.code === 'execution_run_not_found'
+      && error.userMessageKey === 'errors.executionRunNotFound'
+      && error.message === 'ru:errors.executionRunNotFound'
+      && error.message !== privateBackendMessage
+      && error.correlationId === 'corr-1',
   );
   assert.equal('request' in client, false);
   assert.equal('cancel' in client, false);

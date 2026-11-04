@@ -15,6 +15,7 @@ on:
       - 'src/components/ui/button.jsx'
       - 'src/components/ui/input.jsx'
       - 'src/lib/app-params.js'
+      - 'src/lib/i18n/coreErrorMessage.js'
       - 'src/lib/utils.js'
       - '.github/workflows/fashion-canonical-outfit-ui-f3c.yml'
       - 'scripts/build-fashion-f3c-browser-closure.mjs'

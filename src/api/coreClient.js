@@ -1,4 +1,5 @@
 import '@/lib/app-params';
+import { resolveCoreErrorPresentation } from '@/lib/i18n/coreErrorMessage.js';
 import { createManagedGarmentClient } from './managedGarmentClient.js';
 import { createManagedGarmentCollectionClient } from './managedGarmentCollectionClient.js';
 import { createManagedOutfitClient } from './managedOutfitClient.js';
@@ -54,9 +55,12 @@ async function requestBytes(path, options = {}) {
 
 function throwResponseError(response, data, path) {
   if (response.status === 401 && path === '/auth/context') browserCsrfToken = undefined;
-  const error = new Error(data?.message || `Core API request failed (${response.status})`);
+  const code = data?.code ?? data?.error;
+  const presentation = resolveCoreErrorPresentation(response.status, code);
+  const error = new Error(presentation.message);
   error.status = response.status;
-  error.code = data?.code ?? data?.error;
+  error.code = code;
+  error.userMessageKey = presentation.key;
   error.correlationId = data?.correlationId;
   error.retryable = data?.retryable ?? false;
   error.data = data;

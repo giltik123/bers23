@@ -4,6 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { productionBrowserCsp } from '../vite.config.js';
+import { resolveCoreErrorPresentation, setCoreErrorTranslator } from '../src/lib/i18n/coreErrorMessage.js';
 
 const retiredTokenApi = /(?:\.|\b)(?:hasToken|getToken|setToken|clearToken|storeAccessToken|persistedToken)\s*(?:\(|:|=)/;
 
@@ -329,4 +330,66 @@ test('Register Google navigation shares the single-flight lock and recovers safe
   for (const id of ['email', 'password', 'confirm']) {
     assert.match(source, new RegExp(`<Input id="${id}"[^\\n]*disabled=\\{loading\\}`));
   }
+});
+
+
+test('Core HTTP errors map stable server codes to localized, non-sensitive user messages', () => {
+  const cases = [
+    [401, 'invalid_credentials', 'authUi.invalidLogin'],
+    [400, 'invalid_verification', 'authUi.invalidCode'],
+    [404, 'project_not_found', 'editor.projectNotFound'],
+    [409, 'project_source_conflict', 'errors.projectChanged'],
+    [404, 'execution_run_not_found', 'errors.executionRunNotFound'],
+    [409, 'automation_revision_conflict', 'errors.conflict'],
+    [413, 'body_too_large', 'errors.uploadTooLarge'],
+    [415, 'unsupported_media_type', 'errors.unsupportedFile'],
+    [429, 'auth_rate_limited', 'errors.rateLimited'],
+  ];
+  for (const [status, code, key] of cases) {
+    assert.deepEqual(
+      resolveCoreErrorPresentation(status, code, value => `translated:${value}`),
+      { key, message: `translated:${key}` },
+    );
+  }
+
+  const secretBearingBackendMessage = 'postgres://private-user:private-password@internal-db';
+  const safe = resolveCoreErrorPresentation(500, 'internal_error', key => key);
+  assert.equal(safe.key, 'errors.serviceUnavailable');
+  assert.equal(safe.message, 'Something went wrong.');
+  assert.equal(safe.message.includes(secretBearingBackendMessage), false);
+});
+
+test('Core browser client uses localized allowlisted error presentation instead of backend message text', async () => {
+  const [client, automationClient, helper, provider, english, russian] = await Promise.all([
+    readFile('src/api/coreClient.js', 'utf8'),
+    readFile('src/api/automationClient.js', 'utf8'),
+    readFile('src/lib/i18n/coreErrorMessage.js', 'utf8'),
+    readFile('src/lib/i18n/TranslationProvider.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/errors.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+  assert.match(client, /resolveCoreErrorPresentation/);
+  assert.doesNotMatch(client, /LocalizationManager/);
+  assert.match(provider, /setCoreErrorTranslator\(\(key\) => localizationManager\.t\(key\)\)/);
+  assert.match(helper, /export function setCoreErrorTranslator/);
+  assert.match(client, /error\.userMessageKey = presentation\.key/);
+  assert.doesNotMatch(client, /new Error\(data\?\.message/);
+  assert.match(automationClient, /resolveCoreErrorPresentation/);
+  assert.match(automationClient, /error\.userMessageKey = presentation\.key/);
+  assert.doesNotMatch(automationClient, /new Error\(data\?\.message/);
+  assert.match(helper, /const CODE_KEYS = Object\.freeze\(\{/);
+  assert.match(helper, /errors\.serviceUnavailable/);
+  for (const key of ['authentication', 'sessionExpired', 'permission', 'notFound', 'conflict', 'projectChanged', 'executionRunNotFound', 'automationNotFound', 'uploadTooLarge', 'unsupportedFile', 'rateLimited', 'serviceUnavailable', 'modelUnavailable']) {
+    assert.match(english, new RegExp('\\b' + key + ':'));
+    assert.match(russian, new RegExp('\\b' + key + ':'));
+  }
+});
+
+test('Core error presentation uses the translator registered by the existing app localization provider', () => {
+  setCoreErrorTranslator(key => `ru:${key}`);
+  assert.equal(
+    resolveCoreErrorPresentation(409, 'project_source_conflict').message,
+    'ru:errors.projectChanged',
+  );
+  setCoreErrorTranslator(undefined);
 });
