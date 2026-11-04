@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { readHint, writeHint, clearHint } from '../src/components/editor/agent/sessionHintStorage.js';
 import { getSafeSessionStorage } from '../src/lib/performance/safeSessionStorage.js';
 import { sessionRecovery } from '../src/lib/performance/sessionRecovery.js';
@@ -10,6 +11,24 @@ const AGENT_KEY = 'bers:bounded-agent:v1:project-2';
 function replaceSessionStorage(descriptor) {
   Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, ...descriptor });
 }
+
+test('Auth bootstrap announces localized loading without changing the session gate', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const authenticatedApp = source.match(/const AuthenticatedApp = \(\) => \{([\s\S]*?)\n\};/);
+
+  assert.ok(authenticatedApp, 'AuthenticatedApp must remain the global route gate');
+  assert.match(authenticatedApp[1], /const \{ t \} = useTranslation\(\);/);
+  assert.match(authenticatedApp[1], /if \(isLoadingPublicSettings \|\| isLoadingAuth\)/);
+
+  const bootstrap = authenticatedApp[1].match(
+    /if \(isLoadingPublicSettings \|\| isLoadingAuth\) \{\s*return \(([\s\S]*?)\);\s*\}/,
+  );
+  assert.ok(bootstrap, 'the existing bootstrap wait branch must remain intact');
+  assert.match(bootstrap[1], /role="status"/);
+  assert.match(bootstrap[1], /aria-live="polite"/);
+  assert.match(bootstrap[1], /<span className="sr-only">\{t\('common\.loading'\)\}<\/span>/);
+  assert.match(bootstrap[1], /aria-hidden="true"/);
+});
 
 test('Editor and bounded Agent recovery degrade safely and resume session persistence', () => {
   const original = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
