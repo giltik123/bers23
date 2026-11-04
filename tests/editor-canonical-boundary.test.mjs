@@ -620,6 +620,17 @@ test('bounded Agent async tickets cannot cross Project or source boundaries', ()
   assert.equal(gate.isCurrent(old), false, 'returning to an old Project cannot revive a stale ticket');
 });
 
+test('an uncommitted Project render cannot invalidate the current Agent ticket', () => {
+  const gate = createBoundedAgentContextGate('project-a', 'original-a');
+  const ticket = gate.capture('project-a', 'original-a');
+
+  // A speculative render has no committed context transition and therefore
+  // must not call sync(); the hook performs sync only in useLayoutEffect.
+  assert.equal(gate.isCurrent(ticket), true);
+  gate.sync('project-b', 'original-b');
+  assert.equal(gate.isCurrent(ticket), false, 'the committed layout transition invalidates the old ticket');
+});
+
 test('bounded Agent context fence rejects missing or mismatched canonical source', () => {
   const gate = createBoundedAgentContextGate(null, null);
   assert.equal(gate.capture(null, null), null);
@@ -632,7 +643,7 @@ test('bounded Agent context fence rejects missing or mismatched canonical source
 
 test('bounded Agent UI checks current Project/source before publishing progress and terminal preview', async () => {
   const hook = await readFile('src/components/editor/agent/useBoundedAgentEditor.js', 'utf8');
-  assert.match(hook, /contextGateRef\.current\.sync\(project\?\.id, project\?\.current_image_artifact_id\)/);
+  const gateSync = hook.indexOf('contextGateRef.current.sync(');\n  const layoutSync = hook.indexOf('useLayoutEffect(() => {');\n  assert.ok(layoutSync >= 0 && gateSync > layoutSync, 'Project/source gate synchronization must run only after commit');\n  assert.doesNotMatch(hook.slice(0, layoutSync), /contextGateRef\\.current\\.sync\\(/);
   assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) return;/);
   assert.match(hook, /setState\(\(previous\) => contextGateRef\.current\.isCurrent\(ticket\)/);
   assert.match(hook, /if \(!contextGateRef\.current\.isCurrent\(ticket\)\) return outcome;/);
