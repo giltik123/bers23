@@ -44,3 +44,13 @@ models/cache/
 models/downloads/
 .local-models/
 .test-cache/
+
+# Android local SDK/signing material and generated outputs. Certificate
+# fingerprints are public; private upload keys and passwords are never committed.
+android/.gradle/
+android/local.properties
+android/**/build/
+android/release/
+*.jks
+*.keystore
+*.keystore.password

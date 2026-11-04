@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { coreClient } from "@/api/coreClient";
 import { Button } from "@/components/ui/button";
@@ -13,17 +13,26 @@ export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+  const submitting = useRef(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
+    setError("");
     setLoading(true);
     try {
       await coreClient.auth.resetPasswordRequest(email);
-    } catch {
-      // Always show success regardless
-    } finally {
-      setLoading(false);
       setSent(true);
+    } catch (err) {
+      // An HTTP response must not reveal whether this email has an account.
+      // A transport failure has no server response and can be retried safely.
+      if (typeof err?.status === "number") setSent(true);
+      else setError(t("errors.network"));
+    } finally {
+      submitting.current = false;
+      setLoading(false);
     }
   };
 
@@ -43,7 +52,8 @@ export default function ForgotPassword() {
           {t("authUi.resetSent")}
         </p>
       ) : (
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" aria-busy={loading}>
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <div className="space-y-2">
             <Label htmlFor="email">{t("authUi.emailAddress")}</Label>
             <div className="relative">
@@ -56,6 +66,7 @@ export default function ForgotPassword() {
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
                 className="pl-10 h-12"
                 required
               />

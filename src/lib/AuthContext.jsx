@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { coreClient } from '@/api/coreClient';
+import { classifySessionCheckFailure } from './sessionCheckFailure';
 
 const AuthContext = createContext();
 
@@ -16,9 +17,9 @@ export const AuthProvider = ({ children }) => {
     setAuthError(null);
     try {
       await checkUserAuth();
-    } catch (error) {
-      setUser(null); setIsAuthenticated(false); setIsLoadingAuth(false); setAuthChecked(true);
-      setAuthError({ type: 'auth_required', message: error.message || 'Authentication required' });
+    } catch {
+      // checkUserAuth already classified the failure. Do not turn a network
+      // error into an unauthenticated redirect or overwrite its retry state.
     }
   };
 
@@ -29,8 +30,7 @@ export const AuthProvider = ({ children }) => {
       setUser(currentUser); setIsAuthenticated(true); setAuthError(null);
     } catch (error) {
       setUser(null); setIsAuthenticated(false);
-      if (error.status === 401 || error.status === 403) setAuthError({ type: 'auth_required', message: 'Authentication required' });
-      else setAuthError({ type: 'unknown', message: error.message || 'Failed to verify session' });
+      setAuthError(classifySessionCheckFailure(error));
       throw error;
     } finally { setIsLoadingAuth(false); setAuthChecked(true); }
   };
