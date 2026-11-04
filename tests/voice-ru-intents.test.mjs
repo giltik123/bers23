@@ -57,8 +57,8 @@ test('VI-2 ambiguity, invalid resize and compound commands fail closed',()=>{
   assert.equal(parseRussianVoiceNumber('абракадабра'),null);
 });
 test('VI-2 voice resize parsing and admission share the canonical Resize v1 output bounds',()=>{
-  const edge=Math.floor(Math.sqrt(RESIZE_MAX_OUTPUT_PIXELS));
-  assert.equal(edge*edge,RESIZE_MAX_OUTPUT_PIXELS);
+  const edge=Math.min(RESIZE_MAX_DIMENSION,Math.floor(Math.sqrt(RESIZE_MAX_OUTPUT_PIXELS)));
+  assert.ok(edge*edge<=RESIZE_MAX_OUTPUT_PIXELS);
   const accepted=buildVoiceIntentDraft(`сделай ${edge} на ${edge}`);
   assert.equal(accepted.kind,'RESIZE');
   assert.equal(admitVoiceEditorAction(accepted,ctx).kind,'RESIZE');

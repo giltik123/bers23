@@ -106,8 +106,8 @@ test('malformed geometric goals and over-limit geometries fail closed, never clo
 });
 
 test('Agent text resize and compound proposals share canonical Resize v1 output bounds', () => {
-  const edge = Math.floor(Math.sqrt(RESIZE_MAX_OUTPUT_PIXELS));
-  assert.equal(edge * edge, RESIZE_MAX_OUTPUT_PIXELS);
+  const edge = Math.min(RESIZE_MAX_DIMENSION, Math.floor(Math.sqrt(RESIZE_MAX_OUTPUT_PIXELS)));
+  assert.ok(edge * edge <= RESIZE_MAX_OUTPUT_PIXELS);
   const accepted = routeEditorAgentTask(`Поверни фото вправо и затем сделай ${edge} на ${edge}`);
   assert.deepEqual({kind: accepted.kind, width: accepted.width, height: accepted.height},
     {kind: 'LOCAL_WORKFLOW_DRAFT', width: edge, height: edge});
