@@ -432,10 +432,14 @@ test('Automation Studio uses canonical C3a/C3b authority while legacy arbitrary 
 });
 
 test('Asset Library indexes canonical Project artifacts without generic asset CRUD', async () => {
-  const source = await readFile('src/pages/AssetLibrary.jsx', 'utf8');
+  const [source, assetIndex] = await Promise.all([
+    readFile('src/pages/AssetLibrary.jsx', 'utf8'),
+    readFile('src/application/assets/projectAssetIndex.js', 'utf8'),
+  ]);
   assert.match(source, /coreClient\.projects\.list\(\)/);
   assert.match(source, /current_image_artifact_id/);
-  assert.match(source, /canonical_artifact_id:\s*artifactId/);
+  assert.match(source, /map\(projectAsset\)/);
+  assert.match(assetIndex, /canonical_artifact_id:\s*artifactId/);
   assert.match(source, /coreClient\.projects\.update\(asset\.project_id, \{ favorite:/);
   assert.match(source, /t\('assetUi\.notice'\)/, 'Asset authority limitation must stay visible in every language');
   for (const forbidden of [

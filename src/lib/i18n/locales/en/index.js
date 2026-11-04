@@ -285,6 +285,7 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   assetUi: {
     "untitled": "Untitled project",
     "loadFailed": "Unable to load canonical project assets.",
+    "favoriteFailed": "Unable to update the asset favorite.",
     "title": "Asset Library",
     "subtitle": "Canonical Project artifacts available for safe reuse and navigation.",
     "notice": "Managed uploads, garments, outfits and collections are not connected to the production Asset authority yet. This view only indexes canonical Project artifacts.",
