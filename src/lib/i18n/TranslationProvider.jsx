@@ -6,7 +6,7 @@ import { isRTL } from '@/lib/i18n/languages';
 
 const TranslationContext = createContext(null);
 
-// Keep low-level Core error copy on the same locale authority without making Core clients import Vite-backed localization modules.
+// Keep low-level Core error copy on the shared locale authority without making Core clients import Vite-backed localization modules.
 setCoreErrorTranslator((key) => localizationManager.t(key));
 
 // Wraps the app: initializes localization, re-renders on language change, and

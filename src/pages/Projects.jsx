@@ -32,7 +32,7 @@ export default function Projects() {
       setProjects(await projectService.list());
     } catch (error) {
       console.error('[Projects] Failed to load projects', error);
-      setLoadError(error?.message || t('projectUi.listFailed'));
+      setLoadError(t('projectUi.listFailed'));
     }
   };
   const createProjectFromFile = (file) => projectService.createFromFile(file);
@@ -49,7 +49,7 @@ export default function Projects() {
       console.error('[Projects] Failed to create project', error);
       const retryable = !networkManager.snapshot().online || /network|fetch|timeout/i.test(error?.message || '');
       if (retryable) { offlineQueue.enqueue({ kind: 'project-upload', file }); setUploadError(t('projectUi.retryQueued')); }
-      else setUploadError(error?.message || t('projectUi.createFailed'));
+      else setUploadError(t('projectUi.createFailed'));
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -61,26 +61,26 @@ export default function Projects() {
     if (!name || name === project.name) return;
     setActionError('');
     try { await projectService.rename(project.id, name); await reload(); }
-    catch (error) { console.error('[Projects] Failed to rename project', error); setActionError(error?.message || t('projectUi.renameFailed')); }
+    catch (error) { console.error('[Projects] Failed to rename project', error); setActionError(t('projectUi.renameFailed')); }
   };
 
 
   const handleToggleFavorite = async (project) => {
     setActionError('');
     try { await projectService.setFavorite(project.id, !project.favorite); await reload(); }
-    catch (error) { console.error('[Projects] Failed to update favorite', error); setActionError(error?.message || 'Unable to update project.'); }
+    catch (error) { console.error('[Projects] Failed to update favorite', error); setActionError(t('projectUi.favoriteFailed')); }
   };
 
   const handleToggleArchive = async (project) => {
     setActionError('');
     try { await projectService.setArchived(project.id, !project.archived); await reload(); }
-    catch (error) { console.error('[Projects] Failed to update archive state', error); setActionError(error?.message || 'Unable to update project.'); }
+    catch (error) { console.error('[Projects] Failed to update archive state', error); setActionError(t('projectUi.archiveFailed')); }
   };
 
   const handleDelete = async (project) => {
     setActionError('');
     try { await projectService.remove(project.id); setProjects((current) => current.filter((p) => p.id !== project.id)); }
-    catch (error) { console.error('[Projects] Failed to delete project', error); setActionError(error?.message || t('projectUi.deleteFailed')); }
+    catch (error) { console.error('[Projects] Failed to delete project', error); setActionError(t('projectUi.deleteFailed')); }
   };
 
   const visible = projects
@@ -120,7 +120,7 @@ export default function Projects() {
             {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="mr-2 h-4 w-4" aria-hidden="true" />}
             {uploading ? t('projectUi.creating') : t('projectUi.newProject')}
           </Button>
-          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-teal-50/80" aria-label="How editing works">
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-teal-50/80" aria-label={t('projectUi.startEditing')}>
             <span><strong className="mr-1 text-white">01</strong> {t("projectUi.stepUpload")}</span>
             <span><strong className="mr-1 text-white">02</strong> {t("projectUi.stepEdit")}</span>
             <span><strong className="mr-1 text-white">03</strong> {t("projectUi.stepSave")}</span>
@@ -133,7 +133,7 @@ export default function Projects() {
       {loadError && <ErrorBanner message={loadError} onRetry={reload} />}
       {actionError && <ErrorBanner message={actionError} />}
 
-      <section aria-label="Project library" className="space-y-5">
+      <section aria-label={t('projectUi.projectLibrary')} className="space-y-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold tracking-tight">{t('projectUi.projectLibrary')}</h2>
