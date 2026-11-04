@@ -1,4 +1,7 @@
+import voice from './voice.js';
+
 export const modules = {
+  voice,
   common: { appName: 'AI Фоторедактор', save: 'Сохранить', cancel: 'Отмена', delete: 'Удалить', edit: 'Изменить', close: 'Закрыть', create: 'Создать', apply: 'Применить', retry: 'Повторить', confirm: 'Подтвердить', back: 'Назад', next: 'Далее', done: 'Готово', loading: 'Загрузка…', search: 'Поиск', add: 'Добавить', remove: 'Убрать', rename: 'Переименовать', duplicate: 'Дублировать', download: 'Скачать', favorite: 'В избранное', archive: 'В архив', restore: 'Восстановить', signOut: 'Выйти', empty: 'Здесь пока пусто', minutes: '{count} мин', seconds: '{seconds}с' },
   editor: { title: 'Редактор', undo: 'Отменить', redo: 'Повторить', restoreOriginal: 'Вернуть оригинал', detectObjects: 'Найти объекты', detecting: 'Поиск объектов…', prompt: 'Запрос', creativeStudio: 'Креатив-студия', recipes: 'Рецепты', aiAgent: 'ИИ-агент', fashion: 'Мода', outfits: 'Образы', before: 'До', after: 'После', accept: 'Принять', discard: 'Отклонить', objects: 'Объекты', versions: 'Версии', newVersion: 'Новая версия', sceneMemory: 'Память сцены', workspace: 'Рабочая область', jobCenter: 'Центр задач', instructionPlaceholder: 'Опишите изменение…', projectNotFound: 'Проект не найден' },
   projects: { title: 'Проекты', newProject: 'Новый проект', upload: 'Загрузить изображение', empty: 'Проектов пока нет — загрузите изображение, чтобы начать.', open: 'Открыть', processing: 'Обработка', draft: 'Черновик', completed: 'Готово' },

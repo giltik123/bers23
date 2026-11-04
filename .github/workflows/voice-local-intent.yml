@@ -7,6 +7,11 @@ on:
       - 'src/components/editor/fashion/FashionPanel.jsx'
       - 'src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx'
       - 'src/components/editor/VoiceInputPanel.jsx'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/en/voice.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'src/lib/i18n/locales/ru/voice.js'
+      - 'tests/voice-panel-localization.test.mjs'
       - 'src/components/editor/InstructionBar.jsx'
       - 'src/pages/Editor.jsx'
       - 'tests/voice-local-editor-input.test.mjs'
@@ -34,7 +39,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Voice intents, offline-only microphone and approval boundary
-        run: node --test tests/voice-local-editor-input.test.mjs tests/voice-ru-intents.test.mjs tests/voice-ru-eval-v1.test.mjs
+        run: node --test tests/voice-local-editor-input.test.mjs tests/voice-ru-intents.test.mjs tests/voice-ru-eval-v1.test.mjs tests/voice-panel-localization.test.mjs
       - name: Verify actual Editor build and server authority boundary
         run: |
           npm run typecheck
