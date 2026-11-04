@@ -56,6 +56,11 @@ on:
       - 'src/components/adaptive/AdaptiveToolbar.jsx'
       - 'src/components/adaptive/AdaptiveNavigation.jsx'
       - 'src/index.css'
+      - 'src/components/editor/scene/SceneMemoryPanel.jsx'
+      - 'src/components/editor/scene/ConsistencyWarning.jsx'
+      - 'src/lib/i18n/locales/en/index.js'
+      - 'src/lib/i18n/locales/ru/index.js'
+      - 'tests/product-russian-ui.test.mjs'
       - 'src/components/editor/SelectionToolbar.jsx'
       - 'src/components/editor/ObjectPanel.jsx'
       - 'src/components/editor/ImageCanvas.jsx'
@@ -93,6 +98,7 @@ jobs:
       - name: Regression - contextual controls and canonical editor boundaries
         run: |
           node --test \
+            tests/product-russian-ui.test.mjs \
             tests/editor-ux-progressive-disclosure.test.mjs \
             tests/bers-ux-system-redesign.test.mjs \
             tests/mask-photoshop-controls.test.mjs \
