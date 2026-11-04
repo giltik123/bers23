@@ -34,10 +34,10 @@ export default function AssetLibrary() {
       if (!loadGate.current.isCurrent(requestId)) return;
       if (!Array.isArray(projects)) throw new Error('Invalid Core Project list response');
       setAssets(projects.filter((project) => project.current_image_artifact_id).map(projectAsset));
-    } catch (loadError) {
+    } catch {
       if (!loadGate.current.isCurrent(requestId)) return;
       setAssets([]);
-      setError(loadError?.message || t('assetUi.loadFailed'));
+      setError(t('assetUi.loadFailed'));
     } finally {
       if (loadGate.current.isCurrent(requestId)) setLoading(false);
     }
@@ -71,10 +71,10 @@ export default function AssetLibrary() {
       setAssets((items) => items.map((item) => item.project_id === updated.project_id ? updated : item));
       // Do not steal the user's newer selection while the Core request was in flight.
       setSelectedId((current) => selectionAfterFavorite(current, asset.id, updated.id));
-    } catch (updateError) {
+    } catch {
       // A failed request may have committed on the server: reconcile before another edit.
       await load();
-      setActionError(updateError?.message || t('assetUi.loadFailed'));
+      setActionError(t('assetUi.favoriteFailed'));
     } finally {
       favoriteInFlight.current = false;
       setFavoriteBusy(false);

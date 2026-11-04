@@ -1,0 +1,4 @@
+plugins {
+    // AGP 8.13.2 + Gradle 8.13 + JDK 17 support compile/target SDK 36.
+    id 'com.android.application' version '8.13.2' apply false
+}

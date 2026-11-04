@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CONFIGURED_CORE_API_ROOT, resolveCoreResourceUrl } from '@/api/coreResourceUrl';
 import { createBoundedAgentRunner } from '@/application/agent/createBoundedAgentRunner';
 import { encodeDeterministicRgbaPng } from '@/platform/creative/deterministic/DeterministicPng';
+import { clearHint, readHint, writeHint } from './sessionHintStorage.js';
 
-const HINT_PREFIX = 'bers:bounded-agent:v1:';
 const EMPTY_STATE = Object.freeze({ active: false, busy: false, view: null, error: null });
 const TERMINAL = new Set(['SUCCESS', 'FAILED', 'CANCELLED', 'UNKNOWN']);
 const TERMINAL_DELIVERY_PREFIX = '/api/core/artifacts/results/';
@@ -157,28 +157,4 @@ function terminalMessage(view) {
   if (view.state === 'UNKNOWN') return 'Bounded Agent outcome is UNKNOWN and requires recovery before retry.';
   if (view.state === 'FAILED') return 'Bounded Agent workflow failed.';
   return null;
-}
-function hintKey(projectId) { return `${HINT_PREFIX}${String(projectId || '').trim()}`; }
-function readHint(projectId) {
-  if (typeof sessionStorage === 'undefined' || !projectId) return null;
-  try {
-    const value = JSON.parse(sessionStorage.getItem(hintKey(projectId)) || 'null');
-    if (!value || typeof value !== 'object') return null;
-    const width = Number(value.width); const height = Number(value.height);
-    return Object.freeze({
-      executionId: typeof value.executionId === 'string' && value.executionId ? value.executionId : null,
-      sourceArtifactId: typeof value.sourceArtifactId === 'string' ? value.sourceArtifactId : '',
-      mode: typeof value.mode === 'string' ? value.mode : '',
-      width: Number.isSafeInteger(width) && width > 0 ? width : 0,
-      height: Number.isSafeInteger(height) && height > 0 ? height : 0,
-    });
-  } catch { return null; }
-}
-function writeHint(projectId, value) {
-  if (typeof sessionStorage === 'undefined' || !projectId) return;
-  try { sessionStorage.setItem(hintKey(projectId), JSON.stringify(value)); } catch { /* recovery hint is non-authoritative */ }
-}
-function clearHint(projectId) {
-  if (typeof sessionStorage === 'undefined' || !projectId) return;
-  try { sessionStorage.removeItem(hintKey(projectId)); } catch { /* recovery hint is non-authoritative */ }
 }

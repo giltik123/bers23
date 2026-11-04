@@ -17,6 +17,7 @@ import brand from './brand';
 import assets from './assets';
 
 export const modules = { common, editor, projects, recipes, workspace, automation, fashion, billing, settings, errors, notifications, jobs, creative, brand, assets,
+  notFoundUi: { title: 'Page not found', hint: 'This address does not match a BERS page. Your projects and edits have not been changed.', backToProjects: 'Go to projects' },
   authUi: {
     "brand": "Creative studio",
     "workspace": "Your creative workspace",
@@ -284,6 +285,7 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
   assetUi: {
     "untitled": "Untitled project",
     "loadFailed": "Unable to load canonical project assets.",
+    "favoriteFailed": "Unable to update the asset favorite.",
     "title": "Asset Library",
     "subtitle": "Canonical Project artifacts available for safe reuse and navigation.",
     "notice": "Managed uploads, garments, outfits and collections are not connected to the production Asset authority yet. This view only indexes canonical Project artifacts.",

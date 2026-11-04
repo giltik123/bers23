@@ -57,3 +57,17 @@ test('Asset Library wires confirmed Core mutations, serialized favorite requests
   assert.match(source, /loadGate\.current\.invalidate\(\)/);
   assert.match(source, /await load\(\)/);
 });
+
+
+test('Asset Library presents allowlisted localized errors instead of raw backend messages', async () => {
+  const [source, english, russian] = await Promise.all([
+    readFile('src/pages/AssetLibrary.jsx', 'utf8'),
+    readFile('src/lib/i18n/locales/en/index.js', 'utf8'),
+    readFile('src/lib/i18n/locales/ru/index.js', 'utf8'),
+  ]);
+  assert.doesNotMatch(source, /setError\(loadError\?\.message/);
+  assert.doesNotMatch(source, /setActionError\(updateError\?\.message/);
+  assert.match(source, /setActionError\(t\('assetUi\.favoriteFailed'\)\)/);
+  assert.match(english, /favoriteFailed": "Unable to update the asset favorite\."/);
+  assert.match(russian, /favoriteFailed": "Не удалось обновить избранное для материала\."/);
+});
