@@ -438,7 +438,7 @@ test('Asset Library indexes canonical Project artifacts without generic asset CR
   ]);
   assert.match(source, /coreClient\.projects\.list\(\)/);
   assert.match(source, /current_image_artifact_id/);
-  assert.match(source, /projectAsset\(project\)/);
+  assert.match(source, /map\(projectAsset\)/);
   assert.match(assetIndex, /canonical_artifact_id:\s*artifactId/);
   assert.match(source, /coreClient\.projects\.update\(asset\.project_id, \{ favorite:/);
   assert.match(source, /t\('assetUi\.notice'\)/, 'Asset authority limitation must stay visible in every language');
