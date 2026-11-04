@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CONFIGURED_CORE_API_ROOT, resolveCoreResourceUrl } from '@/api/coreResourceUrl';
 import { createBoundedAgentRunner } from '@/application/agent/createBoundedAgentRunner';
 import { encodeDeterministicRgbaPng } from '@/platform/creative/deterministic/DeterministicPng';
@@ -16,8 +16,6 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
   const operationRef = useRef(new Map());
   const contextGateRef = useRef(null);
   if (!contextGateRef.current) contextGateRef.current = createBoundedAgentContextGate(project?.id, project?.current_image_artifact_id);
-  // Invalidate stale callbacks during render, before route-change effects run.
-  contextGateRef.current.sync(project?.id, project?.current_image_artifact_id);
   const contextKey = JSON.stringify([project?.id ?? null, project?.current_image_artifact_id ?? null]);
   const finalCallbackRef = useRef(onFinalCandidate);
   finalCallbackRef.current = onFinalCandidate;
@@ -185,12 +183,14 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
     return () => { mountedRef.current = false; };
   }, []);
 
-  // An old Project's progress, retry or error must not remain visible after
-  // navigation or after a new canonical source becomes current.
-  useEffect(() => {
+  // Synchronize only after React commits the new Project/source. Mutating the
+  // gate during render would let an abandoned concurrent render invalidate
+  // callbacks for the still-committed Project.
+  useLayoutEffect(() => {
+    contextGateRef.current.sync(project?.id, project?.current_image_artifact_id);
     stateOwnerRef.current = contextKey;
     setState(EMPTY_STATE);
-  }, [contextKey]);
+  }, [contextKey, project?.id, project?.current_image_artifact_id]);
 
   useEffect(() => {
     if (!project?.id || !project.current_image_artifact_id || operationRef.current.has(contextKey)) return;
