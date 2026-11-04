@@ -643,7 +643,10 @@ test('bounded Agent context fence rejects missing or mismatched canonical source
 
 test('bounded Agent UI checks current Project/source before publishing progress and terminal preview', async () => {
   const hook = await readFile('src/components/editor/agent/useBoundedAgentEditor.js', 'utf8');
-  const gateSync = hook.indexOf('contextGateRef.current.sync(');\n  const layoutSync = hook.indexOf('useLayoutEffect(() => {');\n  assert.ok(layoutSync >= 0 && gateSync > layoutSync, 'Project/source gate synchronization must run only after commit');\n  assert.doesNotMatch(hook.slice(0, layoutSync), /contextGateRef\\.current\\.sync\\(/);
+  const gateSync = hook.indexOf('contextGateRef.current.sync(');
+  const layoutSync = hook.indexOf('useLayoutEffect(() => {');
+  assert.ok(layoutSync >= 0 && gateSync > layoutSync, 'Project/source gate synchronization must run only after commit');
+  assert.doesNotMatch(hook.slice(0, layoutSync), /contextGateRef\.current\.sync\(/);
   assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) return;/);
   assert.match(hook, /setState\(\(previous\) => contextGateRef\.current\.isCurrent\(ticket\)/);
   assert.match(hook, /if \(!contextGateRef\.current\.isCurrent\(ticket\)\) return outcome;/);
