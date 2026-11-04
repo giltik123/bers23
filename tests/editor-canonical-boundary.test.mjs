@@ -503,7 +503,11 @@ test('recipe templates remain canonical Prompt inputs while multi-step execution
   const summary = await readFile('src/components/editor/creative/CreativeStrategySummary.jsx', 'utf8');
   const adapter = await readFile('src/application/creative/LegacyRecipeExecutionAdapter.js', 'utf8');
 
-  assert.match(panel, /Individual recipes remain available as prompt templates/);
+  // Localized copy lives in the shared recipe catalog; execution remains prompt-only.
+  assert.match(panel, /recipes\\.chainsHint/);
+  const enRecipes = await readFile('src/lib/i18n/locales/en/recipes.js', 'utf8');
+  assert.match(enRecipes, /Individual recipes are prompt templates/);
+  assert.match(enRecipes, /multi-step chains require server-owned composite execution/);
   for (const forbidden of ['RECIPE_CHAINS', 'onRunChain', 'Apply strategy']) assert.equal(panel.includes(forbidden), false, forbidden);
   assert.match(detail, /onUse\(prompt, recipe\)/);
   assert.match(detail, /recipeEngine\.compile/);
