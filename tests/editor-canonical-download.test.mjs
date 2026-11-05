@@ -177,5 +177,5 @@ test('canonical export filenames remain safe around dot/space edges and reserved
   assert.equal(canonicalDownloadName('CON','image/png'),'_CON.png');
   assert.equal(canonicalDownloadName('lpt1','image/jpeg'),'_lpt1.jpg');
   assert.equal(canonicalDownloadName('COM9.txt','image/webp'),'_COM9.txt.webp');
-  assert.equal(canonicalDownloadName('A\\x7fB','image/png'),'A_B.png');
+  assert.equal(canonicalDownloadName('A\x7fB','image/png'),'A_B.png');
 });
