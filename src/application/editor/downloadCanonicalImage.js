@@ -10,7 +10,7 @@ async function readBoundedImage(response,mime,maxBytes) {
   if(!Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>MAX_CANONICAL_DOWNLOAD_BYTES)
     throw new Error('Core export byte limit is invalid');
   const declared=response.headers.get('content-length');
-  if(declared!==null && /^\d+$/.test(declared) && Number(declared)>maxBytes)
+  if(declared!==null && /^\\d+$/.test(declared) && Number(declared)>maxBytes)
     throw new Error('Core image export exceeds safety limits');
   if(!response.body || typeof response.body.getReader!=='function')
     throw new Error('Core image response must be a readable stream');
@@ -50,9 +50,19 @@ async function readBoundedImage(response,mime,maxBytes) {
 export function canonicalDownloadName(projectName, contentType) {
   const ext={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'}[contentType];
   if(!ext)throw new Error('Export format is not supported by Core');
-  const stem=String(projectName||'BERS-image')
-    .replace(/[\\/\x00-\x1f<>:"|?*]/g,'_').replace(/^\.+/,'')
-    .trim().slice(0,95) || 'BERS-image';
+  // Strip path/control characters first, then normalize dot/space edges.
+  // Windows treats trailing dots/spaces as absent and reserves device names
+  // such as CON or LPT1 even when an extension is appended.
+  let stem=String(projectName||'BERS-image')
+    .replace(/[\\\\/\\x00-\\x1f\\x7f<>:"|?*]/g,'_')
+    .trim()
+    .replace(/^\\.+/,'')
+    .replace(/[. ]+$/g,'')
+    .slice(0,95)
+    .replace(/[. ]+$/g,'')
+    .trim();
+  if(!stem || /^\\.+$/.test(stem))stem='BERS-image';
+  if(/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\\..*)?$/i.test(stem))stem='_'+stem;
   return `${stem}.${ext}`;
 }
 
@@ -67,7 +77,7 @@ export async function downloadCanonicalImage({
   // permitted; do not let imageUrl select an arbitrary remote host.
   const canonicalPath=canonicalCoreResourcePath(imageUrl,coreApiRoot);
   if(!canonicalPath ||
-     !/^\/api\/core\/artifacts\/results\/[A-Za-z0-9%._~-]+$/.test(canonicalPath))
+     !/^\\/api\\/core\\/artifacts\\/results\\/[A-Za-z0-9%._~-]+$/.test(canonicalPath))
     throw new Error('Only a signed Core image may be downloaded');
   const resolved=resolveCoreResourceUrl(canonicalPath,coreApiRoot);
   const address=new URL(resolved,origin);
