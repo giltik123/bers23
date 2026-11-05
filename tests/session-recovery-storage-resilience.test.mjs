@@ -152,6 +152,10 @@ test('bounded Agent recovery cleanup cannot erase a newer source or execution hi
     assert.deepEqual(readHint('project-2'), current);
     assert.equal(clearHintForSource('project-2', 'artifact-new', 'exec-new'), true);
     assert.equal(readHint('project-2'), null);
+
+    writeHint('project-2', current);
+    assert.equal(clearHintForSource('project-2', 'artifact-new'), true, 'omitting execution ID retains intentional source-only cleanup');
+    assert.equal(readHint('project-2'), null);
   } finally {
     if (original) Object.defineProperty(globalThis, 'sessionStorage', original);
     else delete globalThis.sessionStorage;
