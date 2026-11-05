@@ -294,5 +294,40 @@ export const modules = { common, editor, projects, recipes, workspace, automatio
     "empty": "No canonical Project assets match these filters.",
     "open": "Open project"
   },
+  editorProgress: {
+    working: 'Working…',
+    provider: 'Provider',
+    unknownProvider: 'unknown',
+    estimatedSeconds: '~{seconds}s estimated',
+    attempt: 'Attempt {count}',
+    cancelSegmentation: 'Cancel segmentation',
+    flowLabel: 'Processing steps',
+    generationRegion: 'Generation progress',
+    segmentationRegion: 'Segmentation progress',
+    stages: {
+      preparing: 'Preparing image',
+      compiling: 'Compiling prompt',
+      generating: 'Generating',
+      validating: 'Validating result',
+      composing: 'Composing final image',
+      finalizing: 'Finalizing',
+    },
+    flow: {
+      prompt: 'Prompt',
+      planner: 'AI Planner',
+      pipeline: 'Image Pipeline',
+      adapter: 'Reve Adapter',
+      quality: 'Quality Check',
+      composer: 'Composer',
+      history: 'History',
+    },
+    segmentation: {
+      validating: 'Validating image',
+      preparing: 'Optimizing image',
+      segmenting: 'Detecting objects and masks',
+      retrying: 'Retrying',
+      parsing: 'Processing results',
+    },
+  },
 };
 export default modules;
