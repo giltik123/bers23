@@ -310,5 +310,40 @@ export const modules = {
     "empty": "Материалы по заданным фильтрам не найдены.",
     "open": "Открыть проект"
   },
+  editorProgress: {
+    working: 'Выполняется…',
+    provider: 'Провайдер',
+    unknownProvider: 'неизвестен',
+    estimatedSeconds: '≈ {seconds} с (оценка)',
+    attempt: 'Попытка №{count}',
+    cancelSegmentation: 'Отменить поиск объектов',
+    flowLabel: 'Этапы обработки',
+    generationRegion: 'Ход генерации',
+    segmentationRegion: 'Ход поиска объектов',
+    stages: {
+      preparing: 'Подготовка изображения',
+      compiling: 'Подготовка запроса',
+      generating: 'Генерация',
+      validating: 'Проверка результата',
+      composing: 'Сборка итогового изображения',
+      finalizing: 'Завершение',
+    },
+    flow: {
+      prompt: 'Запрос',
+      planner: 'ИИ-планировщик',
+      pipeline: 'Обработка изображения',
+      adapter: 'Адаптер Reve',
+      quality: 'Проверка качества',
+      composer: 'Сборка результата',
+      history: 'История',
+    },
+    segmentation: {
+      validating: 'Проверка изображения',
+      preparing: 'Оптимизация изображения',
+      segmenting: 'Поиск объектов и масок',
+      retrying: 'Повторная попытка',
+      parsing: 'Обработка результатов',
+    },
+  },
 };
 export default modules;
