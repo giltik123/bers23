@@ -50,9 +50,19 @@ async function readBoundedImage(response,mime,maxBytes) {
 export function canonicalDownloadName(projectName, contentType) {
   const ext={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'}[contentType];
   if(!ext)throw new Error('Export format is not supported by Core');
-  const stem=String(projectName||'BERS-image')
-    .replace(/[\\/\x00-\x1f<>:"|?*]/g,'_').replace(/^\.+/,'')
-    .trim().slice(0,95) || 'BERS-image';
+  // Strip path/control characters first, then normalize dot/space edges.
+  // Windows treats trailing dots/spaces as absent and reserves device names
+  // such as CON or LPT1 even when an extension is appended.
+  let stem=String(projectName||'BERS-image')
+    .replace(/[\\/\x00-\x1f\x7f<>:"|?*]/g,'_')
+    .trim()
+    .replace(/^\.+/,'')
+    .replace(/[. ]+$/g,'')
+    .slice(0,95)
+    .replace(/[. ]+$/g,'')
+    .trim();
+  if(!stem || /^\.+$/.test(stem))stem='BERS-image';
+  if(/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$/i.test(stem))stem='_'+stem;
   return `${stem}.${ext}`;
 }
 
