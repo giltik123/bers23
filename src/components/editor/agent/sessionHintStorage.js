@@ -1,6 +1,7 @@
 import { getSafeSessionStorage } from '../../../lib/performance/safeSessionStorage.js';
 
 const HINT_PREFIX = 'bers:bounded-agent:v1:';
+const MATCH_ANY_EXECUTION = Symbol('match-any-execution');
 
 function hintKey(projectId) {
   return `${HINT_PREFIX}${String(projectId || '').trim()}`;
@@ -47,4 +48,16 @@ export function clearHint(projectId) {
   } catch {
     // Agent recovery hints are non-authoritative.
   }
+}
+
+export function clearHintForSource(projectId, sourceArtifactId, executionId = MATCH_ANY_EXECUTION) {
+  const expectedSource = typeof sourceArtifactId === 'string' ? sourceArtifactId.trim() : '';
+  if (!projectId || !expectedSource) return false;
+  const current = readHint(projectId);
+  if (!current || current.sourceArtifactId !== expectedSource) return false;
+  // An explicit null/ID is an exact compare-and-clear guard; only omission
+  // opts into source-only cleanup for callers that own the whole start attempt.
+  if (executionId !== MATCH_ANY_EXECUTION && current.executionId !== executionId) return false;
+  clearHint(projectId);
+  return true;
 }

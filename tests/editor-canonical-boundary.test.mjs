@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createBoundedAgentContextGate } from '../src/components/editor/agent/boundedAgentContextGate.js';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -599,4 +600,90 @@ test('production Editor does not expose mask controls or pass stale masks into w
   assert.ok(studio.includes("const wholeImageAdmitted = Boolean(plan.instruction) && plan.kind !== 'FASHION'"));
   assert.ok(studio.includes("await onPrepareFreeAccount?.()"));
   assert.ok(studio.includes("Понимаю, что может измениться весь кадр"));
+});
+
+
+test('bounded Agent async tickets cannot cross Project or source boundaries', () => {
+  const gate = createBoundedAgentContextGate('project-a', 'original-a');
+  const old = gate.capture('project-a', 'original-a');
+  assert.equal(gate.isCurrent(old), true);
+  gate.sync('project-b', 'original-b');
+  assert.equal(gate.isCurrent(old), false, 'old Project callback is stale');
+  assert.equal(gate.capture('project-a', 'original-a'), null);
+  const current = gate.capture('project-b', 'original-b');
+  assert.equal(gate.isCurrent(current), true);
+  gate.sync('project-b', 'final-b');
+  assert.equal(gate.isCurrent(current), false, 'new accepted source invalidates old callback');
+  const next = gate.capture('project-b', 'final-b');
+  assert.equal(gate.isCurrent(next), true);
+  gate.sync('project-a', 'original-a');
+  assert.equal(gate.isCurrent(old), false, 'returning to an old Project cannot revive a stale ticket');
+});
+
+test('an uncommitted Project render cannot invalidate the current Agent ticket', () => {
+  const gate = createBoundedAgentContextGate('project-a', 'original-a');
+  const ticket = gate.capture('project-a', 'original-a');
+
+  // A speculative render has no committed context transition and therefore
+  // must not call sync(); the hook performs sync only in useLayoutEffect.
+  assert.equal(gate.isCurrent(ticket), true);
+  gate.sync('project-b', 'original-b');
+  assert.equal(gate.isCurrent(ticket), false, 'the committed layout transition invalidates the old ticket');
+});
+
+test('bounded Agent context fence rejects missing or mismatched canonical source', () => {
+  const gate = createBoundedAgentContextGate(null, null);
+  assert.equal(gate.capture(null, null), null);
+  gate.sync('project-a', 'original-a');
+  assert.equal(gate.capture('project-a', 'other-artifact'), null);
+  assert.equal(gate.capture('project-b', 'original-a'), null);
+  assert.equal(gate.isCurrent(null), false);
+  assert.equal(gate.isCurrent({ projectId: 'project-a', sourceArtifactId: 'original-a', revision: -1 }), false);
+});
+
+test('bounded Agent UI checks current Project/source before publishing progress and terminal preview', async () => {
+  const hook = await readFile('src/components/editor/agent/useBoundedAgentEditor.js', 'utf8');
+  const gateSync = hook.indexOf('contextGateRef.current.sync(');
+  const layoutSync = hook.indexOf('useLayoutEffect(() => {');
+  assert.ok(layoutSync >= 0 && gateSync > layoutSync, 'Project/source gate synchronization must run only after commit');
+  assert.doesNotMatch(hook.slice(0, layoutSync), /contextGateRef\.current\.sync\(/);
+  const callbackLayoutEffect = hook.indexOf('useLayoutEffect(() => {\n    finalCallbackRef.current = onFinalCandidate;');
+  const callbackWrite = hook.indexOf('finalCallbackRef.current = onFinalCandidate;');
+  assert.ok(callbackLayoutEffect >= 0 && callbackWrite > callbackLayoutEffect, 'async completion callback must follow the committed render');
+  assert.doesNotMatch(hook.slice(0, callbackLayoutEffect), /finalCallbackRef\.current = onFinalCandidate/);
+  assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) return;/);
+  assert.match(hook, /setState\(\(previous\) => contextGateRef\.current\.isCurrent\(ticket\)/);
+  assert.match(hook, /if \(!contextGateRef\.current\.isCurrent\(ticket\)\) return outcome;/);
+  assert.match(hook, /operation\(\(view\) => publishView\(view, ticket\), ticket\)/);
+  assert.match(hook, /if \(contextGateRef\.current\.isCurrent\(ticket\)\) \{\s*writeHint\(project\.id, \{ executionId: view\.executionId/);
+  assert.match(hook, /clearHintForSource\(project\.id, ticket\.sourceArtifactId, executionId\)/);
+  assert.match(hook, /clearHintForSource\(project\?\.id, ticket\.sourceArtifactId, view\.executionId\)/);
+  assert.match(hook, /clearHintForSource\(project\.id, hint\.sourceArtifactId, hint\.executionId\)/);
+  const dismissStart = hook.indexOf('const dismiss = useCallback');
+  const dismissEnd = hook.indexOf('useEffect', dismissStart);
+  const dismiss = hook.slice(dismissStart, dismissEnd);
+  assert.match(dismiss, /if \(!ticket\) return;/);
+  assert.match(dismiss, /if \(mountedRef\.current && contextGateRef\.current\.isCurrent\(ticket\)\) setState\(EMPTY_STATE\)/);
+  assert.match(hook, /if \(!mountedRef\.current \|\| !contextGateRef\.current\.isCurrent\(ticket\)\) \{\s*revokeBlob\(previewUrl\)/);
+  assert.match(hook, /const visibleState = stateOwnerRef\.current === contextKey \? state : EMPTY_STATE/);
+  assert.match(hook, /stateOwnerRef\.current = contextKey;\s*setState\(EMPTY_STATE\)/);
+  assert.match(hook, /operationRef\.current\.get\(lockKey\)/);
+  assert.match(hook, /operationRef\.current\.delete\(lockKey\)/);
+  assert.match(hook, /operationRef\.current\.has\(contextKey\)/);
+  assert.match(hook, /return Object\.freeze\(\{ state: visibleState, busy: visibleState\.busy/);
+});
+
+test('bounded Agent cancellation failure releases busy state and retains the recovery hint', async () => {
+  const hook = await readFile('src/components/editor/agent/useBoundedAgentEditor.js', 'utf8');
+  const start = hook.indexOf('const cancel = useCallback');
+  const end = hook.indexOf('const dismiss', start);
+  assert.ok(start >= 0 && end > start, 'cancel callback must remain explicit');
+  const cancel = hook.slice(start, end);
+  assert.match(cancel, /catch \(error\)/);
+  assert.match(cancel, /busy: false/);
+  assert.match(cancel, /error: error\?\.message \|\| 'Bounded Agent cancellation failed'/);
+  assert.match(cancel, /throw error;/);
+  assert.match(cancel, /clearHintForSource\(project\.id, ticket\.sourceArtifactId, executionId\)/);
+  const catchBlock = cancel.slice(cancel.indexOf('catch'), cancel.indexOf('finally'));
+  assert.doesNotMatch(catchBlock, /clearHintForSource/);
 });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readHint, writeHint, clearHint } from '../src/components/editor/agent/sessionHintStorage.js';
+import { readHint, writeHint, clearHint, clearHintForSource } from '../src/components/editor/agent/sessionHintStorage.js';
 import { getSafeSessionStorage } from '../src/lib/performance/safeSessionStorage.js';
 import { sessionRecovery } from '../src/lib/performance/sessionRecovery.js';
 
@@ -115,6 +115,46 @@ test('Editor and bounded Agent recovery degrade safely and resume session persis
     values.set(SESSION_KEY, '{invalid-json');
     assert.deepEqual(sessionRecovery.restore(), persisted);
     values.set(AGENT_KEY, '{invalid-json');
+    assert.equal(readHint('project-2'), null);
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'sessionStorage', original);
+    else delete globalThis.sessionStorage;
+  }
+});
+
+test('bounded Agent recovery cleanup cannot erase a newer source or execution hint', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
+  const values = new Map();
+
+  try {
+    replaceSessionStorage({
+      value: {
+        getItem(key) { return values.get(key) ?? null; },
+        setItem(key, value) { values.set(key, value); },
+        removeItem(key) { values.delete(key); },
+      },
+    });
+
+    const current = {
+      executionId: 'exec-new',
+      sourceArtifactId: 'artifact-new',
+      mode: 'RESIZE',
+      width: 256,
+      height: 192,
+    };
+    writeHint('project-2', current);
+
+    assert.equal(clearHintForSource('project-2', 'artifact-old', 'exec-old'), false);
+    assert.deepEqual(readHint('project-2'), current);
+    assert.equal(clearHintForSource('project-2', 'artifact-new', 'exec-old'), false);
+    assert.deepEqual(readHint('project-2'), current);
+    assert.equal(clearHintForSource('project-2', 'artifact-new', null), false, 'a stale dismiss without an execution ID cannot erase a newer run');
+    assert.deepEqual(readHint('project-2'), current);
+    assert.equal(clearHintForSource('project-2', 'artifact-new', 'exec-new'), true);
+    assert.equal(readHint('project-2'), null);
+
+    writeHint('project-2', current);
+    assert.equal(clearHintForSource('project-2', 'artifact-new'), true, 'omitting execution ID retains intentional source-only cleanup');
     assert.equal(readHint('project-2'), null);
   } finally {
     if (original) Object.defineProperty(globalThis, 'sessionStorage', original);
