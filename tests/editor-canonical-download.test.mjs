@@ -168,3 +168,14 @@ test('Editor separates labeled View image from authenticated Core file download'
   assert.match(editor,/aria-label="Download current Core image"/);
   assert.doesNotMatch(editor,/<a href=\{project\.current_image_url\}[^>]*aria-label="Download/);
 });
+
+
+test('canonical export filenames remain safe around dot/space edges and reserved devices',()=>{
+  assert.equal(canonicalDownloadName(' .. ','image/png'),'BERS-image.png');
+  assert.equal(canonicalDownloadName('  .hidden  ','image/png'),'hidden.png');
+  assert.equal(canonicalDownloadName('Report.   ','image/png'),'Report.png');
+  assert.equal(canonicalDownloadName('CON','image/png'),'_CON.png');
+  assert.equal(canonicalDownloadName('lpt1','image/jpeg'),'_lpt1.jpg');
+  assert.equal(canonicalDownloadName('COM9.txt','image/webp'),'_COM9.txt.webp');
+  assert.equal(canonicalDownloadName('A\\x7fB','image/png'),'A_B.png');
+});
