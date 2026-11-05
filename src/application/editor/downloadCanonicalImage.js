@@ -10,7 +10,7 @@ async function readBoundedImage(response,mime,maxBytes) {
   if(!Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>MAX_CANONICAL_DOWNLOAD_BYTES)
     throw new Error('Core export byte limit is invalid');
   const declared=response.headers.get('content-length');
-  if(declared!==null && /^\\d+$/.test(declared) && Number(declared)>maxBytes)
+  if(declared!==null && /^\d+$/.test(declared) && Number(declared)>maxBytes)
     throw new Error('Core image export exceeds safety limits');
   if(!response.body || typeof response.body.getReader!=='function')
     throw new Error('Core image response must be a readable stream');
@@ -77,7 +77,7 @@ export async function downloadCanonicalImage({
   // permitted; do not let imageUrl select an arbitrary remote host.
   const canonicalPath=canonicalCoreResourcePath(imageUrl,coreApiRoot);
   if(!canonicalPath ||
-     !/^\\/api\\/core\\/artifacts\\/results\\/[A-Za-z0-9%._~-]+$/.test(canonicalPath))
+     !/^\/api\/core\/artifacts\/results\/[A-Za-z0-9%._~-]+$/.test(canonicalPath))
     throw new Error('Only a signed Core image may be downloaded');
   const resolved=resolveCoreResourceUrl(canonicalPath,coreApiRoot);
   const address=new URL(resolved,origin);
