@@ -148,6 +148,8 @@ test('bounded Agent recovery cleanup cannot erase a newer source or execution hi
     assert.deepEqual(readHint('project-2'), current);
     assert.equal(clearHintForSource('project-2', 'artifact-new', 'exec-old'), false);
     assert.deepEqual(readHint('project-2'), current);
+    assert.equal(clearHintForSource('project-2', 'artifact-new', null), false, 'a stale dismiss without an execution ID cannot erase a newer run');
+    assert.deepEqual(readHint('project-2'), current);
     assert.equal(clearHintForSource('project-2', 'artifact-new', 'exec-new'), true);
     assert.equal(readHint('project-2'), null);
   } finally {
